@@ -16,6 +16,7 @@ jobs:
         run: |
           bash -n scripts/setup/check-swift-ios-prereqs.sh
           bash -n scripts/setup/create-build-server-json.sh
+          bash -n scripts/setup/agent-self-install.sh
       - name: Benchmark manifest validation
         run: |
           python3 scripts/benchmarks/benchmark_runner.py --help
@@ -24,4 +25,3 @@ jobs:
       - name: Symlink check
         run: |
           test -z "$(find . -type l -maxdepth 5 -print)"
-

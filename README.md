@@ -63,6 +63,17 @@ Use these templates:
 - `templates/cursor/` for Cursor rules.
 - `templates/claude/` for Claude-style instructions.
 
+For a guided install that is read-only by default:
+
+```bash
+./scripts/setup/agent-self-install.sh \
+  --target-repo /path/to/ios-repo \
+  --agent codex \
+  --dry-run
+```
+
+See `docs/agents/agent-self-install.md`.
+
 Minimal prompt:
 
 ```text
@@ -131,6 +142,7 @@ See `docs/concepts/proof-boundaries.md`.
 - `docs/swift-ios/serena-sourcekit-lsp.md`
 - `docs/swift-ios/xcode-plugin-proof-layer.md`
 - `docs/agents/generic-agent-policy.md`
+- `docs/agents/agent-self-install.md`
 - `docs/benchmarks/methodology.md`
 - `docs/benchmarks/interpreting-results.md`
 - `docs/benchmarks/what-v4-proves.md`
