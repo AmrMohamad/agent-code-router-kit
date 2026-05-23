@@ -1,0 +1,27 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax
+        run: python3 -m py_compile scripts/benchmarks/benchmark_runner.py
+      - name: Shell syntax
+        run: |
+          bash -n scripts/setup/check-swift-ios-prereqs.sh
+          bash -n scripts/setup/create-build-server-json.sh
+      - name: Benchmark manifest validation
+        run: |
+          python3 scripts/benchmarks/benchmark_runner.py --help
+          python3 scripts/benchmarks/benchmark_runner.py --validate \
+            --cases benchmarks/swift-ios-router/cases.example.tsv
+      - name: Symlink check
+        run: |
+          test -z "$(find . -type l -maxdepth 5 -print)"
+

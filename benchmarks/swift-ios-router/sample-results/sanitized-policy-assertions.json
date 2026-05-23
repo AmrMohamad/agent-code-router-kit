@@ -1,0 +1,13 @@
+{
+  "schema": "agent-code-router-kit.policy-assertions.v1",
+  "summary": {
+    "pass": 530,
+    "warn": 24,
+    "fail": 0
+  },
+  "notes": [
+    "Warnings are expected for intentionally large high-fanout baselines.",
+    "A clean benchmark has zero failures, zero timeouts, and zero parser errors."
+  ]
+}
+

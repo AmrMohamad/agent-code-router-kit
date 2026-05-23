@@ -1,0 +1,8 @@
+# Example only. Adapt to your Codex installation.
+
+[features]
+hooks = true
+
+# Register your preferred semantic tool through Codex MCP or plugin setup.
+# Keep project-specific paths out of shared public config.
+

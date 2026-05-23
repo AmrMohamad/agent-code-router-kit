@@ -1,0 +1,48 @@
+[
+  {
+    "case_id": "high_fanout_symbol_raw",
+    "repo": "sample",
+    "tool": "rg",
+    "command_label": "raw_Resolver",
+    "passes": 3,
+    "exit_codes": [0],
+    "timeout_count": 0,
+    "last_byte_count": 55235,
+    "last_line_count": 360,
+    "last_unique_file_count": 140,
+    "last_match_count": 360,
+    "last_parse_error_count": 0,
+    "expected_first_tool": "SourceKit-LSP summary first"
+  },
+  {
+    "case_id": "high_fanout_symbol_json",
+    "repo": "sample",
+    "tool": "rg",
+    "command_label": "json_Resolver",
+    "passes": 3,
+    "exit_codes": [0],
+    "timeout_count": 0,
+    "last_byte_count": 177089,
+    "last_line_count": 641,
+    "last_unique_file_count": 140,
+    "last_match_count": 360,
+    "last_parse_error_count": 0,
+    "expected_first_tool": "SourceKit-LSP summary first"
+  },
+  {
+    "case_id": "high_fanout_symbol_count",
+    "repo": "sample",
+    "tool": "rg",
+    "command_label": "count_Resolver",
+    "passes": 3,
+    "exit_codes": [0],
+    "timeout_count": 0,
+    "last_byte_count": 11213,
+    "last_line_count": 140,
+    "last_unique_file_count": 140,
+    "last_match_count": 360,
+    "last_parse_error_count": 0,
+    "expected_first_tool": "SourceKit-LSP summary first"
+  }
+]
+

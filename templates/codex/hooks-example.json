@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Remember Swift/iOS routing: LSP for known symbols, rg/fd for literals, ast-grep for syntax, build tools for proof.'"
+          }
+        ]
+      }
+    ]
+  }
+}
+
