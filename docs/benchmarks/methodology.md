@@ -30,3 +30,6 @@ It is read-only and does not run build, test, or simulator commands.
 The repository includes a small public fixture under
 `benchmarks/swift-ios-router/fixtures/sample` so CI can run the example
 manifest without depending on a private codebase.
+
+The example `rg` cases use `--no-config --no-ignore` so the public fixture run
+does not depend on a developer's global ripgrep configuration or ignore files.

@@ -544,6 +544,12 @@ def run(args: argparse.Namespace, cases: list[dict[str, str]], repos: dict[str, 
     print(f"Wrote {assertions_path}")
     print(f"Wrote {environment_path}")
     print(f"Policy assertions: pass={pass_count}, warn={warn_count}, fail={fail_count}")
+    if fail_count:
+        print("Failed assertion details:")
+        details = json.loads(assertions_path.read_text())
+        for item in details["assertions"]:
+            if item["status"] == "fail":
+                print(f"- {item['check']}: {item['message']} {item['context']}")
     return 3 if args.enforce_assertions and fail_count else 0
 
 
