@@ -18,6 +18,15 @@ AI coding agents often start with broad search, read too many files, and infer r
 
 Route each task to the evidence layer that can actually prove it.
 
+![Before vs After: LSP-guided code navigation](docs/assets/lsp-guided-code-navigation.png)
+
+The image above summarizes the core workflow change: broad text search is no
+longer treated as semantic proof. The agent classifies the task, uses
+SourceKit-LSP or Serena for Swift symbol identity, uses grouped summaries for
+high-fanout symbols, keeps `rg` / `fd` for literal and resource discovery, uses
+`ast-grep` for syntax-shaped patterns, and leaves build/runtime proof to the
+project's build or Xcode/plugin layer.
+
 | Task | First tool | Why |
 |---|---|---|
 | Known Swift symbol | SourceKit-LSP / Serena | Proves semantic identity, definitions, references, protocols, overloads, extension namespaces, and diagnostics |
