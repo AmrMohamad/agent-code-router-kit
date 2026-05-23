@@ -52,6 +52,16 @@ require_file() {
   fi
 }
 
+require_value() {
+  local option="$1"
+  local value="${2-}"
+  if [ -z "$value" ]; then
+    echo "$option requires a value." >&2
+    usage >&2
+    exit 2
+  fi
+}
+
 copy_file_safe() {
   local src="$1"
   local dst="$2"
@@ -99,8 +109,7 @@ install_project_policy() {
 
   log "Existing AGENTS.md found; it will not be overwritten: $dst"
   log "Writing review fragment instead: $fragment"
-  run_or_print mkdir -p "$fragment_dir"
-  run_or_print cp "$src" "$fragment"
+  copy_file_safe "$src" "$fragment" "Project AGENTS.md review fragment"
 }
 
 install_codex_skill() {
@@ -148,10 +157,18 @@ configure_build_server() {
   fi
 
   if [ -n "$PROJECT" ]; then
+    if [ ! -d "$PROJECT" ]; then
+      echo "Project not found from target repo: $PROJECT" >&2
+      exit 2
+    fi
     run_or_print "$ROOT/scripts/setup/create-build-server-json.sh" \
       --project "$PROJECT" \
       --scheme "$SCHEME"
   else
+    if [ ! -d "$WORKSPACE" ]; then
+      echo "Workspace not found from target repo: $WORKSPACE" >&2
+      exit 2
+    fi
     run_or_print "$ROOT/scripts/setup/create-build-server-json.sh" \
       --workspace "$WORKSPACE" \
       --scheme "$SCHEME"
@@ -161,26 +178,32 @@ configure_build_server() {
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --target-repo)
+      require_value "$1" "${2-}"
       TARGET_REPO="${2:-}"
       shift 2
       ;;
     --agent)
+      require_value "$1" "${2-}"
       AGENT="${2:-}"
       shift 2
       ;;
     --codex-home)
+      require_value "$1" "${2-}"
       CODEX_HOME="${2:-}"
       shift 2
       ;;
     --project)
+      require_value "$1" "${2-}"
       PROJECT="${2:-}"
       shift 2
       ;;
     --workspace)
+      require_value "$1" "${2-}"
       WORKSPACE="${2:-}"
       shift 2
       ;;
     --scheme)
+      require_value "$1" "${2-}"
       SCHEME="${2:-}"
       shift 2
       ;;
@@ -227,6 +250,8 @@ if [ ! -d "$TARGET_REPO" ]; then
   echo "Target repo not found: $TARGET_REPO" >&2
   exit 2
 fi
+
+TARGET_REPO="$(cd "$TARGET_REPO" && pwd)"
 
 if [ "$MODE" = "dry-run" ]; then
   log "Mode: dry-run. No files will be written."

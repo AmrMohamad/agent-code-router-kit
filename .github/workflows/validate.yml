@@ -11,7 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Python syntax
-        run: python3 -m py_compile scripts/benchmarks/benchmark_runner.py
+        run: |
+          python3 -m py_compile \
+            scripts/benchmarks/benchmark_runner.py \
+            scripts/benchmarks/sanitize_results.py \
+            benchmarks/swift-ios-router/benchmark_runner.py
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Shell syntax
         run: |
           bash -n scripts/setup/check-swift-ios-prereqs.sh
@@ -22,6 +28,37 @@ jobs:
           python3 scripts/benchmarks/benchmark_runner.py --help
           python3 scripts/benchmarks/benchmark_runner.py --validate \
             --cases benchmarks/swift-ios-router/cases.example.tsv
+          python3 scripts/benchmarks/benchmark_runner.py --run \
+            --cases benchmarks/swift-ios-router/cases.example.tsv \
+            --repo sample=benchmarks/swift-ios-router/fixtures/sample \
+            --output /tmp/agent-code-router-kit-benchmark \
+            --repeats 1 \
+            --warmups 0 \
+            --timeout 10 \
+            --enforce-assertions
       - name: Symlink check
         run: |
           test -z "$(find . -type l -maxdepth 5 -print)"
+      - name: Public safety scan
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+          blocked = [term.strip() for term in os.environ.get("PUBLIC_SAFETY_BLOCKLIST", "").splitlines() if term.strip()]
+          blocked.extend(["/" + "Users" + "/", "/" + "home" + "/"])
+          failures = []
+          tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+          for file_name in tracked:
+              path_text = Path(file_name)
+              try:
+                  text = path_text.read_text(errors="ignore")
+              except Exception:
+                  continue
+              for term in blocked:
+                  if term in text:
+                      failures.append(f"{path_text}: {term}")
+          if failures:
+              print("\n".join(failures))
+              raise SystemExit(1)
+          PY

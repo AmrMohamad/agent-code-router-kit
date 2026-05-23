@@ -26,3 +26,9 @@ Before publishing results:
 
 The sample results in this repository are sanitized examples.
 
+## Optional Local Blocklist
+
+The validation workflow supports an optional newline-separated
+`PUBLIC_SAFETY_BLOCKLIST` environment variable. Use it in private forks or local
+CI to scan tracked files for organization-specific names, local paths, or other
+terms that must never appear in public artifacts.

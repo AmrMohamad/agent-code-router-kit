@@ -35,6 +35,7 @@ cd agent-code-router-kit
 bash scripts/setup/check-swift-ios-prereqs.sh
 python3 scripts/benchmarks/benchmark_runner.py --validate \
   --cases benchmarks/swift-ios-router/cases.example.tsv
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 For an Xcode project, create a machine-local `buildServer.json`:

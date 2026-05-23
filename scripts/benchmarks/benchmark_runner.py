@@ -31,6 +31,11 @@ REQUIRED_COLUMNS = [
 
 VALID_TOOLS = {"rg", "fd", "ast-grep"}
 VALID_METRIC_MODES = {"path_lines", "rg_lines", "rg_count", "rg_json", "ast_grep"}
+DISALLOWED_TOOL_ARGS = {
+    "fd": {"-x", "--exec", "-X", "--exec-batch"},
+    "rg": {"--pre"},
+    "ast-grep": {"-r", "--rewrite", "--update-all", "--interactive"},
+}
 
 RG_PATH_RE = re.compile(r"^(?P<path>.*?):\d+(?::\d+)?:")
 AST_GREP_PATH_RE = re.compile(r"^(?P<path>.*?):\d+:")
@@ -46,6 +51,19 @@ def stamp() -> str:
 
 def split_command(command: str) -> list[str]:
     return shlex.split(command)
+
+
+def validate_safe_argv(argv: list[str], line: int) -> list[str]:
+    if not argv:
+        return []
+    tool = argv[0]
+    disallowed = DISALLOWED_TOOL_ARGS.get(tool, set())
+    errors = []
+    for arg in argv[1:]:
+        flag = arg.split("=", 1)[0]
+        if flag in disallowed:
+            errors.append(f"line {line}: {tool} argument {flag!r} is not allowed in read-only benchmark manifests")
+    return errors
 
 
 def load_cases(path: Path) -> list[dict[str, str]]:
@@ -106,6 +124,7 @@ def validate_cases(cases: list[dict[str, str]], repos: dict[str, Path], require_
             argv = []
         if argv and argv[0] != row.get("tool"):
             errors.append(f"line {i}: command must start with declared tool")
+        errors.extend(validate_safe_argv(argv, i))
         key = (row.get("repo", ""), row.get("case_id", ""), row.get("tool", ""), row.get("command_label", ""))
         if key in seen:
             errors.append(f"line {i}: duplicate case key {key}")
@@ -568,4 +587,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

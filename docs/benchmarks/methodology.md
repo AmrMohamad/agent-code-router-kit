@@ -16,6 +16,8 @@ The LSP side is represented by a runbook and semantic evidence contract because 
 
 - reads `cases.example.tsv`;
 - executes commands with `shell=False`;
+- rejects known execution or mutation flags such as `fd --exec`, `rg --pre`,
+  and `ast-grep --rewrite`;
 - supports CLI/env repo paths;
 - applies per-case timeouts;
 - supports warmups and measured repeats;
@@ -25,3 +27,6 @@ The LSP side is represented by a runbook and semantic evidence contract because 
 
 It is read-only and does not run build, test, or simulator commands.
 
+The repository includes a small public fixture under
+`benchmarks/swift-ios-router/fixtures/sample` so CI can run the example
+manifest without depending on a private codebase.

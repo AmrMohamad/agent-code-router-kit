@@ -16,17 +16,30 @@ It does not use sudo and does not run build or test.
 USAGE
 }
 
+require_value() {
+  local option="$1"
+  local value="${2-}"
+  if [ -z "$value" ]; then
+    echo "$option requires a value." >&2
+    usage >&2
+    exit 2
+  fi
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --project)
+      require_value "$1" "${2-}"
       project="${2:-}"
       shift 2
       ;;
     --workspace)
+      require_value "$1" "${2-}"
       workspace="${2:-}"
       shift 2
       ;;
     --scheme)
+      require_value "$1" "${2-}"
       scheme="${2:-}"
       shift 2
       ;;
@@ -81,4 +94,3 @@ fi
 
 echo "Done. Consider excluding buildServer.json locally:"
 echo "  printf '\\nbuildServer.json\\n.compile/\\n' >> .git/info/exclude"
-

@@ -11,6 +11,19 @@ python3 scripts/benchmarks/benchmark_runner.py --validate \
   --cases benchmarks/swift-ios-router/cases.example.tsv
 ```
 
+## Run The Public Fixture
+
+```bash
+python3 scripts/benchmarks/benchmark_runner.py --run \
+  --cases benchmarks/swift-ios-router/cases.example.tsv \
+  --repo sample=benchmarks/swift-ios-router/fixtures/sample \
+  --output /tmp/agent-code-router-kit-benchmark \
+  --repeats 1 \
+  --warmups 0 \
+  --timeout 10 \
+  --enforce-assertions
+```
+
 ## Run On Your Repo
 
 ```bash
@@ -32,4 +45,3 @@ python3 scripts/benchmarks/benchmark_runner.py --validate --run \
 - High-fanout raw and JSON cases are benchmark-only; do not use them as live agent behavior.
 
 The sample results are sanitized. Do not publish raw output from a private repository without review.
-
