@@ -495,6 +495,14 @@ def write_assertions(path: Path, rows: list[dict[str, Any]], large_output_bytes:
     return counts["pass"], counts["warn"], counts["fail"]
 
 
+def short_text(path_text: str, limit: int = 500) -> str:
+    text = Path(path_text).read_text(errors="replace").strip()
+    text = text.replace("\n", "\\n")
+    if len(text) > limit:
+        return text[:limit] + "..."
+    return text
+
+
 def run(args: argparse.Namespace, cases: list[dict[str, str]], repos: dict[str, Path]) -> int:
     output_root = Path(args.output).expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -547,9 +555,26 @@ def run(args: argparse.Namespace, cases: list[dict[str, str]], repos: dict[str, 
     if fail_count:
         print("Failed assertion details:")
         details = json.loads(assertions_path.read_text())
+        rows_by_context = {
+            (row["repo"], row["case_id"], row["command_label"], row["pass_index"]): row
+            for row in rows
+        }
         for item in details["assertions"]:
             if item["status"] == "fail":
                 print(f"- {item['check']}: {item['message']} {item['context']}")
+                context = item["context"]
+                row = rows_by_context.get(
+                    (
+                        context["repo"],
+                        context["case_id"],
+                        context["command_label"],
+                        context["pass_index"],
+                    )
+                )
+                if row:
+                    print(f"  command: {row['command']}")
+                    print(f"  stdout: {short_text(row['stdout_path'])}")
+                    print(f"  stderr: {short_text(row['stderr_path'])}")
     return 3 if args.enforce_assertions and fail_count else 0
 
 

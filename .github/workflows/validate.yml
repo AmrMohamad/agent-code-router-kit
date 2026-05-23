@@ -31,6 +31,12 @@ jobs:
           command -v rg
           command -v fd
           command -v ast-grep
+      - name: Benchmark fixture smoke
+        run: |
+          pwd
+          find benchmarks/swift-ios-router/fixtures/sample -type f | sort
+          rg --version
+          rg --no-config --no-ignore -n --glob '*.swift' 'ExampleRouter' benchmarks/swift-ios-router/fixtures/sample
       - name: Benchmark manifest validation
         run: |
           python3 scripts/benchmarks/benchmark_runner.py --help
