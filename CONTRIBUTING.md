@@ -23,6 +23,9 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 bash -n scripts/setup/check-swift-ios-prereqs.sh
 bash -n scripts/setup/create-build-server-json.sh
 bash -n scripts/setup/agent-self-install.sh
+command -v rg
+command -v fd
+command -v ast-grep
 python3 scripts/benchmarks/benchmark_runner.py --help
 python3 scripts/benchmarks/benchmark_runner.py --validate \
   --cases benchmarks/swift-ios-router/cases.example.tsv
