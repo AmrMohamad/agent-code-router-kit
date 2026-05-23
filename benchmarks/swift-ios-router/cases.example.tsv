@@ -1,13 +1,13 @@
 case_id	repo	category	tool	command_label	metric_mode	command	expected_first_tool	purpose
 inventory_swift_files	sample	discovery	fd	fd_swift_files	path_lines	fd -e swift .	fd	Measure Swift file scale without reading bodies.
-known_symbol_text_baseline	sample	known_swift_symbol	rg	files_ExampleRouter	path_lines	rg --no-config --no-ignore --files-with-matches --glob "*.swift" "ExampleRouter"	SourceKit-LSP / Serena	Text recall baseline for a known Swift symbol.
-known_symbol_count_baseline	sample	known_swift_symbol	rg	count_ExampleRouter	rg_count	rg --no-config --no-ignore --count --glob "*.swift" "ExampleRouter"	SourceKit-LSP / Serena	Count baseline for a known Swift symbol.
-high_fanout_symbol_raw	sample	known_swift_symbol	rg	raw_Resolver	rg_lines	rg --no-config --no-ignore -n --glob "*.swift" "Resolver"	SourceKit-LSP summary first	Raw high-fanout baseline; benchmark only.
-high_fanout_symbol_files	sample	known_swift_symbol	rg	files_Resolver	path_lines	rg --no-config --no-ignore --files-with-matches --glob "*.swift" "Resolver"	SourceKit-LSP summary first	Disciplined high-fanout file summary.
-high_fanout_symbol_count	sample	known_swift_symbol	rg	count_Resolver	rg_count	rg --no-config --no-ignore --count --glob "*.swift" "Resolver"	SourceKit-LSP summary first	Disciplined high-fanout count summary.
-high_fanout_symbol_json	sample	known_swift_symbol	rg	json_Resolver	rg_json	rg --no-config --no-ignore --json --glob "*.swift" "Resolver"	SourceKit-LSP summary first	JSON high-fanout baseline; benchmark only.
-literal_route_key	sample	literal_key	rg	files_route_key	path_lines	rg --no-config --no-ignore --files-with-matches --glob "*.swift" "exampleRouteKey"	rg / fd	Literal route key discovery.
+known_symbol_text_baseline	sample	known_swift_symbol	rg	files_ExampleRouter	path_lines	rg --no-config --no-ignore --files-with-matches --glob "*.swift" "ExampleRouter" .	SourceKit-LSP / Serena	Text recall baseline for a known Swift symbol.
+known_symbol_count_baseline	sample	known_swift_symbol	rg	count_ExampleRouter	rg_count	rg --no-config --no-ignore --count --glob "*.swift" "ExampleRouter" .	SourceKit-LSP / Serena	Count baseline for a known Swift symbol.
+high_fanout_symbol_raw	sample	known_swift_symbol	rg	raw_Resolver	rg_lines	rg --no-config --no-ignore -n --glob "*.swift" "Resolver" .	SourceKit-LSP summary first	Raw high-fanout baseline; benchmark only.
+high_fanout_symbol_files	sample	known_swift_symbol	rg	files_Resolver	path_lines	rg --no-config --no-ignore --files-with-matches --glob "*.swift" "Resolver" .	SourceKit-LSP summary first	Disciplined high-fanout file summary.
+high_fanout_symbol_count	sample	known_swift_symbol	rg	count_Resolver	rg_count	rg --no-config --no-ignore --count --glob "*.swift" "Resolver" .	SourceKit-LSP summary first	Disciplined high-fanout count summary.
+high_fanout_symbol_json	sample	known_swift_symbol	rg	json_Resolver	rg_json	rg --no-config --no-ignore --json --glob "*.swift" "Resolver" .	SourceKit-LSP summary first	JSON high-fanout baseline; benchmark only.
+literal_route_key	sample	literal_key	rg	files_route_key	path_lines	rg --no-config --no-ignore --files-with-matches --glob "*.swift" "exampleRouteKey" .	rg / fd	Literal route key discovery.
 structural_call_shape	sample	structural_swift_pattern	ast-grep	call_shape	ast_grep	ast-grep --lang swift -p 'Example.resolve($A)' .	ast-grep	Syntax-shaped call search.
 resource_files	sample	resource_surface	fd	interface_resources	path_lines	fd -e xib -e storyboard -e strings .	fd / rg	Resource and interface file inventory.
 generated_surface	sample	generated_surface	fd	generated_files	path_lines	fd -i "graphql|schema|generated|gql|apollo" .	fd / rg	Generated/schema file inventory.
-dynamic_surface	sample	dynamic_surface	rg	objc_dynamic_scan	rg_lines	rg --no-config --no-ignore -n --glob "*.swift" "@objc|#selector|objc"	rg / fd	Dynamic bridge surface scan.
+dynamic_surface	sample	dynamic_surface	rg	objc_dynamic_scan	rg_lines	rg --no-config --no-ignore -n --glob "*.swift" "@objc|#selector|objc" .	rg / fd	Dynamic bridge surface scan.

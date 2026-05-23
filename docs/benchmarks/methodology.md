@@ -33,3 +33,5 @@ manifest without depending on a private codebase.
 
 The example `rg` cases use `--no-config --no-ignore` so the public fixture run
 does not depend on a developer's global ripgrep configuration or ignore files.
+They also pass `.` explicitly so non-interactive CI runs search the fixture
+directory rather than empty standard input.
