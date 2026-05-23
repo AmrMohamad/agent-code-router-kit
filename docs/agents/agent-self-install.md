@@ -55,7 +55,9 @@ From the toolkit repo:
 This checks:
 
 - toolkit files exist;
-- local commands are available;
+- the minimum same-results dependency gate is satisfied:
+  SourceKit-LSP from Xcode, `xcode-build-server`, Serena or equivalent LSP
+  access, and `rg` / `fd` / `ast-grep`;
 - benchmark manifest is valid;
 - target repo exists;
 - project policy destination status;
@@ -64,6 +66,10 @@ This checks:
 
 It does not copy files, create `buildServer.json`, edit git excludes, install
 packages, invoke `sudo`, run Xcode builds, run tests, or start simulators.
+
+If the dependency gate fails, stop there. The policy can still be reviewed, but
+the agent should not claim the same Swift/iOS LSP-guided behavior until the
+missing layer is installed and the gate passes.
 
 ## Apply The Safe Install
 

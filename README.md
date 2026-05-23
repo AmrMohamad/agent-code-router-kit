@@ -39,6 +39,20 @@ project's build or Xcode/plugin layer.
 
 ## Quick Start
 
+Clone the toolkit, then make sure the minimum same-results dependency gate
+passes. That gate verifies the portable baseline needed before another agent
+should expect the same routing behavior:
+
+```text
+1. Xcode with SourceKit-LSP
+2. xcode-build-server
+3. Serena or an equivalent agent-facing LSP access layer
+4. rg / fd / ast-grep
+```
+
+If any of those are missing, the agent can still read the policy, but it should
+not claim the same Swift/iOS LSP-guided behavior or benchmark conclusions yet.
+
 ```bash
 git clone <your-fork-or-copy>
 cd agent-code-router-kit

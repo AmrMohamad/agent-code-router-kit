@@ -20,6 +20,22 @@ brew install xcode-build-server fd ripgrep ast-grep
 
 If you use Serena as the agent-facing semantic layer, install it using its current official instructions.
 
+Before expecting the benchmark-backed routing behavior, run the dependency
+gate from this toolkit:
+
+```bash
+bash scripts/setup/check-swift-ios-prereqs.sh
+```
+
+The gate must find:
+
+```text
+1. Xcode with SourceKit-LSP
+2. xcode-build-server
+3. Serena or an equivalent agent-facing LSP access layer
+4. rg / fd / ast-grep
+```
+
 ## Configure Xcode Project Context
 
 For a project:
@@ -58,4 +74,3 @@ If LSP results look stale:
 2. Check scheme and workspace/project selection.
 3. Build or index through your Xcode/plugin/build layer.
 4. Retry the targeted LSP query.
-
