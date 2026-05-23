@@ -18,7 +18,9 @@ AI coding agents often start with broad search, read too many files, and infer r
 
 Route each task to the evidence layer that can actually prove it.
 
-![Before vs After: LSP-guided code navigation](docs/assets/lsp-guided-code-navigation.png)
+<p align="center">
+  <img src="docs/assets/lsp-guided-code-navigation.png" alt="Before vs After: LSP-guided code navigation" width="100%">
+</p>
 
 The image above summarizes the core workflow change: broad text search is no
 longer treated as semantic proof. The agent classifies the task, uses
