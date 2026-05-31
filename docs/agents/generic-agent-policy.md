@@ -6,21 +6,24 @@ This policy works for any AI coding agent.
 
 Before choosing a tool, classify the task:
 
-1. Known Swift symbol.
-2. High-fanout Swift symbol.
+1. Known Swift or Kotlin/Java symbol.
+2. High-fanout Swift or Kotlin/Java symbol.
 3. Literal string, key, log, path, resource, or generated surface.
-4. Syntax-shaped pattern or migration.
-5. Build, test, simulator, or runtime proof.
+4. GraphQL operation/schema/generated surface.
+5. Syntax-shaped pattern or migration.
+6. Build, test, simulator/emulator, or runtime proof.
 
 ## Routing
 
 | Classification | Route |
 |---|---|
 | Known Swift symbol | SourceKit-LSP / Serena first |
-| High-fanout Swift symbol | LSP grouped counts first |
+| Known Kotlin/Java symbol | Serena / Kotlin or Java LSP first |
+| High-fanout Swift/Kotlin symbol | LSP grouped counts first |
 | Literal or resource | `rg` / `fd` first |
-| Structural Swift pattern | `ast-grep` first |
-| Build/runtime proof | Xcode/plugin/build system first |
+| GraphQL operation/schema | GraphQL tools + `rg` / `fd` first |
+| Structural Swift/Kotlin pattern | `ast-grep` first |
+| Build/runtime proof | Xcode/Android Studio/Gradle/plugin/build system first |
 
 ## Required Guardrails
 
@@ -29,4 +32,3 @@ Before choosing a tool, classify the task:
 - Never dump high-fanout references into context.
 - Use focused file ranges after discovery.
 - State what was verified and what was not verified.
-

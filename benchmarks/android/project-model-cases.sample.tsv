@@ -1,0 +1,3 @@
+case_id	repo	expected_status	purpose
+project_model_sample_b2b	sample_b2b_android	missing-local-properties	Verify Sample B2B Gradle project-model readiness before trusting Android semantic lookup.
+project_model_sample_retail	sample_retail_android	missing-local-properties	Verify Sample Retail Gradle project-model readiness before trusting Android semantic lookup.

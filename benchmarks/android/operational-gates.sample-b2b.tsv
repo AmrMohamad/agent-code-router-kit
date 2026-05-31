@@ -1,0 +1,15 @@
+gate_id	category	tool	expected_status	required	purpose
+process_state	process	serena_process_scan	warn	yes	Detect duplicate Serena MCP/Kotlin LSP sessions before trusting semantic failures.
+android_studio_check	studio	android studio check	pass	yes	Verify Android Studio CLI sees the open Sample B2B project as READY.
+android_studio_analyze	studio	android studio analyze-file	pass	yes	Verify IDE-backed file diagnostics on a real Sample B2B Kotlin file.
+android_studio_declaration	studio	android studio find-declaration	pass	yes	Verify IDE-backed declaration lookup for SampleFeatureViewModel.
+android_studio_usages	studio	android studio find-usages	pass	yes	Verify IDE-backed usage lookup for SampleFeatureViewModel.
+serena_find_symbol	semantic	serena project server	pass	yes	Verify Serena/Kotlin semantic symbol lookup for SampleFeatureViewModel.
+serena_diagnostics	semantic	serena project server	pass	yes	Verify Serena/Kotlin diagnostics for the same source file.
+serena_references	semantic	serena project server	probe	no	Record whether Serena references agree with Android Studio usages.
+project_model	gradle	gradle help	pass	yes	Verify Gradle 8.13 project model can configure locally.
+generated_sources	generated	generated source probe	pass	yes	Verify Apollo/KSP/Room/BuildConfig generated-source readiness is discoverable.
+high_fanout_guard	summary	high fanout summary	pass	yes	Verify high-fanout Android symbols are summarized without raw dumps.
+assemble_staging_debug	build	gradle assembleStagingDebug	pass	yes	Build the Sample B2B staging debug APK without claiming runtime correctness.
+install_staging_debug	runtime	gradle installStagingDebug	pass	yes	Install the staging debug APK on the selected emulator/device.
+launch_smoke	runtime	adb monkey	passthrough	yes	Launch the installed package and capture process/logcat sanity without business-flow proof.

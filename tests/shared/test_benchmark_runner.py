@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
-RUNNER_PATH = ROOT / "scripts" / "benchmarks" / "benchmark_runner.py"
+ROOT = Path(__file__).resolve().parents[2]
+RUNNER_PATH = ROOT / "scripts" / "benchmarks" / "shared" / "benchmark_runner.py"
 spec = importlib.util.spec_from_file_location("benchmark_runner", RUNNER_PATH)
 assert spec and spec.loader
 benchmark_runner = importlib.util.module_from_spec(spec)
@@ -16,7 +16,12 @@ spec.loader.exec_module(benchmark_runner)
 
 class BenchmarkRunnerTests(unittest.TestCase):
     def test_sample_manifest_validates(self) -> None:
-        cases = benchmark_runner.load_cases(ROOT / "benchmarks" / "swift-ios-router" / "cases.example.tsv")
+        cases = benchmark_runner.load_cases(ROOT / "benchmarks" / "ios" / "cases.example.tsv")
+        errors = benchmark_runner.validate_cases(cases, {}, require_repos=False)
+        self.assertEqual(errors, [])
+
+    def test_android_manifest_validates_policy_categories(self) -> None:
+        cases = benchmark_runner.load_cases(ROOT / "benchmarks" / "android" / "cases.sample.tsv")
         errors = benchmark_runner.validate_cases(cases, {}, require_repos=False)
         self.assertEqual(errors, [])
 

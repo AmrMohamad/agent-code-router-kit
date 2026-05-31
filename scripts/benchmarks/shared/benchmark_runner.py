@@ -147,11 +147,19 @@ def validate_cases(cases: list[dict[str, str]], repos: dict[str, Path], require_
 def expected_policy_for(row: dict[str, str]) -> str:
     category = row["category"]
     case_id = row["case_id"]
-    if category == "known_swift_symbol":
+    if category in {"known_swift_symbol", "known_kotlin_symbol", "known_java_symbol"}:
         return "lsp_summary" if "high_fanout" in case_id else "lsp"
-    if category == "structural_swift_pattern":
+    if category in {"structural_swift_pattern", "structural_kotlin_pattern", "structural_java_pattern"}:
         return "ast-grep"
-    if category in {"literal_key", "literal_surface", "resource_surface", "generated_surface", "dynamic_surface"}:
+    if category in {
+        "literal_key",
+        "literal_surface",
+        "resource_surface",
+        "generated_surface",
+        "dynamic_surface",
+        "graphql_surface",
+        "gradle_surface",
+    }:
         return "rg_fd"
     if category == "discovery":
         return "fd"

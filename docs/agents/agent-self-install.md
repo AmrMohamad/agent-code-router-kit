@@ -16,8 +16,11 @@ The system has four layers:
    `templates/AGENTS.md`
 2. Agent skill or reusable instruction:
    `templates/codebase-tool-router/SKILL.md`
+   and, for Android-specific work, `templates/android-codebase-tool-router/SKILL.md`
 3. Swift/iOS project context:
    `buildServer.json` created by `xcode-build-server`
+   or Android/Kotlin project context:
+   `.serena/project.yml` with `kotlin` and `json` languages
 4. Verification discipline:
    benchmark validation plus explicit proof boundaries
 
@@ -41,6 +44,30 @@ Build/test/runtime proof:
   Xcode/plugin/build system only.
 ```
 
+For Android:
+
+```text
+Known Kotlin/Java symbol:
+  Serena / Kotlin or Java LSP first.
+
+High-fanout Kotlin/Java symbol:
+  LSP grouped counts first.
+  Never dump full references.
+
+Literal/resource/generated/XML lookup:
+  rg / fd first.
+
+GraphQL:
+  GraphQL tools + rg/fd first.
+  Use Kotlin LSP only for generated/source symbols after discovery.
+
+Structural Kotlin pattern:
+  ast-grep first.
+
+Build/test/runtime proof:
+  Gradle, Android Studio, emulator/device, or CI only.
+```
+
 ## Non-Mutating First Pass
 
 From the toolkit repo:
@@ -49,6 +76,17 @@ From the toolkit repo:
 ./scripts/setup/agent-self-install.sh \
   --target-repo /path/to/ios-repo \
   --agent codex \
+  --profile swift-ios \
+  --dry-run
+```
+
+For Android/Kotlin:
+
+```bash
+./scripts/setup/agent-self-install.sh \
+  --target-repo /path/to/android-repo \
+  --agent codex \
+  --profile android \
   --dry-run
 ```
 
@@ -67,6 +105,13 @@ This checks:
 It does not copy files, create `buildServer.json`, edit git excludes, install
 packages, invoke `sudo`, run Xcode builds, run tests, or start simulators.
 
+For Android dependency checks, run:
+
+```bash
+./scripts/setup/check-android-prereqs.sh \
+  --target-repo /path/to/android-repo
+```
+
 If the dependency gate fails, stop there. The policy can still be reviewed, but
 the agent should not claim the same Swift/iOS LSP-guided behavior until the
 missing layer is installed and the gate passes.
@@ -79,6 +124,17 @@ Use `--apply` only after the dry run is clean.
 ./scripts/setup/agent-self-install.sh \
   --target-repo /path/to/ios-repo \
   --agent codex \
+  --profile swift-ios \
+  --apply
+```
+
+For Android/Kotlin:
+
+```bash
+./scripts/setup/agent-self-install.sh \
+  --target-repo /path/to/android-repo \
+  --agent codex \
+  --profile android \
   --apply
 ```
 
@@ -134,6 +190,56 @@ xcode-build-server config -project YourApp.xcodeproj -scheme "Your Scheme"
 It does not run `xcodebuild`, does not build, and does not test. After this
 step, build once through the user's normal Xcode/plugin/CI proof layer when
 runtime or compile proof is actually needed.
+
+## Optional Android Serena Project
+
+For an Android/Kotlin repo, create Serena project metadata from the repo root:
+
+```bash
+cd /path/to/android-repo
+
+serena project create \
+  --language kotlin \
+  --language json
+```
+
+If Java source is present:
+
+```bash
+serena project create \
+  --language kotlin \
+  --language java \
+  --language json
+```
+
+Then verify:
+
+```bash
+serena project health-check .
+```
+
+Or use the toolkit wrapper:
+
+```bash
+./scripts/setup/create-android-serena-project.sh \
+  --target-repo /path/to/android-repo
+```
+
+For mixed Java/Kotlin:
+
+```bash
+./scripts/setup/create-android-serena-project.sh \
+  --target-repo /path/to/android-repo \
+  --include-java
+```
+
+This does not prove the app builds or runs. Use Gradle, Android Studio,
+emulator/device, or CI for that proof.
+
+If the generic health check targets `build.gradle.kts` and reports no symbols,
+perform a source-symbol smoke test on a real `.kt` file before deciding that the
+Kotlin LSP setup failed. Run `serena project index` only after basic source
+semantic navigation is proven.
 
 ## Agent Rules During Install
 

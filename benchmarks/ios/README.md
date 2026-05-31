@@ -7,16 +7,16 @@ It is read-only. It does not run build, test, simulator, or runtime proof.
 ## Validate The Manifest
 
 ```bash
-python3 scripts/benchmarks/benchmark_runner.py --validate \
-  --cases benchmarks/swift-ios-router/cases.example.tsv
+python3 scripts/benchmarks/shared/benchmark_runner.py --validate \
+  --cases benchmarks/ios/cases.example.tsv
 ```
 
 ## Run The Public Fixture
 
 ```bash
-python3 scripts/benchmarks/benchmark_runner.py --run \
-  --cases benchmarks/swift-ios-router/cases.example.tsv \
-  --repo sample=benchmarks/swift-ios-router/fixtures/sample \
+python3 scripts/benchmarks/shared/benchmark_runner.py --run \
+  --cases benchmarks/ios/cases.example.tsv \
+  --repo sample=benchmarks/ios/fixtures/sample \
   --output /tmp/agent-code-router-kit-benchmark \
   --repeats 1 \
   --warmups 0 \
@@ -27,10 +27,10 @@ python3 scripts/benchmarks/benchmark_runner.py --run \
 ## Run On Your Repo
 
 ```bash
-python3 scripts/benchmarks/benchmark_runner.py --validate --run \
-  --cases benchmarks/swift-ios-router/cases.example.tsv \
+python3 scripts/benchmarks/shared/benchmark_runner.py --validate --run \
+  --cases benchmarks/ios/cases.example.tsv \
   --repo sample=/path/to/your/swift-ios-repo \
-  --output results/swift-ios-router \
+  --output results/ios \
   --warmups 1 \
   --repeats 3 \
   --timeout 30 \

@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MODE="dry-run"
 TARGET_REPO=""
 AGENT="generic"
+PROFILE="swift-ios"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 PROJECT=""
 WORKSPACE=""
@@ -15,8 +16,8 @@ OVERWRITE=0
 usage() {
   cat <<'USAGE'
 Usage:
-  agent-self-install.sh --target-repo /path/to/repo [--agent generic|codex] [--dry-run]
-  agent-self-install.sh --target-repo /path/to/repo --agent codex --apply
+  agent-self-install.sh --target-repo /path/to/repo [--agent generic|codex] [--profile swift-ios|android|all] [--dry-run]
+  agent-self-install.sh --target-repo /path/to/repo --agent codex --profile android --apply
 
 Optional buildServer.json configuration:
   agent-self-install.sh --target-repo /path/to/repo --workspace App.xcworkspace --scheme "App" --configure-build-server --apply
@@ -116,23 +117,39 @@ install_codex_skill() {
   local src="$ROOT/templates/codebase-tool-router/SKILL.md"
   local dst="$CODEX_HOME/skills/codebase-tool-router/SKILL.md"
   copy_file_safe "$src" "$dst" "Codex codebase-tool-router skill"
+
+  if [ "$PROFILE" = "android" ] || [ "$PROFILE" = "all" ]; then
+    src="$ROOT/templates/android-codebase-tool-router/SKILL.md"
+    dst="$CODEX_HOME/skills/android-codebase-tool-router/SKILL.md"
+    copy_file_safe "$src" "$dst" "Codex android-codebase-tool-router skill"
+  fi
 }
 
 validate_toolkit() {
   require_file "$ROOT/templates/AGENTS.md"
   require_file "$ROOT/templates/codebase-tool-router/SKILL.md"
+  require_file "$ROOT/templates/android-codebase-tool-router/SKILL.md"
   require_file "$ROOT/scripts/setup/check-swift-ios-prereqs.sh"
+  require_file "$ROOT/scripts/setup/check-android-prereqs.sh"
   require_file "$ROOT/scripts/setup/create-build-server-json.sh"
-  require_file "$ROOT/scripts/benchmarks/benchmark_runner.py"
-  require_file "$ROOT/benchmarks/swift-ios-router/cases.example.tsv"
+  require_file "$ROOT/scripts/setup/create-android-serena-project.sh"
+  require_file "$ROOT/scripts/benchmarks/shared/benchmark_runner.py"
+  require_file "$ROOT/benchmarks/ios/cases.example.tsv"
 
-  log "Checking local prerequisites."
-  bash "$ROOT/scripts/setup/check-swift-ios-prereqs.sh"
+  if [ "$PROFILE" = "swift-ios" ] || [ "$PROFILE" = "all" ]; then
+    log "Checking Swift/iOS prerequisites."
+    bash "$ROOT/scripts/setup/check-swift-ios-prereqs.sh"
 
-  log "Validating benchmark manifest."
-  python3 "$ROOT/scripts/benchmarks/benchmark_runner.py" \
-    --validate \
-    --cases "$ROOT/benchmarks/swift-ios-router/cases.example.tsv"
+    log "Validating Swift/iOS benchmark manifest."
+    python3 "$ROOT/scripts/benchmarks/shared/benchmark_runner.py" \
+      --validate \
+      --cases "$ROOT/benchmarks/ios/cases.example.tsv"
+  fi
+
+  if [ "$PROFILE" = "android" ] || [ "$PROFILE" = "all" ]; then
+    log "Checking Android/Kotlin prerequisites."
+    bash "$ROOT/scripts/setup/check-android-prereqs.sh" --target-repo "$TARGET_REPO"
+  fi
 }
 
 configure_build_server() {
@@ -185,6 +202,11 @@ while [ "$#" -gt 0 ]; do
     --agent)
       require_value "$1" "${2-}"
       AGENT="${2:-}"
+      shift 2
+      ;;
+    --profile)
+      require_value "$1" "${2-}"
+      PROFILE="${2:-}"
       shift 2
       ;;
     --codex-home)
@@ -243,6 +265,11 @@ fi
 
 if [ "$AGENT" != "generic" ] && [ "$AGENT" != "codex" ]; then
   echo "--agent must be generic or codex." >&2
+  exit 2
+fi
+
+if [ "$PROFILE" != "swift-ios" ] && [ "$PROFILE" != "android" ] && [ "$PROFILE" != "all" ]; then
+  echo "--profile must be swift-ios, android, or all." >&2
   exit 2
 fi
 

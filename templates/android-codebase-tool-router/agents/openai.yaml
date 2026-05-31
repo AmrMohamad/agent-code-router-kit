@@ -1,0 +1,6 @@
+interface:
+  display_name: "Android Codebase Tool Router"
+  short_description: "Route Android/Kotlin codebase tasks"
+  default_prompt: "Use $android-codebase-tool-router to classify this Android/Kotlin task before searching, editing, or verifying."
+policy:
+  allow_implicit_invocation: true

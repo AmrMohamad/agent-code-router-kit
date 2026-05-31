@@ -1,0 +1,4 @@
+case_id	repo	source_file	expected_status	min_symbol_count	purpose
+serena_sample_retail_main_activity	sample_retail_android	android/app/src/main/java/com/app/features/main/MainActivity.kt	pass	1	Probe Serena/Kotlin LSP source-symbol extraction on a real Android activity.
+serena_sample_retail_base_viewmodel	sample_retail_android	core/base/src/commonMain/kotlin/com/core/base/mvi/BaseViewModel.kt	pass	1	Probe Serena/Kotlin LSP source-symbol extraction on a KMP base ViewModel.
+serena_sample_b2b_notifications_fragment	sample_b2b_android	feature-notifications/src/main/java/com/example/sample/features/notifications/SampleFeatureFragment.kt	pass	1	Probe Serena/Kotlin LSP source-symbol extraction on a Sample B2B fragment.

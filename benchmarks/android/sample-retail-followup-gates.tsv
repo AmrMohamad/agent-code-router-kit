@@ -1,0 +1,9 @@
+gate_id	layer	expected_result	purpose
+project_model	gradle	pass	Sample Retail Gradle wrapper help must pass with a timeout large enough for Gradle 9.1 first-use configuration.
+generated_sources	generated	pass	Sample Retail generated-source discovery must identify generated dirs and Apollo/KSP/Room/BuildConfig surfaces.
+high_fanout_guard	search	pass-with-warnings	Sample Retail broad symbols must stay summary-only with budget warnings but no raw dump failures.
+serena_symbol_lookup	semantic	pass	Sample Retail Serena ProjectServer find_symbol cases must pass for multiple Kotlin symbols.
+serena_references	semantic-boundary	warn-empty	Sample Retail Serena references currently return empty and must remain a named boundary.
+android_studio	ide	pass	Sample Retail Android Studio semantic matrix must pass declaration/usages cases through project name `sample_retail`.
+build_install_launch	runtime	pass	Sample Retail staging debug build/install/launch smoke must pass without claiming business-flow correctness.
+process_state	process-boundary	warn-stale-session-risk	Duplicate other-project Serena MCP processes remain a strict-mode blocker.
