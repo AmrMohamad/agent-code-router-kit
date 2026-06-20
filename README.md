@@ -18,16 +18,30 @@ AI coding agents often start with broad search, read too many files, and infer r
 
 Route each task to the evidence layer that can actually prove it.
 
-<p align="center">
-  <img src="docs/assets/lsp-guided-code-navigation.png" alt="Before vs After: LSP-guided code navigation" width="100%">
-</p>
+The routing model is not "always use LSP." It is a classification step that
+keeps each proof layer honest: semantic tools prove code identity, search tools
+discover literal surfaces, structural tools match syntax, and build/runtime
+tools prove the app actually compiles or runs.
 
-The image above summarizes the core workflow change: broad text search is no
-longer treated as semantic proof. The agent classifies the task, uses
-SourceKit-LSP or Serena for Swift symbol identity, uses grouped summaries for
-high-fanout symbols, keeps `rg` / `fd` for literal and resource discovery, uses
-`ast-grep` for syntax-shaped patterns, and leaves build/runtime proof to the
-project's build or Xcode/plugin layer.
+```mermaid
+flowchart LR
+    task["Incoming codebase task"] --> classify{"Classify intent"}
+    classify -->|Known symbol| semantic["Semantic navigation<br/>SourceKit-LSP / Serena"]
+    classify -->|High-fanout symbol| grouped["Grouped counts first<br/>then narrow"]
+    classify -->|Literal, resource, generated, dynamic| search["Discovery search<br/>rg / fd"]
+    classify -->|Syntax-shaped pattern| structural["Structural search<br/>ast-grep"]
+    classify -->|Build or runtime claim| runtime["Build/runtime proof<br/>Xcode, Gradle, CI, device"]
+
+    semantic --> proof["Label the proof layer"]
+    grouped --> proof
+    search --> proof
+    structural --> proof
+    runtime --> proof
+```
+
+The important boundary is that no layer silently substitutes for another. Text
+matches are not semantic references, LSP results are not build proof, and a
+successful launch smoke is not business-flow correctness.
 
 | Task | First tool | Why |
 |---|---|---|
