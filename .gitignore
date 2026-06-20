@@ -13,6 +13,11 @@ build/
 # Local task specs and private local benchmark outputs.
 GOAL.md
 results/
+!benchmarks/real-agent-routing/results/
+!benchmarks/real-agent-routing/results/.gitkeep
+benchmarks/real-agent-routing/results/*
+!benchmarks/real-agent-routing/results/.gitkeep
+benchmarks/real-agent-routing/tasks/android-realworld.local.tsv
 raw/
 buildServer.json
 .compile/

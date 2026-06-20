@@ -1,0 +1,22 @@
+agent_id: cursor-agent
+display_name: Cursor Agent
+command: agent
+fallback_commands:
+  - cursor-agent
+args:
+  - -p
+  - --model
+  - auto
+  - --output-format
+  - stream-json
+  - --mode
+  - ask
+  - --sandbox
+  - enabled
+  - --trust
+prompt_mode: argument
+telemetry_sources:
+  - transcript_proxy
+supports_live: true
+default_timeout_seconds: 900
+terminal_mode: pty

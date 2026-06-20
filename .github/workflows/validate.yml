@@ -13,10 +13,22 @@ jobs:
       - name: Python syntax
         run: |
           python3 -m py_compile \
+            scripts/agents/*.py \
+            scripts/bridges/*.py \
+            scripts/lib/*.py \
             scripts/benchmarks/shared/benchmark_runner.py \
             scripts/benchmarks/shared/sanitize_results.py \
             scripts/benchmarks/ios/benchmark_runner.py \
-            scripts/benchmarks/android/run_benchmark_suite.py
+            scripts/benchmarks/android/run_benchmark_suite.py \
+            scripts/benchmarks/run_real_agent_benchmark.py \
+            scripts/benchmarks/collect_agent_telemetry.py \
+            scripts/benchmarks/judge_agent_run.py \
+            scripts/benchmarks/judge_real_agent_run.py \
+            scripts/benchmarks/build_real_agent_report.py \
+            scripts/benchmarks/probe_live_agent_adapters.py \
+            scripts/benchmarks/doctor_live_agent_adapters.py \
+            scripts/benchmarks/audit_real_agent_benchmark_readiness.py \
+            scripts/benchmarks/rejudge_real_agent_benchmark.py
       - name: Unit tests
         run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Shell syntax
@@ -56,6 +68,17 @@ jobs:
             --warmups 0 \
             --timeout 10 \
             --enforce-assertions
+      - name: Real-agent benchmark dry-run
+        run: |
+          python3 scripts/benchmarks/run_real_agent_benchmark.py \
+            --dry-run \
+            --agent codex \
+            --repo "$PWD" \
+            --tasks benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv \
+            --arms A-search-only,D-full-router \
+            --task-limit 2 \
+            --repeats 1 \
+            --out /tmp/agent-code-router-kit-rarb
       - name: Symlink check
         run: |
           test -z "$(find . -type l -maxdepth 5 -print)"

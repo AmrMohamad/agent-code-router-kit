@@ -1,0 +1,11 @@
+profile_id: X-example
+display_name: Example route profile
+allowed_tools:
+  - rg
+  - fd
+blocked_tools: []
+required_first_tool: ""
+high_fanout_policy: summary_first
+max_raw_output_bytes: 12000
+instructions: |
+  Follow the route profile. Do not make runtime claims without proof.

@@ -1,0 +1,19 @@
+profile_id: B-search-summary
+display_name: Search with summary discipline
+allowed_tools:
+  - rg
+  - fd
+  - ast-grep
+  - grouped counts
+  - output budgets
+blocked_tools:
+  - Serena
+  - Kotlin LSP
+  - Android Studio semantic declaration/usages
+required_first_tool: grouped_search
+high_fanout_policy: summary_first
+max_raw_output_bytes: 12000
+instructions: |
+  Use rg/fd/ast-grep only. For high-fanout symbols, use files-with-matches,
+  counts, package/module grouping, or top-file summaries before reading details.
+  Do not use semantic tools or claim semantic reference proof.

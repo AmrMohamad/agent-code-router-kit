@@ -1,0 +1,17 @@
+agent_id: codex
+display_name: Codex CLI
+command: codex
+args:
+  - exec
+  - --sandbox
+  - read-only
+  - --ephemeral
+  - --json
+  - -
+prompt_mode: stdin
+telemetry_sources:
+  - codex_otel_if_enabled
+  - transcript_proxy
+supports_live: true
+default_timeout_seconds: 900
+terminal_mode: pty

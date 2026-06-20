@@ -1,0 +1,12 @@
+agent_id: example-agent
+display_name: Example Agent
+command: example-agent
+fallback_commands: []
+args: []
+env: {}
+prompt_mode: stdin
+telemetry_sources:
+  - transcript_proxy
+supports_live: false
+default_timeout_seconds: 900
+terminal_mode: pty  # pty, tmux, or subprocess

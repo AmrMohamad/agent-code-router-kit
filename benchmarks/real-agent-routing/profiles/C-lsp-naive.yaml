@@ -1,0 +1,16 @@
+profile_id: C-lsp-naive
+display_name: LSP-enabled naive
+allowed_tools:
+  - Serena
+  - Kotlin LSP
+  - Android Studio semantic declaration/usages
+  - rg
+  - fd
+blocked_tools: []
+required_first_tool: semantic_for_known_symbol
+high_fanout_policy: weak
+max_raw_output_bytes: 50000
+instructions: |
+  Semantic tools are available for known symbols. High-fanout budgeting is not
+  strictly enforced in this arm so the benchmark can observe whether LSP alone
+  still floods context.

@@ -1,0 +1,20 @@
+profile_id: A-search-only
+display_name: Search-only baseline
+allowed_tools:
+  - rg
+  - fd
+  - basic file reads
+  - ast-grep
+  - Gradle or adb only when runtime proof is explicitly required
+blocked_tools:
+  - Serena
+  - Kotlin LSP
+  - Android Studio semantic declaration/usages
+  - semantic reference tools
+required_first_tool: rg_or_fd
+high_fanout_policy: raw_search_allowed
+max_raw_output_bytes: 50000
+instructions: |
+  Use search and basic file reading only for code understanding. Do not use LSP,
+  Serena, Android Studio semantic declaration/usages, or semantic reference
+  tools. Do not claim symbol-reference proof; label findings as search evidence.

@@ -1,0 +1,22 @@
+profile_id: D-full-router
+display_name: Full router system
+allowed_tools:
+  - Serena
+  - Kotlin LSP
+  - Android Studio usages where matrix-proven
+  - rg
+  - fd
+  - ast-grep
+  - GraphQL tools
+  - Gradle
+  - adb
+required_first_tool: intent_router
+blocked_tools: []
+high_fanout_policy: summary_first_required
+max_raw_output_bytes: 12000
+instructions: |
+  Classify intent before tool use. Use semantic tools for known source symbols,
+  rg/fd for literals/resources/generated surfaces, ast-grep for syntax-shaped
+  patterns, and Gradle/Studio/adb only for runtime proof. High-fanout work must
+  use grouped summaries first. If Serena references are a known boundary, use
+  Android Studio usages only where matrix-proven and state that boundary.

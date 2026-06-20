@@ -1,0 +1,20 @@
+agent_id: claude-code
+display_name: Claude Code
+command: claude
+args:
+  - -p
+  - --permission-mode
+  - dontAsk
+  - --output-format
+  - stream-json
+  - --verbose
+  - --include-hook-events
+  - --no-session-persistence
+prompt_mode: argument
+telemetry_sources:
+  - claude_hooks_if_enabled
+  - claude_otel_if_enabled
+  - transcript_proxy
+supports_live: true
+default_timeout_seconds: 900
+terminal_mode: pty
