@@ -10,6 +10,7 @@
     "docs/assets/codex-ad-smoke-results.svg": "5f45bff97dd13713b32ea36a9d9a4c634a44cc876f70ca0b5387c1ee1d96bc85"
   },
   "artifact_hashes_sha256_note": "The manifest file is excluded to avoid a self-referential hash.",
+  "artifact_path_mode": "canonical_repo_relative",
   "evidence_directory": "benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized",
   "limitations": [
     "one repeat per target",

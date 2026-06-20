@@ -107,6 +107,31 @@ class PublicSanitizationTests(unittest.TestCase):
             self.assertEqual(len(violations), 1)
             self.assertEqual(violations[0]["where"], "png metadata eXIf")
 
+    def test_rejects_malformed_png_text_metadata_chunks(self) -> None:
+        cases = [
+            (b"zTXt", b"Comment\0\x01unsupported compression"),
+            (b"zTXt", b"malformed without separator"),
+            (b"iTXt", b"bad"),
+        ]
+        for kind, payload in cases:
+            with self.subTest(kind=kind, payload=payload):
+                with tempfile.TemporaryDirectory() as raw:
+                    root = Path(raw)
+                    self.init_repo(root)
+
+                    def chunk(chunk_kind: bytes, chunk_payload: bytes) -> bytes:
+                        return len(chunk_payload).to_bytes(4, "big") + chunk_kind + chunk_payload + b"\0\0\0\0"
+
+                    image = root / "docs" / f"{kind.decode('ascii')}.png"
+                    image.parent.mkdir()
+                    image.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(kind, payload) + chunk(b"IEND", b""))
+
+                    violations = probe.scan(root)
+
+                    self.assertEqual(len(violations), 1)
+                    self.assertEqual(violations[0]["where"], f"png metadata {kind.decode('ascii')}")
+                    self.assertEqual(violations[0]["label"], "png_metadata_forbidden")
+
     def test_rejects_absolute_paths_in_public_evidence_json(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -123,13 +148,23 @@ class PublicSanitizationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             self.init_repo(root)
-            evidence = root / "benchmarks" / "real-agent-routing" / "evidence" / "public-smoke"
+            evidence = root / "benchmarks" / "real-agent-routing" / "evidence" / "codex-ad-smoke-anonymized"
             evidence.mkdir(parents=True)
-            (evidence / "summary.sanitized.json").write_text('{"target_label": "Specific Internal Repo"}\n')
+            (evidence / "runs.sanitized.jsonl").write_text('{"target_label": "Specific Internal Repo"}\n')
 
             violations = probe.scan(root)
 
             self.assertIn("evidence_unapproved_target_label", {item["label"] for item in violations})
+
+    def test_future_public_evidence_schema_is_not_forced_to_codex_smoke_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.init_repo(root)
+            evidence = root / "benchmarks" / "real-agent-routing" / "evidence" / "future-public-study"
+            evidence.mkdir(parents=True)
+            (evidence / "summary.sanitized.json").write_text('{"title": "Future public study", "new_public_metric": 1}\n')
+
+            self.assertEqual(probe.scan(root), [])
 
     def test_rejects_unexpected_codex_smoke_evidence_json_field(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

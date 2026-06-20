@@ -95,6 +95,7 @@ CODEX_SMOKE_TOP_LEVEL_KEYS = {
     "evidence-manifest.sanitized.json": {
         "artifact_hashes_sha256",
         "artifact_hashes_sha256_note",
+        "artifact_path_mode",
         "evidence_directory",
         "limitations",
         "privacy_policy",
@@ -264,11 +265,13 @@ def png_metadata_chunks(path: Path) -> list[tuple[str, str]]:
         if kind not in PNG_METADATA_CHUNKS:
             offset = end + 4
             continue
+        kind_text = decode_bytes(kind, "ascii")
         if kind == b"eXIf":
-            chunks.append(("png metadata eXIf", f"{len(payload)} bytes"))
+            chunks.append((f"png metadata {kind_text}", f"{len(payload)} bytes"))
         elif kind == b"tEXt":
-            chunks.append(("png metadata tEXt", decode_bytes(payload, "latin-1")))
+            chunks.append((f"png metadata {kind_text}", decode_bytes(payload, "latin-1")))
         elif kind == b"zTXt":
+            value = f"{len(payload)} bytes"
             keyword, separator, rest = payload.partition(b"\0")
             if separator and rest:
                 compression_method = rest[0]
@@ -278,13 +281,12 @@ def png_metadata_chunks(path: Path) -> list[tuple[str, str]]:
                         text = zlib.decompress(compressed)
                     except zlib.error:
                         text = compressed
-                    chunks.append(
-                        (
-                            "png metadata zTXt",
-                            f"{decode_bytes(keyword, 'latin-1')}\0{decode_bytes(text, 'latin-1')}",
-                        )
-                    )
+                    value = f"{decode_bytes(keyword, 'latin-1')}\0{decode_bytes(text, 'latin-1')}"
+                else:
+                    value = f"{decode_bytes(keyword, 'latin-1')}\0unsupported-compression-method:{compression_method}"
+            chunks.append((f"png metadata {kind_text}", value))
         elif kind == b"iTXt":
+            value = f"{len(payload)} bytes"
             keyword, separator, rest = payload.partition(b"\0")
             if separator and len(rest) >= 2:
                 compression_flag = rest[0]
@@ -296,19 +298,15 @@ def png_metadata_chunks(path: Path) -> list[tuple[str, str]]:
                         text = zlib.decompress(text)
                     except zlib.error:
                         pass
-                chunks.append(
-                    (
-                        "png metadata iTXt",
-                        "\0".join(
-                            [
-                                decode_bytes(keyword),
-                                decode_bytes(language),
-                                decode_bytes(translated_keyword),
-                                decode_bytes(text),
-                            ]
-                        ),
-                    )
+                value = "\0".join(
+                    [
+                        decode_bytes(keyword),
+                        decode_bytes(language),
+                        decode_bytes(translated_keyword),
+                        decode_bytes(text),
+                    ]
                 )
+            chunks.append((f"png metadata {kind_text}", value))
         offset = end + 4
     return chunks
 
@@ -357,25 +355,26 @@ def public_evidence_schema_violations(path: Path, root: Path) -> list[dict[str, 
         return []
     rel_text = rel.as_posix()
     violations: list[dict[str, str]] = []
-    if is_codex_smoke_evidence_path(rel) and path.name not in CODEX_SMOKE_ALLOWED_FILES:
+    is_codex_smoke = is_codex_smoke_evidence_path(rel)
+    if is_codex_smoke and path.name not in CODEX_SMOKE_ALLOWED_FILES:
         violations.append({"file": rel_text, "label": "evidence_unexpected_file", "where": "path"})
     for payload_index, payload in enumerate(evidence_json_payloads(path)):
         if isinstance(payload, dict) and "__invalid_json__" in payload:
             violations.append({"file": rel_text, "label": "evidence_invalid_json", "where": f"$[{payload_index}]"})
             continue
-        if path.name in CODEX_SMOKE_TOP_LEVEL_KEYS and isinstance(payload, dict):
+        if is_codex_smoke and path.name in CODEX_SMOKE_TOP_LEVEL_KEYS and isinstance(payload, dict):
             unexpected = set(payload) - CODEX_SMOKE_TOP_LEVEL_KEYS[path.name]
             for key in sorted(unexpected):
                 violations.append(
                     {"file": rel_text, "label": "evidence_unexpected_json_field", "where": f"$[{payload_index}].{key}"}
                 )
-        if path.name in CODEX_SMOKE_JSONL_ROW_KEYS and isinstance(payload, dict):
+        if is_codex_smoke and path.name in CODEX_SMOKE_JSONL_ROW_KEYS and isinstance(payload, dict):
             unexpected = set(payload) - CODEX_SMOKE_JSONL_ROW_KEYS[path.name]
             for key in sorted(unexpected):
                 violations.append(
                     {"file": rel_text, "label": "evidence_unexpected_json_field", "where": f"$[{payload_index}].{key}"}
                 )
-        if path.name == "source.sanitized.json" and isinstance(payload, dict):
+        if is_codex_smoke and path.name == "source.sanitized.json" and isinstance(payload, dict):
             for index, row in enumerate(payload.get("runs", [])):
                 if isinstance(row, dict):
                     unexpected = set(row) - CODEX_SMOKE_JSONL_ROW_KEYS["runs.sanitized.jsonl"]
@@ -411,7 +410,7 @@ def public_evidence_schema_violations(path: Path, root: Path) -> list[dict[str, 
                                 "where": f"$[{payload_index}].claim_readiness.rows[{index}].{key}",
                             }
                         )
-        if path.name == "claim-readiness.sanitized.json" and isinstance(payload, dict):
+        if is_codex_smoke and path.name == "claim-readiness.sanitized.json" and isinstance(payload, dict):
             for index, row in enumerate(payload.get("rows", [])):
                 if isinstance(row, dict):
                     unexpected = set(row) - CODEX_SMOKE_CLAIM_ROW_KEYS
@@ -435,9 +434,9 @@ def public_evidence_schema_violations(path: Path, root: Path) -> list[dict[str, 
                 json_path.endswith(".label")
                 and (".targets." in json_path or ".target_nature." in json_path)
             )
-            if is_target_label and value not in ALLOWED_TARGET_LABELS:
+            if is_codex_smoke and is_target_label and value not in ALLOWED_TARGET_LABELS:
                 violations.append({"file": rel_text, "label": "evidence_unapproved_target_label", "where": json_path})
-            if "observed_task_tools" in json_path and lower not in ALLOWED_OBSERVED_TOOLS:
+            if is_codex_smoke and "observed_task_tools" in json_path and lower not in ALLOWED_OBSERVED_TOOLS:
                 violations.append({"file": rel_text, "label": "evidence_unapproved_observed_tool", "where": json_path})
     return violations
 

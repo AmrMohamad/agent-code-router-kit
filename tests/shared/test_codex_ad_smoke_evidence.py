@@ -126,6 +126,7 @@ class CodexAdSmokeEvidenceTests(unittest.TestCase):
     def test_manifest_lists_existing_artifacts_with_matching_hashes(self) -> None:
         manifest = json.loads((EVIDENCE / "evidence-manifest.sanitized.json").read_text(encoding="utf-8"))
 
+        self.assertEqual(manifest["artifact_path_mode"], "canonical_repo_relative")
         for rel, expected_hash in manifest["artifact_hashes_sha256"].items():
             path = ROOT / rel
             self.assertTrue(path.exists(), rel)
@@ -165,10 +166,31 @@ class CodexAdSmokeEvidenceTests(unittest.TestCase):
                 "route-isolation.sanitized.jsonl",
                 "claim-readiness.sanitized.json",
                 "audit.sanitized.json",
-                "evidence-manifest.sanitized.json",
             ]:
                 self.assertEqual((out / name).read_text(encoding="utf-8"), (EVIDENCE / name).read_text(encoding="utf-8"))
             self.assertEqual(asset.read_text(encoding="utf-8"), ASSET.read_text(encoding="utf-8"))
+
+            manifest = json.loads((out / "evidence-manifest.sanitized.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["artifact_path_mode"], "custom_output_relative")
+            self.assertEqual(manifest["evidence_directory"], "custom-output")
+            expected_paths = {"asset/asset.svg"} | {
+                f"evidence/{name}"
+                for name in [
+                    "source.sanitized.json",
+                    "README.md",
+                    "summary.sanitized.json",
+                    "runs.sanitized.jsonl",
+                    "route-isolation.sanitized.jsonl",
+                    "claim-readiness.sanitized.json",
+                    "audit.sanitized.json",
+                ]
+            }
+            self.assertEqual(set(manifest["artifact_hashes_sha256"]), expected_paths)
+            self.assertEqual(manifest["artifact_hashes_sha256"]["asset/asset.svg"], generator.file_sha256(asset))
+            self.assertEqual(
+                manifest["artifact_hashes_sha256"]["evidence/source.sanitized.json"],
+                generator.file_sha256(out / "source.sanitized.json"),
+            )
 
     def test_svg_chart_values_are_generated_from_summary(self) -> None:
         summary = json.loads((EVIDENCE / "summary.sanitized.json").read_text(encoding="utf-8"))

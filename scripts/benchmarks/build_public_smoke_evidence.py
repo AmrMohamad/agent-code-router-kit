@@ -268,19 +268,31 @@ def build_manifest(source: dict[str, Any], out_dir: Path, asset_path: Path) -> d
             "target_label": target["label"],
             "task_family": target["task_family"],
         }
-    artifact_paths = {
-        "docs/assets/codex-ad-smoke-results.svg": asset_path,
-        **{
-            f"benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized/{name}": out_dir / name
-            for name in EVIDENCE_FILES
-            if name != "evidence-manifest.sanitized.json"
-        },
-    }
+    canonical_output = out_dir == DEFAULT_EVIDENCE_DIR and asset_path == DEFAULT_ASSET
+    if canonical_output:
+        artifact_path_mode = "canonical_repo_relative"
+        evidence_directory = "benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized"
+        artifact_paths = {
+            "docs/assets/codex-ad-smoke-results.svg": asset_path,
+            **{
+                f"benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized/{name}": out_dir / name
+                for name in EVIDENCE_FILES
+                if name != "evidence-manifest.sanitized.json"
+            },
+        }
+    else:
+        artifact_path_mode = "custom_output_relative"
+        evidence_directory = "custom-output"
+        artifact_paths = {
+            f"asset/{asset_path.name}": asset_path,
+            **{f"evidence/{name}": out_dir / name for name in EVIDENCE_FILES if name != "evidence-manifest.sanitized.json"},
+        }
     artifact_hashes = {rel: file_sha256(path) for rel, path in artifact_paths.items()}
     return {
         "artifact_hashes_sha256": artifact_hashes,
         "artifact_hashes_sha256_note": "The manifest file is excluded to avoid a self-referential hash.",
-        "evidence_directory": "benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized",
+        "artifact_path_mode": artifact_path_mode,
+        "evidence_directory": evidence_directory,
         "limitations": source["limitations"],
         "privacy_policy": {
             "hmac_required_for_future_private_value_fingerprints": True,
