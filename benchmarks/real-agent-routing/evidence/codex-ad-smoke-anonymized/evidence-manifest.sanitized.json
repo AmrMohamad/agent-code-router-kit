@@ -1,0 +1,73 @@
+{
+  "evidence_directory": "benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized",
+  "limitations": [
+    "one repeat per target",
+    "two private targets only",
+    "known-symbol definition task family only",
+    "source repositories were dirty and not snapshotted",
+    "tool/model versions were not captured in the original smoke artifacts"
+  ],
+  "privacy_policy": {
+    "local_paths_published": false,
+    "one_way_hashes_used_for_private_task_and_repo_fingerprints": true,
+    "private_repo_commits_published": false,
+    "private_repo_names_published": false,
+    "raw_final_answers_published": false,
+    "raw_prompts_published": false,
+    "raw_transcripts_published": false
+  },
+  "schema_version": 1,
+  "targets": {
+    "commerce_web_frontend": {
+      "exact_uncached_claim_supported": true,
+      "language_surface": "TypeScript/Vue-family frontend",
+      "order_randomized": false,
+      "random_seed": 1079471252,
+      "repository_snapshot_fingerprint": "a8362f468978104968ffd94c",
+      "route_profile_hashes": {
+        "A-search-only": "53f720850755b423550d40d8",
+        "D-full-router": "2a3949bee378cef1270a3ce2"
+      },
+      "run_order_profiles": [
+        "A-search-only",
+        "D-full-router"
+      ],
+      "snapshot_repos": false,
+      "source_repo_dirty_at_smoke": true,
+      "strict_smoke_audit_status": "pass",
+      "target_label": "Commerce Web Frontend",
+      "target_symbol_hash": "7900796633579f77a3a9fdba",
+      "task_family": "known_symbol_definition",
+      "task_prompt_hash": "34f7be5dfcae1ad95a503d9e"
+    },
+    "native_ios_commerce_app": {
+      "exact_uncached_claim_supported": true,
+      "language_surface": "Swift/UIKit-family iOS app",
+      "order_randomized": false,
+      "random_seed": 4000746933,
+      "repository_snapshot_fingerprint": "24c99208fa12076cf8ed9fb8",
+      "route_profile_hashes": {
+        "A-search-only": "53f720850755b423550d40d8",
+        "D-full-router": "2a3949bee378cef1270a3ce2"
+      },
+      "run_order_profiles": [
+        "A-search-only",
+        "D-full-router"
+      ],
+      "snapshot_repos": false,
+      "source_repo_dirty_at_smoke": true,
+      "strict_smoke_audit_status": "pass",
+      "target_label": "Native iOS Commerce App",
+      "target_symbol_hash": "c72384b9c32aaac1ca733a79",
+      "task_family": "known_symbol_definition",
+      "task_prompt_hash": "5cbe85bad5fcbd9f855610c3"
+    }
+  },
+  "title": "Sanitized evidence manifest for Codex A/D smoke results",
+  "version_capture": {
+    "codex_cli_version": "not_captured_in_smoke",
+    "controller_commit_at_smoke": "not_captured_in_smoke",
+    "model_identifier": "not_captured_in_smoke",
+    "serena_version": "not_captured_in_smoke"
+  }
+}

@@ -48,7 +48,7 @@ The boundary matters: text matches are not semantic references, LSP results are 
 
 ## Current Results Summary
 
-The repository includes a privacy-safe Codex A/D live smoke bundle under [`benchmarks/real-agent-routing/results/codex-ad-smoke-anonymized/`](benchmarks/real-agent-routing/results/codex-ad-smoke-anonymized/README.md).
+The repository includes a privacy-safe Codex A/D live smoke bundle under [`benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized/`](benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized/README.md).
 
 The two private targets are described only by their technical nature:
 
@@ -63,11 +63,12 @@ Company names, repository names, local paths, raw prompts, transcripts, final an
 
 The smoke compared `A-search-only` against `D-full-router` on one known-symbol definition task per private target:
 
-| Anonymous target | A exact uncached | D exact uncached | Tokens saved | Reduction |
+| Anonymous target | A exact uncached | D exact uncached | Uncached tokens avoided | Uncached-token reduction |
 |---|---:|---:|---:|---:|
 | Commerce web frontend | 88,819 | 41,788 | 47,031 | 52.95% |
 | Native iOS commerce app | 87,878 | 70,597 | 17,281 | 19.66% |
-| Descriptive total | 176,697 | 112,385 | 64,312 | 36.40% |
+
+In these smoke runs, `D-full-router` reduced uncached token use and model-visible tool output, but processed more total cached context and took roughly 2.6x as long. This is a context-efficiency result, not an overall compute or latency reduction.
 
 Read this as smoke evidence only. It proves the live harness can hard-isolate a search-only baseline, run a Serena-enabled full-router treatment, capture exact uncached token telemetry, and observe tool evidence. It does not prove LSP-only causality, generalize across task families, or estimate run-to-run variance. The A/D comparison is a full-router system effect.
 
@@ -120,7 +121,7 @@ For the complete setup guide and real-agent dry-run commands, see
 | Real-agent benchmark operations | [`docs/benchmarks/real-agent-routing-operations.md`](docs/benchmarks/real-agent-routing-operations.md) |
 | Real-agent interpretation | [`docs/benchmarks/interpreting-real-agent-results.md`](docs/benchmarks/interpreting-real-agent-results.md) |
 | Token measurement strategy | [`docs/benchmarks/token-measurement-strategy.md`](docs/benchmarks/token-measurement-strategy.md) |
-| Anonymized smoke evidence | [`benchmarks/real-agent-routing/results/codex-ad-smoke-anonymized/`](benchmarks/real-agent-routing/results/codex-ad-smoke-anonymized/README.md) |
+| Anonymized smoke evidence | [`benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized/`](benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized/README.md) |
 
 ## Repository Layout
 

@@ -6,8 +6,9 @@ separate runbooks so this page can stay focused.
 
 ## 1. Check The Target Repo
 
-Run the Serena doctor first. It is read-only and checks agent-facing semantic
-access, duplicate process risk, project metadata, and proof-boundary wording.
+Run the Serena doctor first. It is read-only and checks prerequisites for
+agent-facing semantic access, duplicate process risk, project metadata, and
+proof-boundary wording.
 
 ```bash
 python3 scripts/setup/serena-doctor.py \
@@ -45,7 +46,7 @@ Preview the install before writing anything:
   --dry-run
 ```
 
-Then rerun without `--dry-run` only after reviewing the proposed file changes.
+Then rerun with `--apply` only after reviewing the proposed file changes.
 
 The install uses:
 

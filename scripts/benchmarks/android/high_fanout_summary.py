@@ -79,7 +79,7 @@ def next_actions_for_pattern(file_count: int, total_matches: int) -> list[str]:
 
 
 def summarize_pattern(repo: Path, pattern: str, globs: list[str], top_limit: int, timeout: float) -> PatternSummary:
-    argv = ["rg", "--count-matches", "--sort", "path"]
+    argv = ["rg", "--no-config", "--count-matches", "--sort", "path"]
     for glob in globs:
         argv.extend(["--glob", glob])
     argv.extend(["--", pattern, "."])

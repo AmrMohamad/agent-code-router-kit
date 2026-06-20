@@ -1,0 +1,195 @@
+{
+  "all_scoped_smoke_audits_passed": true,
+  "audit_flags": [
+    "--require-live",
+    "--require-all-pass",
+    "--require-observed-tools",
+    "--require-non-proxy-tokens",
+    "--require-expected-proof-layer",
+    "--require-no-weak-route-controls",
+    "--require-hard-isolation-for-blocked-tools",
+    "--require-paired-route-comparisons",
+    "--require-supported-savings-claim exact_uncached"
+  ],
+  "rows": [
+    {
+      "blocker_count": 0,
+      "fail": 0,
+      "issue_count": 0,
+      "requirement_status": "pass",
+      "requirements": [
+        {
+          "blocker_count": 0,
+          "check_count": 4,
+          "key": "live_execution",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "adapter_readiness",
+          "status": "not_requested"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 4,
+          "key": "balanced_multi_agent_matrix",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 5,
+          "key": "correctness_policy_and_proof",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "token_measurement",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "route_isolation",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 8,
+          "key": "run_validity_controls",
+          "status": "not_requested"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "live_lifecycle_telemetry",
+          "status": "not_requested"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "paired_route_comparison",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "savings_claim",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "matrix_completion_report",
+          "status": "not_requested"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "terminal_control_summary",
+          "status": "not_requested"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "route_policy_summary",
+          "status": "not_requested"
+        }
+      ],
+      "status": "pass",
+      "target_id": "commerce_web_frontend",
+      "target_label": "Commerce Web Frontend"
+    },
+    {
+      "blocker_count": 0,
+      "fail": 0,
+      "issue_count": 0,
+      "requirement_status": "pass",
+      "requirements": [
+        {
+          "blocker_count": 0,
+          "check_count": 4,
+          "key": "live_execution",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "adapter_readiness",
+          "status": "not_requested"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 4,
+          "key": "balanced_multi_agent_matrix",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 5,
+          "key": "correctness_policy_and_proof",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "token_measurement",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "route_isolation",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 8,
+          "key": "run_validity_controls",
+          "status": "not_requested"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "live_lifecycle_telemetry",
+          "status": "not_requested"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "paired_route_comparison",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "savings_claim",
+          "status": "pass"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "matrix_completion_report",
+          "status": "not_requested"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "terminal_control_summary",
+          "status": "not_requested"
+        },
+        {
+          "blocker_count": 0,
+          "check_count": 1,
+          "key": "route_policy_summary",
+          "status": "not_requested"
+        }
+      ],
+      "status": "pass",
+      "target_id": "native_ios_commerce_app",
+      "target_label": "Native iOS Commerce App"
+    }
+  ],
+  "scope": "Sanitized scoped smoke audit. This is not the full publishable-study gate."
+}

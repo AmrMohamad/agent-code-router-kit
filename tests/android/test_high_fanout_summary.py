@@ -57,6 +57,7 @@ class AndroidHighFanoutSummaryTests(unittest.TestCase):
             self.assertEqual(summary.top_files[0]["matches"], 2)
             self.assertEqual(summary.top_modules[0], {"key": "src", "matches": 2})
             self.assertEqual(summary.budget["status"], "pass")
+            self.assertIn("--no-config", summary.command)
             self.assertEqual(summary.command[-1], ".")
             self.assertIn("read focused ranges only", summary.next_actions)
 

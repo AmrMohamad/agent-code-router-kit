@@ -52,6 +52,43 @@ class PublicSanitizationTests(unittest.TestCase):
             (results / "private.md").write_text(token)
             self.assertEqual(probe.scan(root), [])
 
+    def test_scans_public_evidence_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.init_repo(root)
+            token = probe.banned_tokens()[3].token
+            evidence = root / "benchmarks" / "real-agent-routing" / "evidence" / "public-smoke"
+            evidence.mkdir(parents=True)
+            (evidence / "summary.md").write_text(f"private={token}\n")
+
+            violations = probe.scan(root)
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0]["where"], "line 1")
+
+    def test_detects_private_identifier_in_png_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.init_repo(root)
+            token = probe.banned_tokens()[4].token
+
+            def chunk(kind: bytes, payload: bytes) -> bytes:
+                return len(payload).to_bytes(4, "big") + kind + payload + b"\0\0\0\0"
+
+            png = (
+                b"\x89PNG\r\n\x1a\n"
+                + chunk(b"tEXt", b"Comment\0" + token.encode("latin-1"))
+                + chunk(b"IEND", b"")
+            )
+            image = root / "docs" / "asset.png"
+            image.parent.mkdir()
+            image.write_bytes(png)
+
+            violations = probe.scan(root)
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0]["where"], "png metadata tEXt")
+
 
 if __name__ == "__main__":
     unittest.main()

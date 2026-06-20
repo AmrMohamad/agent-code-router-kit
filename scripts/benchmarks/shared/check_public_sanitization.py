@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,7 +25,6 @@ SKIP_DIRS = {
 }
 
 SKIP_SUFFIXES = {
-    ".png",
     ".jpg",
     ".jpeg",
     ".gif",
@@ -35,6 +35,8 @@ SKIP_SUFFIXES = {
     ".keystore",
     ".pyc",
 }
+
+PNG_SUFFIXES = {".png"}
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,72 @@ def should_skip(path: Path, root: Path) -> bool:
     return path.suffix.lower() in SKIP_SUFFIXES
 
 
+def decode_bytes(raw: bytes, encoding: str = "utf-8") -> str:
+    return raw.decode(encoding, errors="replace")
+
+
+def png_text_chunks(path: Path) -> list[tuple[str, str]]:
+    data = path.read_bytes()
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return []
+
+    chunks: list[tuple[str, str]] = []
+    offset = 8
+    while offset + 8 <= len(data):
+        length = int.from_bytes(data[offset : offset + 4], "big")
+        kind = data[offset + 4 : offset + 8]
+        start = offset + 8
+        end = start + length
+        if end + 4 > len(data):
+            break
+        payload = data[start:end]
+        if kind == b"tEXt":
+            chunks.append(("png metadata tEXt", decode_bytes(payload, "latin-1")))
+        elif kind == b"zTXt":
+            keyword, separator, rest = payload.partition(b"\0")
+            if separator and rest:
+                compression_method = rest[0]
+                compressed = rest[1:]
+                if compression_method == 0:
+                    try:
+                        text = zlib.decompress(compressed)
+                    except zlib.error:
+                        text = compressed
+                    chunks.append(
+                        (
+                            "png metadata zTXt",
+                            f"{decode_bytes(keyword, 'latin-1')}\0{decode_bytes(text, 'latin-1')}",
+                        )
+                    )
+        elif kind == b"iTXt":
+            keyword, separator, rest = payload.partition(b"\0")
+            if separator and len(rest) >= 2:
+                compression_flag = rest[0]
+                compression_method = rest[1]
+                language, _, rest = rest[2:].partition(b"\0")
+                translated_keyword, _, text = rest.partition(b"\0")
+                if compression_flag == 1 and compression_method == 0:
+                    try:
+                        text = zlib.decompress(text)
+                    except zlib.error:
+                        pass
+                chunks.append(
+                    (
+                        "png metadata iTXt",
+                        "\0".join(
+                            [
+                                decode_bytes(keyword),
+                                decode_bytes(language),
+                                decode_bytes(translated_keyword),
+                                decode_bytes(text),
+                            ]
+                        ),
+                    )
+                )
+        offset = end + 4
+    return chunks
+
+
 def read_text(path: Path) -> str | None:
     try:
         return path.read_text()
@@ -108,6 +176,13 @@ def scan(root: Path) -> list[dict[str, str]]:
         for token in tokens:
             if token.token in rel_lower:
                 violations.append({"file": rel, "label": token.label, "where": "path"})
+        if path.suffix.lower() in PNG_SUFFIXES:
+            for where, metadata in png_text_chunks(path):
+                lower = metadata.lower()
+                for token in tokens:
+                    if token.token in lower:
+                        violations.append({"file": rel, "label": token.label, "where": where})
+            continue
         text = read_text(path)
         if text is None:
             continue

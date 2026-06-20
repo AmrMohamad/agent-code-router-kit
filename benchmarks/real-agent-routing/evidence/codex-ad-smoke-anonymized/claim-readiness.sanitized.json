@@ -1,0 +1,57 @@
+{
+  "exact_token_savings_claims_supported": 0,
+  "exact_uncached_token_savings_claims_supported": 2,
+  "model_visible_proxy_savings_claims_supported": 2,
+  "paired_comparisons": 2,
+  "rows": [
+    {
+      "agent": "codex",
+      "agent_reported_claim_blockers": [
+        "agent_reported_token_sources_not_matched",
+        "agent_reported_token_savings_not_positive"
+      ],
+      "agent_reported_token_savings_claim_supported": false,
+      "baseline_exact_uncached_total_tokens": 88819,
+      "correctness_ok": true,
+      "exact_claim_blockers": [
+        "exact_token_savings_not_positive"
+      ],
+      "exact_token_savings_claim_supported": false,
+      "exact_token_savings_percent": -82.61,
+      "exact_uncached_token_savings_claim_supported": true,
+      "exact_uncached_token_savings_percent": 52.95,
+      "exact_uncached_total_token_delta": -47031,
+      "model_visible_proxy_savings_claim_supported": true,
+      "model_visible_proxy_token_savings_percent": 55.86,
+      "repeat_index": "0",
+      "target_id": "commerce_web_frontend",
+      "target_label": "Commerce Web Frontend",
+      "treatment_exact_uncached_total_tokens": 41788
+    },
+    {
+      "agent": "codex",
+      "agent_reported_claim_blockers": [
+        "agent_reported_token_sources_not_matched",
+        "agent_reported_token_savings_not_positive"
+      ],
+      "agent_reported_token_savings_claim_supported": false,
+      "baseline_exact_uncached_total_tokens": 87878,
+      "correctness_ok": true,
+      "exact_claim_blockers": [
+        "exact_token_savings_not_positive"
+      ],
+      "exact_token_savings_claim_supported": false,
+      "exact_token_savings_percent": -88.84,
+      "exact_uncached_token_savings_claim_supported": true,
+      "exact_uncached_token_savings_percent": 19.66,
+      "exact_uncached_total_token_delta": -17281,
+      "model_visible_proxy_savings_claim_supported": true,
+      "model_visible_proxy_token_savings_percent": 12.75,
+      "repeat_index": "0",
+      "target_id": "native_ios_commerce_app",
+      "target_label": "Native iOS Commerce App",
+      "treatment_exact_uncached_total_tokens": 70597
+    }
+  ],
+  "scope": "sanitized Codex A/D smoke claim readiness"
+}
