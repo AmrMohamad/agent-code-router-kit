@@ -78,7 +78,7 @@ class SerenaDoctorTests(unittest.TestCase):
             self.assertIn("java", config["details"]["risk_notes"])
             self.assertNotEqual(payload["status"], "fail")
 
-    def test_source_symbol_smoke_reports_local_match_as_precondition(self) -> None:
+    def test_source_symbol_precondition_reports_local_match_as_precondition(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
             project = repo / ".serena" / "project.yml"
@@ -92,12 +92,12 @@ class SerenaDoctorTests(unittest.TestCase):
                 self.stable_args(repo, source_file="app/FeatureViewModel.kt", symbol_smoke="FeatureViewModel")
             )
 
-            smoke = next(check for check in payload["checks"] if check["name"] == "source_symbol_smoke")
-            self.assertEqual(smoke["status"], "warn")
-            self.assertTrue(smoke["details"]["local_text_match"])
-            self.assertIn("semantic proof", smoke["details"]["proof_boundary"])
+            precondition = next(check for check in payload["checks"] if check["name"] == "source_symbol_precondition")
+            self.assertEqual(precondition["status"], "warn")
+            self.assertTrue(precondition["details"]["local_text_match"])
+            self.assertIn("semantic proof", precondition["details"]["proof_boundary"])
 
-    def test_source_symbol_smoke_rejects_relative_path_outside_repo(self) -> None:
+    def test_source_symbol_precondition_rejects_relative_path_outside_repo(self) -> None:
         with tempfile.TemporaryDirectory() as raw, tempfile.NamedTemporaryFile("w", encoding="utf-8") as outside:
             repo = Path(raw)
             project = repo / ".serena" / "project.yml"
@@ -115,12 +115,12 @@ class SerenaDoctorTests(unittest.TestCase):
                 )
             )
 
-            smoke = next(check for check in payload["checks"] if check["name"] == "source_symbol_smoke")
+            precondition = next(check for check in payload["checks"] if check["name"] == "source_symbol_precondition")
             self.assertEqual(payload["status"], "fail")
-            self.assertEqual(smoke["status"], "fail")
-            self.assertIn("outside the target repo", smoke["message"])
+            self.assertEqual(precondition["status"], "fail")
+            self.assertIn("outside the target repo", precondition["message"])
 
-    def test_source_symbol_smoke_rejects_absolute_path(self) -> None:
+    def test_source_symbol_precondition_rejects_absolute_path(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
             source = repo / "Feature.py"
@@ -133,10 +133,10 @@ class SerenaDoctorTests(unittest.TestCase):
                 self.stable_args(repo, profile="python", source_file=str(source), symbol_smoke="Feature")
             )
 
-            smoke = next(check for check in payload["checks"] if check["name"] == "source_symbol_smoke")
+            precondition = next(check for check in payload["checks"] if check["name"] == "source_symbol_precondition")
             self.assertEqual(payload["status"], "fail")
-            self.assertEqual(smoke["status"], "fail")
-            self.assertIn("must be relative", smoke["message"])
+            self.assertEqual(precondition["status"], "fail")
+            self.assertIn("must be relative", precondition["message"])
 
     def test_generic_profile_does_not_warn_on_project_languages(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

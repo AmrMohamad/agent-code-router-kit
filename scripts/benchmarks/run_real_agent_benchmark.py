@@ -39,6 +39,7 @@ SERENA_PROCESS_STATE_WARNING_CODES = {
     "multiple_kotlin_lsp_processes",
     "multiple_json_lsp_processes",
 }
+HIGH_FANOUT_RAW_OUTPUT_CEILING_BYTES = 50000
 
 
 def profile_path(profile_id: str) -> Path:
@@ -56,9 +57,41 @@ def agent_path(agent_id: str) -> Path:
 
 
 def effective_route_profile(profile: RouteProfile, *, task) -> RouteProfile:
-    if task.task_family.startswith("high_fanout"):
-        return replace(profile, max_raw_output_bytes=min(profile.max_raw_output_bytes, 12000))
+    if (
+        task.task_family.startswith("high_fanout")
+        and profile.max_raw_output_bytes > HIGH_FANOUT_RAW_OUTPUT_CEILING_BYTES
+    ):
+        return replace(profile, max_raw_output_bytes=HIGH_FANOUT_RAW_OUTPUT_CEILING_BYTES)
     return profile
+
+
+def high_fanout_requires_summary_first(profile: RouteProfile) -> bool:
+    return "summary_first" in profile.high_fanout_policy
+
+
+def raw_output_discipline(*, task, profile: RouteProfile) -> str:
+    if not task.task_family.startswith("high_fanout"):
+        return """- Treat the maximum raw output bytes as a hard budget for terminal/tool output,
+  not just for the final answer.
+- Prefer `rg -l`, `rg --count`, `wc -l`, `head`, `sed -n`, `awk` grouping, or
+  module/file counts before opening files."""
+
+    if high_fanout_requires_summary_first(profile):
+        return """- Treat the maximum raw output bytes as a hard budget for terminal/tool output,
+  not just for the final answer.
+- Prefer `rg -l`, `rg --count`, `wc -l`, `head`, `sed -n`, `awk` grouping, or
+  module/file counts before opening files.
+- For high-fanout terms, do not run commands that print every match. Summarize
+  first, then inspect only the narrow files needed for the answer."""
+
+    return """- Treat the maximum raw output bytes as a hard budget for terminal/tool output,
+  not just for the final answer.
+- This route is a controlled high-fanout baseline. Raw search or semantic output
+  is allowed up to the profile budget when the profile permits that tool path.
+- Do not try to bypass or raise the budget. If the run hits the output budget,
+  stop and report that controlled failure as benchmark data.
+- Keep the final answer compact and label the evidence according to the route
+  profile."""
 
 
 def budget_safe_guidance(*, task, profile) -> str:
@@ -72,6 +105,14 @@ def budget_safe_guidance(*, task, profile) -> str:
 - Do not print every usage/reference of the symbol. This task asks for the
   definition path and evidence layer only."""
     if task.task_family.startswith("high_fanout"):
+        if not high_fanout_requires_summary_first(profile):
+            return """- A summary-first command is not required in this arm. Use the natural route
+  allowed by the profile while staying under Maximum raw output bytes.
+- A-search-only remains search/basic-read only. C-lsp-naive may use semantic
+  tools, but the benchmark should still observe whether this naive route floods
+  context.
+- If the output budget is exceeded, do not retry with a larger dump. Report the
+  budget hit as the run outcome."""
         return """- Never print every match for the high-fanout term.
 - Do not open or read any source file before the first grouped count/search
   summary. A file read before grouped evidence is a benchmark failure.
@@ -212,12 +253,7 @@ High-fanout policy: {profile.high_fanout_policy}
 Maximum raw output bytes: {profile.max_raw_output_bytes}
 
 Raw-output discipline:
-- Treat the maximum raw output bytes as a hard budget for terminal/tool output,
-  not just for the final answer.
-- Prefer `rg -l`, `rg --count`, `wc -l`, `head`, `sed -n`, `awk` grouping, or
-  module/file counts before opening files.
-- For high-fanout terms, do not run commands that print every match. Summarize
-  first, then inspect only the narrow files needed for the answer.
+{raw_output_discipline(task=task, profile=profile)}
 
 Budget-safe command guidance:
 {budget_safe_guidance(task=task, profile=profile)}
