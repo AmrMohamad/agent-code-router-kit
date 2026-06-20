@@ -19,12 +19,16 @@ from scripts.benchmarks.run_real_agent_benchmark import (
     task_needs_serena_source_readiness,
 )
 from scripts.agents.generic_terminal_agent_bridge import BridgeRunResult
-from scripts.lib.agent_session import LaunchPlan, load_route_profile, load_tasks
+from scripts.lib.agent_session import LaunchPlan, TaskSpec, load_route_profile, load_tasks
 from scripts.lib.route_isolation import RouteIsolation
 from scripts.lib.serena_readiness import SerenaProcessState, SerenaReadiness
 
 
 ROOT = Path(__file__).resolve().parents[2]
+IOS_FIXTURE = ROOT / "benchmarks/ios/fixtures/sample"
+IOS_HIGH_FANOUT_PROMPT = (
+    "Determine where Resolver appears and provide evidence appropriate to the assigned route profile."
+)
 
 
 def make_git_repo(path: Path) -> None:
@@ -56,6 +60,32 @@ def write_symbol_task(path: Path, *, profile: str = "A-search-only") -> None:
     path.write_text(
         "task_id\ttask_family\trepo\tprompt\troute_profiles\tedit_allowed\tbuild_allowed\texpected_proof_layer\texpected_success_signal\tforbidden_claims\ttimeout_seconds\n"
         f"sample_task\tknown_kotlin_symbol_definition\tsample\tFind SampleFeatureViewModel and report its definition file.\t{profile}\tfalse\tfalse\tsemantic_identity_or_search_labeled\tSampleFeatureViewModel definition reported\tDo not claim runtime behavior.\t900\n",
+        encoding="utf-8",
+    )
+
+
+def ios_high_fanout_task(*, route_profiles: list[str] | None = None) -> TaskSpec:
+    return TaskSpec(
+        task_id="ios_resolver_fanout",
+        task_family="high_fanout_swift_symbol",
+        repo="sample_ios",
+        prompt=IOS_HIGH_FANOUT_PROMPT,
+        route_profiles=route_profiles
+        or ["A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"],
+        edit_allowed=False,
+        build_allowed=False,
+        expected_proof_layer="high_fanout_summary",
+        expected_success_signal="Resolver summary counts reported",
+        forbidden_claims="Do not claim runtime behavior.",
+        timeout_seconds=900,
+    )
+
+
+def write_ios_high_fanout_task(path: Path) -> None:
+    task = ios_high_fanout_task()
+    path.write_text(
+        "task_id\ttask_family\trepo\tprompt\troute_profiles\tedit_allowed\tbuild_allowed\texpected_proof_layer\texpected_success_signal\tforbidden_claims\ttimeout_seconds\n"
+        f"{task.task_id}\t{task.task_family}\t{task.repo}\t{task.prompt}\t{','.join(task.route_profiles)}\tfalse\tfalse\t{task.expected_proof_layer}\t{task.expected_success_signal}\t{task.forbidden_claims}\t{task.timeout_seconds}\n",
         encoding="utf-8",
     )
 
@@ -93,11 +123,7 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
         self.assertEqual([left.random() for _ in range(3)], [right.random() for _ in range(3)])
 
     def test_high_fanout_arm_packets_keep_all_profile_behaviors_distinct(self) -> None:
-        task = next(
-            task
-            for task in load_tasks(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv")
-            if task.task_id == "high_fanout_usecase"
-        )
+        task = ios_high_fanout_task()
         cases = [
             ("A-search-only", "raw_search_allowed", 50000, False),
             ("B-search-summary", "summary_first", 12000, True),
@@ -258,6 +284,67 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
                 dry_run=True,
             )
             self.assertEqual(repeat_filtered["runs"], 4)
+
+    def test_dry_run_schedules_ios_high_fanout_task_for_all_four_arms(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tasks = root / "ios-tasks.tsv"
+            write_ios_high_fanout_task(tasks)
+            out = root / "out"
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = main(
+                    [
+                        "--dry-run",
+                        "--agent",
+                        "codex",
+                        "--repo",
+                        str(IOS_FIXTURE),
+                        "--repo-map",
+                        f"sample_ios={IOS_FIXTURE}",
+                        "--tasks",
+                        str(tasks),
+                        "--arms",
+                        "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
+                        "--repeats",
+                        "1",
+                        "--no-randomize-order",
+                        "--out",
+                        str(out),
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            manifest = json.loads((out / "run-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["task_ids"], ["ios_resolver_fanout"])
+            self.assertEqual(manifest["planned_new_runs"], 4)
+            self.assertEqual(
+                manifest["arms"],
+                ["A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"],
+            )
+            rows = [json.loads(line) for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertEqual({row["profile"] for row in rows}, set(manifest["arms"]))
+            self.assertTrue(all(Path(row["repo_path"]).resolve() == IOS_FIXTURE.resolve() for row in rows))
+
+            expected = {
+                "A-search-only": (50000, False),
+                "B-search-summary": (12000, True),
+                "C-lsp-naive": (50000, False),
+                "D-full-router": (12000, True),
+            }
+            for row in rows:
+                with self.subTest(profile=row["profile"]):
+                    budget, requires_summary_first = expected[row["profile"]]
+                    packet = (Path(row["run_dir"]) / "task-packet.md").read_text(encoding="utf-8")
+                    self.assertIn(f"Maximum raw output bytes: {budget}", packet)
+                    self.assertIn(IOS_HIGH_FANOUT_PROMPT, packet)
+                    if requires_summary_first:
+                        self.assertIn("First produce grouped counts only", packet)
+                        self.assertIn("A file read before grouped evidence is a benchmark failure", packet)
+                        self.assertNotIn("controlled high-fanout baseline", packet)
+                    else:
+                        self.assertIn("controlled high-fanout baseline", packet)
+                        self.assertIn("A summary-first command is not required in this arm", packet)
+                        self.assertNotIn("First produce grouped counts only", packet)
 
     def test_requires_explicit_mode(self) -> None:
         with self.assertRaises(SystemExit) as context:
