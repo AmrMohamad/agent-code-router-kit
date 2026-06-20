@@ -8,7 +8,7 @@ This bundle publishes private live smoke numbers without company names, reposito
 - Compared arms: `A-search-only` versus `D-full-router`.
 - Task family: known-symbol definition lookup.
 - Cells: 2 private targets x 2 arms x 1 repeat = 4 live cells.
-- Claim boundary: full-router system effect smoke evidence only, not LSP-only attribution and not a publishable general benchmark conclusion.
+- Claim boundary: full router system effect smoke evidence only, not LSP-only attribution and not a publishable general benchmark conclusion.
 
 ## Target Nature
 
@@ -55,12 +55,13 @@ In these smoke runs, `D-full-router` reduced uncached token use and model-visibl
 
 ## Sanitized Evidence Files
 
+- `source.sanitized.json`: single source artifact for the generated public evidence.
 - `summary.sanitized.json`: headline metrics, target nature, scope, and trade-off fields.
 - `runs.sanitized.jsonl`: one sanitized row per live cell.
 - `route-isolation.sanitized.jsonl`: command shape and route-isolation controls with local paths removed.
 - `claim-readiness.sanitized.json`: supported and blocked token-savings claim types.
 - `audit.sanitized.json`: scoped smoke audit result and requirement statuses.
-- `evidence-manifest.sanitized.json`: one-way hashes, run-order metadata, route-profile hashes, and not-captured version fields.
+- `evidence-manifest.sanitized.json`: artifact hashes, opaque pairing IDs, route-profile hashes, and not-captured version fields.
 
 ## Interpretation
 

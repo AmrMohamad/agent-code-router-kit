@@ -58,7 +58,7 @@ The two private targets are described only by their technical nature:
 Company names, repository names, local paths, raw prompts, transcripts, final answers, and exact private repository commits are intentionally omitted.
 
 <p align="center">
-  <img src="docs/assets/codex-ad-smoke-results.png" alt="Anonymized Codex A/D smoke results for a commerce web frontend and native iOS commerce app" width="100%">
+  <img src="docs/assets/codex-ad-smoke-results.svg" alt="Anonymized Codex A/D smoke results for a commerce web frontend and native iOS commerce app" width="100%">
 </p>
 
 The smoke compared `A-search-only` against `D-full-router` on one known-symbol definition task per private target:

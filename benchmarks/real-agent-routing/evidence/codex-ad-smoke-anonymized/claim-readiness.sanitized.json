@@ -1,4 +1,5 @@
 {
+  "agent_reported_token_savings_claims_supported": 0,
   "exact_token_savings_claims_supported": 0,
   "exact_uncached_token_savings_claims_supported": 2,
   "model_visible_proxy_savings_claims_supported": 2,
@@ -20,13 +21,14 @@
       "exact_token_savings_percent": -82.61,
       "exact_uncached_token_savings_claim_supported": true,
       "exact_uncached_token_savings_percent": 52.95,
-      "exact_uncached_total_token_delta": -47031,
       "model_visible_proxy_savings_claim_supported": true,
       "model_visible_proxy_token_savings_percent": 55.86,
       "repeat_index": "0",
       "target_id": "commerce_web_frontend",
       "target_label": "Commerce Web Frontend",
-      "treatment_exact_uncached_total_tokens": 41788
+      "treatment_exact_uncached_total_tokens": 41788,
+      "treatment_minus_baseline_exact_uncached_tokens": -47031,
+      "uncached_tokens_avoided": 47031
     },
     {
       "agent": "codex",
@@ -44,13 +46,14 @@
       "exact_token_savings_percent": -88.84,
       "exact_uncached_token_savings_claim_supported": true,
       "exact_uncached_token_savings_percent": 19.66,
-      "exact_uncached_total_token_delta": -17281,
       "model_visible_proxy_savings_claim_supported": true,
       "model_visible_proxy_token_savings_percent": 12.75,
       "repeat_index": "0",
       "target_id": "native_ios_commerce_app",
       "target_label": "Native iOS Commerce App",
-      "treatment_exact_uncached_total_tokens": 70597
+      "treatment_exact_uncached_total_tokens": 70597,
+      "treatment_minus_baseline_exact_uncached_tokens": -17281,
+      "uncached_tokens_avoided": 17281
     }
   ],
   "scope": "sanitized Codex A/D smoke claim readiness"

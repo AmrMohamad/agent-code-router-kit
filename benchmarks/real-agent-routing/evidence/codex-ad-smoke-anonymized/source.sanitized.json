@@ -1,0 +1,649 @@
+{
+  "audit": {
+    "all_scoped_smoke_audits_passed": true,
+    "audit_flags": [
+      "--require-live",
+      "--require-all-pass",
+      "--require-observed-tools",
+      "--require-non-proxy-tokens",
+      "--require-expected-proof-layer",
+      "--require-no-weak-route-controls",
+      "--require-hard-isolation-for-blocked-tools",
+      "--require-paired-route-comparisons",
+      "--require-supported-savings-claim exact_uncached"
+    ],
+    "rows": [
+      {
+        "blocker_count": 0,
+        "fail": 0,
+        "issue_count": 0,
+        "requirement_status": "pass",
+        "requirements": [
+          {
+            "blocker_count": 0,
+            "check_count": 4,
+            "key": "live_execution",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "adapter_readiness",
+            "status": "not_requested"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 4,
+            "key": "balanced_multi_agent_matrix",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 5,
+            "key": "correctness_policy_and_proof",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "token_measurement",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "route_isolation",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 8,
+            "key": "run_validity_controls",
+            "status": "not_requested"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "live_lifecycle_telemetry",
+            "status": "not_requested"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "paired_route_comparison",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "savings_claim",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "matrix_completion_report",
+            "status": "not_requested"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "terminal_control_summary",
+            "status": "not_requested"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "route_policy_summary",
+            "status": "not_requested"
+          }
+        ],
+        "status": "pass",
+        "target_id": "commerce_web_frontend",
+        "target_label": "Commerce Web Frontend"
+      },
+      {
+        "blocker_count": 0,
+        "fail": 0,
+        "issue_count": 0,
+        "requirement_status": "pass",
+        "requirements": [
+          {
+            "blocker_count": 0,
+            "check_count": 4,
+            "key": "live_execution",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "adapter_readiness",
+            "status": "not_requested"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 4,
+            "key": "balanced_multi_agent_matrix",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 5,
+            "key": "correctness_policy_and_proof",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "token_measurement",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "route_isolation",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 8,
+            "key": "run_validity_controls",
+            "status": "not_requested"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "live_lifecycle_telemetry",
+            "status": "not_requested"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "paired_route_comparison",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "savings_claim",
+            "status": "pass"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "matrix_completion_report",
+            "status": "not_requested"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "terminal_control_summary",
+            "status": "not_requested"
+          },
+          {
+            "blocker_count": 0,
+            "check_count": 1,
+            "key": "route_policy_summary",
+            "status": "not_requested"
+          }
+        ],
+        "status": "pass",
+        "target_id": "native_ios_commerce_app",
+        "target_label": "Native iOS Commerce App"
+      }
+    ],
+    "scope": "Sanitized scoped smoke audit. This is not the full publishable-study gate."
+  },
+  "claim_readiness": {
+    "rows": [
+      {
+        "agent": "codex",
+        "agent_reported_claim_blockers": [
+          "agent_reported_token_sources_not_matched",
+          "agent_reported_token_savings_not_positive"
+        ],
+        "agent_reported_token_savings_claim_supported": false,
+        "baseline_exact_uncached_total_tokens": 88819,
+        "correctness_ok": true,
+        "exact_claim_blockers": [
+          "exact_token_savings_not_positive"
+        ],
+        "exact_token_savings_claim_supported": false,
+        "exact_token_savings_percent": -82.61,
+        "exact_uncached_token_savings_claim_supported": true,
+        "exact_uncached_token_savings_percent": 52.95,
+        "model_visible_proxy_savings_claim_supported": true,
+        "model_visible_proxy_token_savings_percent": 55.86,
+        "repeat_index": "0",
+        "target_id": "commerce_web_frontend",
+        "target_label": "Commerce Web Frontend",
+        "treatment_exact_uncached_total_tokens": 41788
+      },
+      {
+        "agent": "codex",
+        "agent_reported_claim_blockers": [
+          "agent_reported_token_sources_not_matched",
+          "agent_reported_token_savings_not_positive"
+        ],
+        "agent_reported_token_savings_claim_supported": false,
+        "baseline_exact_uncached_total_tokens": 87878,
+        "correctness_ok": true,
+        "exact_claim_blockers": [
+          "exact_token_savings_not_positive"
+        ],
+        "exact_token_savings_claim_supported": false,
+        "exact_token_savings_percent": -88.84,
+        "exact_uncached_token_savings_claim_supported": true,
+        "exact_uncached_token_savings_percent": 19.66,
+        "model_visible_proxy_savings_claim_supported": true,
+        "model_visible_proxy_token_savings_percent": 12.75,
+        "repeat_index": "0",
+        "target_id": "native_ios_commerce_app",
+        "target_label": "Native iOS Commerce App",
+        "treatment_exact_uncached_total_tokens": 70597
+      }
+    ],
+    "scope": "sanitized Codex A/D smoke claim readiness"
+  },
+  "created_at": "2026-06-20T21:29:49Z",
+  "limitations": [
+    "one repeat per target",
+    "two private targets only",
+    "known-symbol definition task family only",
+    "source repositories were dirty and not snapshotted",
+    "run order was fixed A-search-only then D-full-router",
+    "tool/model versions were not captured in the original smoke artifacts"
+  ],
+  "privacy_note": "Company names, repository names, local paths, raw prompts, transcripts, final answers, and exact private repository commits are intentionally omitted.",
+  "route_isolation": [
+    {
+      "agent": "codex",
+      "blocked_tool_violation_count": 0,
+      "command_shape": [
+        "codex",
+        "exec",
+        "--sandbox",
+        "read-only",
+        "--ephemeral",
+        "--json",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--disable",
+        "plugins",
+        "-c",
+        "mcp_servers={}",
+        "-"
+      ],
+      "hard_controls": [
+        "codex_ignore_user_config",
+        "codex_ignore_rules",
+        "codex_plugins_disabled",
+        "codex_empty_mcp_servers_config"
+      ],
+      "mcp_servers_hard_disabled": true,
+      "observed_task_tools": [
+        "rg",
+        "rg",
+        "rg",
+        "rg",
+        "rg",
+        "rg",
+        "sed",
+        "sed"
+      ],
+      "profile": "A-search-only",
+      "route_isolation_mode": "config",
+      "semantic_tools_disabled": true,
+      "target_id": "commerce_web_frontend",
+      "target_label": "Commerce Web Frontend",
+      "weak_controls": []
+    },
+    {
+      "agent": "codex",
+      "blocked_tool_violation_count": 0,
+      "command_shape": [
+        "codex",
+        "exec",
+        "--sandbox",
+        "read-only",
+        "--ephemeral",
+        "--json",
+        "-"
+      ],
+      "hard_controls": [],
+      "mcp_servers_hard_disabled": false,
+      "observed_task_tools": [
+        "find_symbol",
+        "find_symbol",
+        "get_symbols_overview",
+        "get_symbols_overview"
+      ],
+      "profile": "D-full-router",
+      "route_isolation_mode": "prompt-plus-env",
+      "semantic_tools_disabled": false,
+      "target_id": "commerce_web_frontend",
+      "target_label": "Commerce Web Frontend",
+      "weak_controls": []
+    },
+    {
+      "agent": "codex",
+      "blocked_tool_violation_count": 0,
+      "command_shape": [
+        "codex",
+        "exec",
+        "--sandbox",
+        "read-only",
+        "--ephemeral",
+        "--json",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--disable",
+        "plugins",
+        "-c",
+        "mcp_servers={}",
+        "-"
+      ],
+      "hard_controls": [
+        "codex_ignore_user_config",
+        "codex_ignore_rules",
+        "codex_plugins_disabled",
+        "codex_empty_mcp_servers_config"
+      ],
+      "mcp_servers_hard_disabled": true,
+      "observed_task_tools": [
+        "rg",
+        "rg",
+        "rg",
+        "rg",
+        "sed",
+        "sed"
+      ],
+      "profile": "A-search-only",
+      "route_isolation_mode": "config",
+      "semantic_tools_disabled": true,
+      "target_id": "native_ios_commerce_app",
+      "target_label": "Native iOS Commerce App",
+      "weak_controls": []
+    },
+    {
+      "agent": "codex",
+      "blocked_tool_violation_count": 0,
+      "command_shape": [
+        "codex",
+        "exec",
+        "--sandbox",
+        "read-only",
+        "--ephemeral",
+        "--json",
+        "-"
+      ],
+      "hard_controls": [],
+      "mcp_servers_hard_disabled": false,
+      "observed_task_tools": [
+        "find_symbol",
+        "find_symbol",
+        "find_symbol",
+        "find_symbol"
+      ],
+      "profile": "D-full-router",
+      "route_isolation_mode": "prompt-plus-env",
+      "semantic_tools_disabled": false,
+      "target_id": "native_ios_commerce_app",
+      "target_label": "Native iOS Commerce App",
+      "weak_controls": []
+    }
+  ],
+  "runs": [
+    {
+      "agent": "codex",
+      "ast_grep_count": 0,
+      "completion_reason": "sentinel",
+      "correctness_status": "pass",
+      "exact_cached_input_tokens": 81408,
+      "exact_input_tokens": 168894,
+      "exact_output_tokens": 1333,
+      "exact_reasoning_output_tokens": 442,
+      "exact_total_tokens": 170227,
+      "exact_uncached_input_tokens": 87486,
+      "exact_uncached_total_tokens": 88819,
+      "expected_proof_layer_seen": true,
+      "expected_success_signal_seen": true,
+      "files_opened_count": 1,
+      "mcp_servers_hard_disabled": true,
+      "model_visible_proxy_tokens": 1980,
+      "observed_task_tools": [
+        "rg",
+        "rg",
+        "rg",
+        "rg",
+        "rg",
+        "rg",
+        "sed",
+        "sed"
+      ],
+      "policy_adherence": "pass",
+      "policy_violations": [],
+      "profile": "A-search-only",
+      "repeat_index": 0,
+      "route_hard_controls": [
+        "codex_ignore_user_config",
+        "codex_ignore_rules",
+        "codex_plugins_disabled",
+        "codex_empty_mcp_servers_config"
+      ],
+      "route_isolation_mode": "config",
+      "route_weak_controls": [],
+      "runtime_tool_count": 0,
+      "search_count": 8,
+      "semantic_tool_count": 0,
+      "semantic_tools_disabled": true,
+      "target_id": "commerce_web_frontend",
+      "target_label": "Commerce Web Frontend",
+      "task_family": "known_symbol_definition",
+      "token_source": "exact",
+      "tool_call_count": 3,
+      "tool_evidence_source": "observed",
+      "tool_output_bytes": 5333,
+      "usage_event_count": 1,
+      "wall_seconds": 40.59
+    },
+    {
+      "agent": "codex",
+      "ast_grep_count": 0,
+      "completion_reason": "sentinel",
+      "correctness_status": "pass",
+      "exact_cached_input_tokens": 269056,
+      "exact_input_tokens": 306522,
+      "exact_output_tokens": 4322,
+      "exact_reasoning_output_tokens": 3373,
+      "exact_total_tokens": 310844,
+      "exact_uncached_input_tokens": 37466,
+      "exact_uncached_total_tokens": 41788,
+      "expected_proof_layer_seen": true,
+      "expected_success_signal_seen": true,
+      "files_opened_count": 1,
+      "mcp_servers_hard_disabled": false,
+      "model_visible_proxy_tokens": 874,
+      "observed_task_tools": [
+        "find_symbol",
+        "find_symbol",
+        "get_symbols_overview",
+        "get_symbols_overview"
+      ],
+      "policy_adherence": "pass",
+      "policy_violations": [],
+      "profile": "D-full-router",
+      "repeat_index": 0,
+      "route_hard_controls": [],
+      "route_isolation_mode": "prompt-plus-env",
+      "route_weak_controls": [],
+      "runtime_tool_count": 0,
+      "search_count": 0,
+      "semantic_tool_count": 4,
+      "semantic_tools_disabled": false,
+      "target_id": "commerce_web_frontend",
+      "target_label": "Commerce Web Frontend",
+      "task_family": "known_symbol_definition",
+      "token_source": "exact",
+      "tool_call_count": 1,
+      "tool_evidence_source": "observed",
+      "tool_output_bytes": 902,
+      "usage_event_count": 1,
+      "wall_seconds": 104.993
+    },
+    {
+      "agent": "codex",
+      "ast_grep_count": 0,
+      "completion_reason": "sentinel",
+      "correctness_status": "pass",
+      "exact_cached_input_tokens": 81408,
+      "exact_input_tokens": 168008,
+      "exact_output_tokens": 1278,
+      "exact_reasoning_output_tokens": 301,
+      "exact_total_tokens": 169286,
+      "exact_uncached_input_tokens": 86600,
+      "exact_uncached_total_tokens": 87878,
+      "expected_proof_layer_seen": true,
+      "expected_success_signal_seen": true,
+      "files_opened_count": 1,
+      "mcp_servers_hard_disabled": true,
+      "model_visible_proxy_tokens": 1231,
+      "observed_task_tools": [
+        "rg",
+        "rg",
+        "rg",
+        "rg",
+        "sed",
+        "sed"
+      ],
+      "policy_adherence": "pass",
+      "policy_violations": [],
+      "profile": "A-search-only",
+      "repeat_index": 0,
+      "route_hard_controls": [
+        "codex_ignore_user_config",
+        "codex_ignore_rules",
+        "codex_plugins_disabled",
+        "codex_empty_mcp_servers_config"
+      ],
+      "route_isolation_mode": "config",
+      "route_weak_controls": [],
+      "runtime_tool_count": 0,
+      "search_count": 6,
+      "semantic_tool_count": 0,
+      "semantic_tools_disabled": true,
+      "target_id": "native_ios_commerce_app",
+      "target_label": "Native iOS Commerce App",
+      "task_family": "known_symbol_definition",
+      "token_source": "exact",
+      "tool_call_count": 3,
+      "tool_evidence_source": "observed",
+      "tool_output_bytes": 2236,
+      "usage_event_count": 1,
+      "wall_seconds": 44.933
+    },
+    {
+      "agent": "codex",
+      "ast_grep_count": 0,
+      "completion_reason": "sentinel",
+      "correctness_status": "pass",
+      "exact_cached_input_tokens": 249088,
+      "exact_input_tokens": 314652,
+      "exact_output_tokens": 5033,
+      "exact_reasoning_output_tokens": 3810,
+      "exact_total_tokens": 319685,
+      "exact_uncached_input_tokens": 65564,
+      "exact_uncached_total_tokens": 70597,
+      "expected_proof_layer_seen": true,
+      "expected_success_signal_seen": true,
+      "files_opened_count": 0,
+      "mcp_servers_hard_disabled": false,
+      "model_visible_proxy_tokens": 1074,
+      "observed_task_tools": [
+        "find_symbol",
+        "find_symbol",
+        "find_symbol",
+        "find_symbol"
+      ],
+      "policy_adherence": "pass",
+      "policy_violations": [],
+      "profile": "D-full-router",
+      "repeat_index": 0,
+      "route_hard_controls": [],
+      "route_isolation_mode": "prompt-plus-env",
+      "route_weak_controls": [],
+      "runtime_tool_count": 0,
+      "search_count": 0,
+      "semantic_tool_count": 4,
+      "semantic_tools_disabled": false,
+      "target_id": "native_ios_commerce_app",
+      "target_label": "Native iOS Commerce App",
+      "task_family": "known_symbol_definition",
+      "token_source": "exact",
+      "tool_call_count": 1,
+      "tool_evidence_source": "observed",
+      "tool_output_bytes": 1548,
+      "usage_event_count": 1,
+      "wall_seconds": 117.506
+    }
+  ],
+  "scope": {
+    "agent": "codex",
+    "cells": 4,
+    "claim_boundary": "Smoke evidence for the full router system effect only; not an LSP-only causal estimate and not a publishable general benchmark conclusion.",
+    "paired_comparisons": 2,
+    "profiles_compared": [
+      "A-search-only",
+      "D-full-router"
+    ],
+    "repeats_per_target": 1,
+    "task_family": "known_symbol_definition"
+  },
+  "targets": {
+    "commerce_web_frontend": {
+      "description": "Private production commerce web frontend codebase. The smoke task was a known-symbol definition lookup. No build, browser, or runtime behavior was claimed.",
+      "exact_uncached_claim_supported": true,
+      "label": "Commerce Web Frontend",
+      "language_surface": "TypeScript/Vue-family frontend",
+      "order_randomized": false,
+      "random_seed": 1079471252,
+      "run_order_profiles": [
+        "A-search-only",
+        "D-full-router"
+      ],
+      "scoped_smoke_audit_status": "pass",
+      "snapshot_repos": false,
+      "source_repo_dirty_at_smoke": true,
+      "source_state_opaque_id": "source_state_h6t9p2w4",
+      "target_symbol_opaque_id": "symbol_c8v3k1r6",
+      "task_family": "known_symbol_definition",
+      "task_prompt_opaque_id": "taskprompt_4q7n2m9c"
+    },
+    "native_ios_commerce_app": {
+      "description": "Private production native iOS commerce app codebase. The smoke task was a known-symbol definition lookup. No Xcode build, simulator, or runtime behavior was claimed.",
+      "exact_uncached_claim_supported": true,
+      "label": "Native iOS Commerce App",
+      "language_surface": "Swift/UIKit-family iOS app",
+      "order_randomized": false,
+      "random_seed": 4000746933,
+      "run_order_profiles": [
+        "A-search-only",
+        "D-full-router"
+      ],
+      "scoped_smoke_audit_status": "pass",
+      "snapshot_repos": false,
+      "source_repo_dirty_at_smoke": true,
+      "source_state_opaque_id": "source_state_b3d6w8p1",
+      "target_symbol_opaque_id": "symbol_t5q8n1x3",
+      "task_family": "known_symbol_definition",
+      "task_prompt_opaque_id": "taskprompt_9m2k4r7v"
+    }
+  },
+  "title": "Anonymized Codex A/D Live Smoke Results",
+  "version_capture": {
+    "codex_cli_version": "not_captured_in_smoke",
+    "controller_commit_at_smoke": "not_captured_in_smoke",
+    "model_identifier": "not_captured_in_smoke",
+    "serena_version": "not_captured_in_smoke"
+  }
+}

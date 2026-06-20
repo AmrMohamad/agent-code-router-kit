@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+<title id="title">Anonymized Codex A/D Smoke Results</title>
+<desc id="desc">Exact uncached token telemetry for two anonymized live smoke comparisons.</desc>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;}</style>
+<rect width="1600" height="1000" fill="#f6f9fc"/>
+<rect x="70" y="70" width="1460" height="845" rx="28" fill="#ffffff" stroke="#b8c8dd" stroke-width="2"/>
+<text x="125" y="175" font-size="56" font-weight="800" fill="#172033">Codex A/D Smoke Results</text>
+<text x="128" y="220" font-size="30" font-weight="400" fill="#506076">Privacy-safe exact uncached token telemetry from live smoke cells</text>
+<rect x="128" y="242" width="135" height="38" rx="19" fill="#2866b8"/>
+<text x="145" y="268" font-size="20" font-weight="700" fill="#ffffff">2 targets</text>
+<rect x="279" y="242" width="200" height="38" rx="19" fill="#1d9c99"/>
+<text x="296" y="268" font-size="20" font-weight="700" fill="#ffffff">A/D comparison</text>
+<rect x="495" y="242" width="200" height="38" rx="19" fill="#aa690f"/>
+<text x="512" y="268" font-size="20" font-weight="700" fill="#ffffff">1 repeat smoke</text>
+<rect x="711" y="242" width="187" height="38" rx="19" fill="#314155"/>
+<text x="728" y="268" font-size="20" font-weight="700" fill="#ffffff">system effect</text>
+<rect x="110" y="330" width="1380" height="220" rx="22" fill="#f8fbfe" stroke="#d2dde9"/>
+<text x="150" y="388" font-size="30" font-weight="800" fill="#172033">Commerce Web Frontend</text>
+<text x="150" y="420" font-size="22" font-weight="400" fill="#536276">TypeScript/Vue-family frontend</text>
+<text x="150" y="480" font-size="34" font-weight="800" fill="#13766f">D used 52.95% fewer</text>
+<text x="150" y="510" font-size="23" font-weight="400" fill="#00776d">A 88,819 -&gt; D 41,788 | avoided 47,031 uncached tokens</text>
+<text x="150" y="530" font-size="18" font-weight="400" fill="#536276">Trade-off: exact total +82.61%, wall time 2.59x</text>
+<rect x="110" y="575" width="1380" height="220" rx="22" fill="#f8fbfe" stroke="#d2dde9"/>
+<text x="150" y="633" font-size="30" font-weight="800" fill="#172033">Native iOS Commerce App</text>
+<text x="150" y="665" font-size="22" font-weight="400" fill="#536276">Swift/UIKit-family iOS app</text>
+<text x="150" y="725" font-size="34" font-weight="800" fill="#13766f">D used 19.66% fewer</text>
+<text x="150" y="755" font-size="23" font-weight="400" fill="#00776d">A 87,878 -&gt; D 70,597 | avoided 17,281 uncached tokens</text>
+<text x="150" y="775" font-size="18" font-weight="400" fill="#536276">Trade-off: exact total +88.84%, wall time 2.62x</text>
+<rect x="110" y="806" width="1380" height="70" rx="16" fill="#ffffff" stroke="#d4deeb"/>
+<rect x="150" y="831" width="34" height="22" rx="6" fill="#2866b8"/>
+<text x="200" y="850" font-size="22" font-weight="400" fill="#172033">A-search-only baseline</text>
+<rect x="720" y="831" width="34" height="22" rx="6" fill="#1d9c99"/>
+<text x="770" y="850" font-size="22" font-weight="400" fill="#172033">D-full-router</text>
+<text x="150" y="898" font-size="20" font-weight="400" fill="#a66000">Smoke evidence only: not LSP-only attribution, not a general benchmark conclusion.</text>
+<text x="1180" y="948" font-size="20" font-weight="400" fill="#738296">sanitized generated public artifact</text>
+</svg>

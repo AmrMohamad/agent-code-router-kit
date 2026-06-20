@@ -163,9 +163,15 @@ class RealAgentBenchmarkReportTests(unittest.TestCase):
             self.assertTrue(row["exact_uncached_token_savings_claim_supported"])
             self.assertEqual(row["baseline_exact_uncached_total_tokens"], 90)
             self.assertEqual(row["treatment_exact_uncached_total_tokens"], 45)
+            self.assertEqual(row["treatment_minus_baseline_exact_uncached_tokens"], -45)
+            self.assertEqual(row["uncached_tokens_avoided"], 45)
             self.assertEqual(row["exact_uncached_token_savings_percent"], 50.0)
+            comparison = summary["route_comparisons"][0]
+            self.assertEqual(comparison["treatment_minus_baseline_exact_uncached_tokens"], -45)
+            self.assertEqual(comparison["uncached_tokens_avoided"], 45)
             report = (root / "out" / "token-savings-report.md").read_text(encoding="utf-8")
             self.assertIn("Median uncached exact tokens", report)
+            self.assertIn("Uncached tokens avoided", report)
             self.assertIn("Uncached exact savings %", report)
 
     def test_claim_readiness_supports_agent_reported_savings(self) -> None:

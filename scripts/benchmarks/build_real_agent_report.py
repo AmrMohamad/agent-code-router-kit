@@ -361,7 +361,10 @@ def profile_pair_comparisons(
             )
             if baseline_exact and treatment_exact
             else None,
-            "exact_uncached_total_token_delta": (treatment_exact_uncached - baseline_exact_uncached)
+            "treatment_minus_baseline_exact_uncached_tokens": (treatment_exact_uncached - baseline_exact_uncached)
+            if baseline_exact_uncached and treatment_exact_uncached
+            else None,
+            "uncached_tokens_avoided": (baseline_exact_uncached - treatment_exact_uncached)
             if baseline_exact_uncached and treatment_exact_uncached
             else None,
             "exact_uncached_total_token_savings_percent": round(
@@ -457,7 +460,10 @@ def route_claim_readiness(comparisons: list[dict[str, object]]) -> dict[str, obj
                 "model_visible_proxy_token_savings_percent": proxy_savings,
                 "baseline_exact_uncached_total_tokens": comparison.get("baseline_exact_uncached_total_tokens"),
                 "treatment_exact_uncached_total_tokens": comparison.get("treatment_exact_uncached_total_tokens"),
-                "exact_uncached_total_token_delta": comparison.get("exact_uncached_total_token_delta"),
+                "treatment_minus_baseline_exact_uncached_tokens": comparison.get(
+                    "treatment_minus_baseline_exact_uncached_tokens"
+                ),
+                "uncached_tokens_avoided": comparison.get("uncached_tokens_avoided"),
                 "baseline_agent_reported_total_tokens": comparison.get("baseline_agent_reported_total_tokens"),
                 "treatment_agent_reported_total_tokens": comparison.get("treatment_agent_reported_total_tokens"),
                 "agent_reported_total_token_delta": comparison.get("agent_reported_total_token_delta"),
@@ -666,8 +672,8 @@ def build_markdown(summary: dict[str, object]) -> str:
                 "",
                 "## Paired Route Comparisons",
                 "",
-                "| Agent | Task | Repeat | Exact token delta | Exact savings % | Uncached exact delta | Uncached exact savings % | Agent-reported delta | Agent-reported savings % | Proxy token delta | Proxy savings % | Wall seconds delta |",
-                "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+                "| Agent | Task | Repeat | Exact token delta | Exact savings % | Treatment minus baseline uncached exact | Uncached tokens avoided | Uncached exact savings % | Agent-reported delta | Agent-reported savings % | Proxy token delta | Proxy savings % | Wall seconds delta |",
+                "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
             ]
         )
         comparison_rows = comparisons if isinstance(comparisons, list) else []
@@ -677,7 +683,8 @@ def build_markdown(summary: dict[str, object]) -> str:
             lines.append(
                 f"| {row.get('agent', '')} | {row.get('task_id', '')} | {row.get('repeat_index', '')} | "
                 f"{row.get('exact_total_token_delta', '')} | {row.get('exact_total_token_savings_percent', '')} | "
-                f"{row.get('exact_uncached_total_token_delta', '')} | "
+                f"{row.get('treatment_minus_baseline_exact_uncached_tokens', '')} | "
+                f"{row.get('uncached_tokens_avoided', '')} | "
                 f"{row.get('exact_uncached_total_token_savings_percent', '')} | "
                 f"{row.get('agent_reported_total_token_delta', '')} | "
                 f"{row.get('agent_reported_total_token_savings_percent', '')} | "
