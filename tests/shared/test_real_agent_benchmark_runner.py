@@ -326,15 +326,17 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
             self.assertTrue(all(Path(row["repo_path"]).resolve() == IOS_FIXTURE.resolve() for row in rows))
 
             expected = {
-                "A-search-only": (50000, False),
-                "B-search-summary": (12000, True),
-                "C-lsp-naive": (50000, False),
-                "D-full-router": (12000, True),
+                "A-search-only": (50000, False, True),
+                "B-search-summary": (12000, True, True),
+                "C-lsp-naive": (50000, False, False),
+                "D-full-router": (12000, True, False),
             }
             for row in rows:
                 with self.subTest(profile=row["profile"]):
-                    budget, requires_summary_first = expected[row["profile"]]
-                    packet = (Path(row["run_dir"]) / "task-packet.md").read_text(encoding="utf-8")
+                    budget, requires_summary_first, search_only_isolated = expected[row["profile"]]
+                    run_dir = Path(row["run_dir"])
+                    packet = (run_dir / "task-packet.md").read_text(encoding="utf-8")
+                    isolation = json.loads((run_dir / "route-isolation.json").read_text(encoding="utf-8"))
                     self.assertIn(f"Maximum raw output bytes: {budget}", packet)
                     self.assertIn(IOS_HIGH_FANOUT_PROMPT, packet)
                     if requires_summary_first:
@@ -345,6 +347,16 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
                         self.assertIn("controlled high-fanout baseline", packet)
                         self.assertIn("A summary-first command is not required in this arm", packet)
                         self.assertNotIn("First produce grouped counts only", packet)
+                    if search_only_isolated:
+                        self.assertEqual(isolation["mode"], "config")
+                        self.assertEqual(isolation["env"].get("RARB_SEMANTIC_TOOLS_DISABLED"), "1")
+                        self.assertIn("codex_empty_mcp_servers_config", isolation["hard_controls"])
+                        self.assertIn("mcp_servers={}", isolation["args"])
+                    else:
+                        self.assertEqual(isolation["mode"], "prompt-plus-env")
+                        self.assertNotIn("RARB_SEMANTIC_TOOLS_DISABLED", isolation["env"])
+                        self.assertNotIn("codex_empty_mcp_servers_config", isolation["hard_controls"])
+                        self.assertNotIn("mcp_servers={}", isolation["args"])
 
     def test_requires_explicit_mode(self) -> None:
         with self.assertRaises(SystemExit) as context:

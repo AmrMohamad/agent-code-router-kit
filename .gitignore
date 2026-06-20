@@ -17,6 +17,10 @@ results/
 !benchmarks/real-agent-routing/results/.gitkeep
 benchmarks/real-agent-routing/results/*
 !benchmarks/real-agent-routing/results/.gitkeep
+!benchmarks/real-agent-routing/results/codex-ad-smoke-anonymized/
+!benchmarks/real-agent-routing/results/codex-ad-smoke-anonymized/README.md
+!benchmarks/real-agent-routing/results/codex-ad-smoke-anonymized/runs.sanitized.jsonl
+!benchmarks/real-agent-routing/results/codex-ad-smoke-anonymized/summary.sanitized.json
 benchmarks/real-agent-routing/tasks/android-realworld.local.tsv
 raw/
 buildServer.json
