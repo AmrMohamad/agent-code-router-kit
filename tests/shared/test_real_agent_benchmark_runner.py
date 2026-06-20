@@ -92,57 +92,45 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
 
         self.assertEqual([left.random() for _ in range(3)], [right.random() for _ in range(3)])
 
-    def test_high_fanout_tasks_preserve_profile_declared_output_budgets(self) -> None:
-        search_profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/A-search-only.yaml")
-        router_profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/D-full-router.yaml")
+    def test_high_fanout_arm_packets_keep_all_profile_behaviors_distinct(self) -> None:
         task = next(
             task
-            for task in load_tasks(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.local.tsv")
-            if task.task_id == "live_b2b_usecase_fanout"
+            for task in load_tasks(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv")
+            if task.task_id == "high_fanout_usecase"
         )
-        search_effective = effective_route_profile(search_profile, task=task)
-        router_effective = effective_route_profile(router_profile, task=task)
+        cases = [
+            ("A-search-only", "raw_search_allowed", 50000, False),
+            ("B-search-summary", "summary_first", 12000, True),
+            ("C-lsp-naive", "weak", 50000, False),
+            ("D-full-router", "summary_first_required", 12000, True),
+        ]
 
-        self.assertEqual(search_profile.max_raw_output_bytes, 50000)
-        self.assertEqual(search_effective.max_raw_output_bytes, 50000)
-        self.assertEqual(router_profile.max_raw_output_bytes, 12000)
-        self.assertEqual(router_effective.max_raw_output_bytes, 12000)
+        for profile_id, expected_policy, expected_budget, requires_summary_first in cases:
+            with self.subTest(profile_id=profile_id):
+                profile = load_route_profile(ROOT / f"benchmarks/real-agent-routing/profiles/{profile_id}.yaml")
+                effective = effective_route_profile(profile, task=task)
+                packet = render_task_packet(
+                    run_id=f"rarb-{profile_id}",
+                    agent="codex",
+                    repo=str(ROOT),
+                    task=task,
+                    profile=effective,
+                    sentinel="DONE",
+                )
 
-    def test_high_fanout_task_packet_keeps_baseline_and_router_instructions_distinct(self) -> None:
-        search_profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/A-search-only.yaml")
-        router_profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/D-full-router.yaml")
-        task = next(
-            task
-            for task in load_tasks(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.local.tsv")
-            if task.task_id == "live_b2b_usecase_fanout"
-        )
-
-        search_packet = render_task_packet(
-            run_id="rarb-search",
-            agent="codex",
-            repo=str(ROOT),
-            task=task,
-            profile=search_profile,
-            sentinel="DONE",
-        )
-        router_packet = render_task_packet(
-            run_id="rarb-router",
-            agent="codex",
-            repo=str(ROOT),
-            task=task,
-            profile=router_profile,
-            sentinel="DONE",
-        )
-
-        self.assertIn("Maximum raw output bytes: 50000", search_packet)
-        self.assertIn("controlled high-fanout baseline", search_packet)
-        self.assertIn("A summary-first command is not required in this arm", search_packet)
-        self.assertNotIn("First produce grouped counts only", search_packet)
-        self.assertNotIn("A file read before grouped evidence is a benchmark failure", search_packet)
-
-        self.assertIn("Maximum raw output bytes: 12000", router_packet)
-        self.assertIn("First produce grouped counts only", router_packet)
-        self.assertIn("A file read before grouped evidence is a benchmark failure", router_packet)
+                self.assertEqual(profile.high_fanout_policy, expected_policy)
+                self.assertEqual(effective.max_raw_output_bytes, expected_budget)
+                self.assertIn(f"Maximum raw output bytes: {expected_budget}", packet)
+                if requires_summary_first:
+                    self.assertIn("First produce grouped counts only", packet)
+                    self.assertIn("A file read before grouped evidence is a benchmark failure", packet)
+                    self.assertNotIn("controlled high-fanout baseline", packet)
+                    self.assertNotIn("A summary-first command is not required in this arm", packet)
+                else:
+                    self.assertIn("controlled high-fanout baseline", packet)
+                    self.assertIn("A summary-first command is not required in this arm", packet)
+                    self.assertNotIn("First produce grouped counts only", packet)
+                    self.assertNotIn("A file read before grouped evidence is a benchmark failure", packet)
 
     def test_full_router_known_kotlin_task_requires_serena_readiness(self) -> None:
         profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/D-full-router.yaml")

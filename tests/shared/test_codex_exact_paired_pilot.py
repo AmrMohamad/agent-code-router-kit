@@ -17,7 +17,7 @@ def make_args(tmp: str, **overrides: object) -> argparse.Namespace:
     values: dict[str, object] = {
         "repo": str(ROOT),
         "repo_map": f"sample_b2b_android={ROOT}",
-        "tasks": str(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.local.tsv"),
+        "tasks": str(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv"),
         "out": str(Path(tmp) / "pilot"),
         "sanitized_out": "",
         "task_limit": 1,

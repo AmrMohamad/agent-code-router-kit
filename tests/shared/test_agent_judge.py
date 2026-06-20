@@ -74,8 +74,8 @@ BENCHMARK_DONE
         profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/A-search-only.yaml")
         task = next(
             task
-            for task in load_tasks(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.local.tsv")
-            if task.task_id == "live_b2b_usecase_fanout"
+            for task in load_tasks(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv")
+            if task.task_id == "high_fanout_usecase"
         )
         result = judge_transcript(
             """BENCHMARK_RESULT
@@ -86,7 +86,7 @@ raw_dump_incidents:
   count: 0
 policy_adherence: pass
 final_answer:
-  Search evidence indicates UseCase is concentrated in app-core with about 127 matching files, then checkout modules.
+  Summary counts reported: Search evidence indicates UseCase is concentrated in app-core with about 127 matching files, then checkout modules.
 BENCHMARK_DONE
 """,
             route_profile=profile,
@@ -201,17 +201,17 @@ BENCHMARK_DONE
         profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/A-search-only.yaml")
         task = next(
             task
-            for task in load_tasks(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.local.tsv")
-            if task.task_id == "live_retail_cart_vm"
+            for task in load_tasks(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv")
+            if task.task_id == "known_symbol_definition"
         )
         transcript = (
             '{"type":"user","message":{"role":"user","content":[{"type":"text",'
             '"text":"Do not claim runtime behavior."}]}}\n'
             '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"'
             "BENCHMARK_RESULT\\nstatus: pass\\nconfidence: high\\ntools_used:\\n  - rg\\n"
-            "files_opened:\\n  count: 1\\n  paths:\\n    - app-cart/src/main/java/com/app/features/cart/CartViewModel.kt\\n"
+            "files_opened:\\n  count: 1\\n  paths:\\n    - app/src/main/java/com/example/SampleFeatureViewModel.kt\\n"
             "raw_dump_incidents:\\n  count: 0\\npolicy_adherence: pass\\nfinal_answer:\\n"
-            "`CartViewModel` is defined in `app-cart/src/main/java/com/app/features/cart/CartViewModel.kt`. "
+            "Definition location reported: `SampleFeatureViewModel` is defined in `app/src/main/java/com/example/SampleFeatureViewModel.kt`. "
             "Evidence layer: search-only. No runtime behavior was claimed or tested.\\nBENCHMARK_DONE"
             '"}]}}\n'
         )
@@ -230,8 +230,8 @@ BENCHMARK_DONE
         profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/A-search-only.yaml")
         task = next(
             task
-            for task in load_tasks(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.local.tsv")
-            if task.task_id == "live_retail_usecase_fanout"
+            for task in load_tasks(ROOT / "benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv")
+            if task.task_id == "high_fanout_usecase"
         )
         result = judge_transcript(
             """BENCHMARK_RESULT
@@ -242,7 +242,7 @@ raw_dump_incidents:
   count: 0
 policy_adherence: pass
 final_answer:
-  Search evidence indicates UseCase is concentrated in app-core with about 127 matching files, then checkout and feature modules.
+  Summary counts reported: Search evidence indicates UseCase is concentrated in app-core with about 127 matching files, then checkout and feature modules.
 BENCHMARK_DONE
 """,
             route_profile=profile,
