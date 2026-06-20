@@ -57,6 +57,7 @@ class AndroidHighFanoutSummaryTests(unittest.TestCase):
             self.assertEqual(summary.top_files[0]["matches"], 2)
             self.assertEqual(summary.top_modules[0], {"key": "src", "matches": 2})
             self.assertEqual(summary.budget["status"], "pass")
+            self.assertEqual(summary.command[-1], ".")
             self.assertIn("read focused ranges only", summary.next_actions)
 
     def test_build_payload_includes_grouped_counts_and_budget(self) -> None:

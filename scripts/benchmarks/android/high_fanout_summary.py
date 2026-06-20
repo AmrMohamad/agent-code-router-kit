@@ -82,7 +82,7 @@ def summarize_pattern(repo: Path, pattern: str, globs: list[str], top_limit: int
     argv = ["rg", "--count-matches", "--sort", "path"]
     for glob in globs:
         argv.extend(["--glob", glob])
-    argv.extend(["--", pattern])
+    argv.extend(["--", pattern, "."])
     started = time.perf_counter()
     try:
         proc = subprocess.run(
