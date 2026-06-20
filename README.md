@@ -39,6 +39,39 @@ project's build or Xcode/plugin layer.
 | Structural Swift/Kotlin pattern | `ast-grep` | Matches syntax-shaped patterns and migration candidates more safely than regex |
 | Build/runtime truth | Xcode, Android Studio, Gradle, plugin, CI, or build system | Proves compile, test, simulator/emulator, UI, and runtime behavior |
 
+## Current Smoke Evidence
+
+The repository now includes a privacy-safe, anonymized Codex A/D live smoke
+bundle under
+[`benchmarks/real-agent-routing/results/codex-ad-smoke-anonymized/`](benchmarks/real-agent-routing/results/codex-ad-smoke-anonymized/README.md).
+It publishes only the nature of the private targets:
+
+- a production commerce web frontend with a TypeScript/Vue-family surface;
+- a production native iOS commerce app with a Swift/UIKit-family surface.
+
+Company names, repository names, local paths, raw prompts, transcripts, final
+answers, and exact private repository commits are intentionally omitted.
+
+<p align="center">
+  <img src="docs/assets/codex-ad-smoke-results.png" alt="Anonymized Codex A/D smoke results for a commerce web frontend and native iOS commerce app" width="100%">
+</p>
+
+The smoke compared `A-search-only` against `D-full-router` on one known-symbol
+definition task per private target:
+
+| Anonymous target | A exact uncached | D exact uncached | Tokens saved | Reduction |
+|---|---:|---:|---:|---:|
+| Commerce web frontend | 88,819 | 41,788 | 47,031 | 52.95% |
+| Native iOS commerce app | 87,878 | 70,597 | 17,281 | 19.66% |
+| Descriptive total | 176,697 | 112,385 | 64,312 | 36.40% |
+
+This is smoke evidence only: it proves the live harness can hard-isolate the
+search-only baseline, run a Serena-enabled full-router treatment, capture exact
+uncached token telemetry, and observe tool evidence. It does not establish
+LSP-only causality, generalize across task families, or estimate run-to-run
+variance. The A/D comparison should be read as a full-router system effect, not
+as an LSP-only benchmark claim.
+
 ## Serena-First Agent Path
 
 For day-to-day agent setup, start with the Serena operating guide before the
