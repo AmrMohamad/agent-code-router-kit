@@ -1,8 +1,16 @@
-# Example only. Adapt to your Codex installation.
+# Example only. Adapt to your Codex installation and keep private project paths
+# out of shared public config.
 
 [features]
 hooks = true
 
-# Register your preferred semantic tool through Codex MCP or plugin setup.
-# Keep project-specific paths out of shared public config.
+# Serena MCP server shape for a project-scoped Codex session.
+# Prefer launching Codex from the target repo when using --project-from-cwd.
+[mcp_servers.serena]
+command = "serena"
+args = ["start-mcp-server", "--context=codex", "--project-from-cwd"]
+startup_timeout_sec = 30
 
+# Readiness rule:
+# MCP connection proves transport only. Activate the exact project and run a
+# real source-symbol smoke before relying on Serena definitions/references.

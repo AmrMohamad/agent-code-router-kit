@@ -1,67 +1,79 @@
 # Codex Setup
 
-Codex can use this routing policy through project instructions and a reusable skill.
+Codex can use this routing policy through project instructions, reusable skills,
+and a Serena MCP server.
 
-## AGENTS.md
+## Install
 
-Place the policy in a project `AGENTS.md`:
+Dry-run first:
 
-```text
-templates/AGENTS.md
+```bash
+./scripts/setup/agent-self-install.sh \
+  --target-repo /path/to/repo \
+  --agent codex \
+  --profile android|swift-ios|python|all \
+  --dry-run
 ```
 
-Use the project root or another directory whose children should inherit the policy.
+Apply only after reviewing the dry-run:
 
-## Skill
-
-Install the skill template from:
-
-```text
-templates/codebase-tool-router/SKILL.md
+```bash
+./scripts/setup/agent-self-install.sh \
+  --target-repo /path/to/repo \
+  --agent codex \
+  --profile all \
+  --apply
 ```
 
-For Android-specific tasks, also install:
+The installer adds project policy, Codex skills, and reviewable Serena MCP/hook
+snippets under `.agent-code-router/`.
 
-```text
-templates/android-codebase-tool-router/SKILL.md
+## Serena MCP Shape
+
+Prefer Serena's machine-local setup command when configuring a real workstation:
+
+```bash
+serena setup codex
 ```
 
-Use your Codex skill installation path and keep the skill general. Do not embed private repository details.
+Use the snippet in `templates/codex/config-snippets.toml` as the starting point:
 
-## Prompt
-
-```text
-Use the codebase tool router.
-
-For this Swift/iOS task:
-- use LSP/Serena for known symbols
-- use grouped counts for high-fanout symbols
-- use rg/fd for literals and resources
-- use ast-grep for structural patterns
-- use Xcode/plugin/build proof for build/runtime claims
+```toml
+[mcp_servers.serena]
+command = "serena"
+args = ["start-mcp-server", "--context=codex", "--project-from-cwd"]
+startup_timeout_sec = 30
 ```
 
-For Android:
+Launch Codex from the target repository when using `--project-from-cwd`, or use
+an explicit project path in private local config.
 
-```text
-Use the Android codebase tool router.
+Codex also supports `enabled_tools`, `disabled_tools`, tool approval modes, and
+`tool_timeout_sec` in MCP config. Keep those controls in private/local config
+when they depend on machine or team policy.
 
-For this Android/Kotlin task:
-- use Serena/Kotlin or Java LSP for known source symbols
-- use grouped counts for high-fanout symbols
-- use rg/fd for resources, generated files, XML, and literals
-- use GraphQL tools + rg/fd for GraphQL operations/schemas
-- use ast-grep for structural Kotlin patterns
-- use Gradle/Android Studio/emulator/CI proof for build/runtime claims
-```
+Use `/mcp` in the Codex TUI to verify the server is connected. In the Codex app,
+ask Codex to activate the current project with Serena when the app did not start
+the server from the repo directory.
 
-## Readiness Audit
+## Readiness
 
 Ask Codex to confirm:
 
-1. SourceKit-LSP or Serena is available for Swift/iOS, or Serena/Kotlin LSP is available for Android/Kotlin.
-2. `buildServer.json` exists when using an Xcode project.
-3. `.serena/project.yml` lists `kotlin` and `json` for Android/Kotlin projects.
-4. `rg`, `fd`, and `ast-grep` are available.
-5. Xcode/plugin/build proof or Gradle/Android Studio/emulator/CI proof is available when build/runtime claims are needed.
-6. No high-fanout references will be dumped.
+1. the exact project is active;
+2. `.serena/project.yml` has the smallest correct language set;
+3. a real source-symbol smoke has passed;
+4. `rg`, `fd`, and `ast-grep` are available for non-semantic discovery;
+5. build/runtime proof is routed to Xcode, Gradle, emulator/device, CI, or the project build system.
+
+Use the read-only doctor for preflight:
+
+```bash
+python3 scripts/setup/serena-doctor.py \
+  --target-repo /path/to/repo \
+  --profile android|swift-ios|python|generic \
+  --json
+```
+
+Do not claim build, test, install, launch, runtime, screenshot, or backend/schema
+proof from Serena.

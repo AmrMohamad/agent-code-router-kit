@@ -1,3 +1,43 @@
+# Serena Operating Contract
+
+Use Serena as a semantic source-code layer, not as a general proof layer.
+
+Before making a semantic claim through Serena:
+
+1. Activate the exact repository the task is about.
+2. Confirm `.serena/project.yml` lists only the languages needed for that repo.
+3. Check for stale or duplicate Serena/LSP processes when results look wrong.
+4. Prove one real source symbol through Serena before trusting definitions,
+   references, implementations, hover/type info, or diagnostics.
+
+Important boundaries:
+
+- MCP connected does not prove the correct project is active.
+- Visible Serena tools do not prove they are enabled for the active project.
+- A hook reminder does not prove language-server readiness.
+- A local text match is only a precondition; the Serena/LSP lookup is the
+  semantic proof.
+- Serena/LSP never proves build, test, install, launch, runtime, screenshot, or
+  backend/schema behavior.
+
+Default Serena languages:
+
+- Android/Kotlin: `kotlin,json`; add `java` only when Java proof is needed and
+  Gradle/Android Studio sync is healthy.
+- Swift/iOS: `swift`.
+- Python: `python`.
+- GraphQL: no native Serena route; use GraphQL tools and search first.
+
+For a read-only preflight, run from the toolkit repo:
+
+```bash
+python3 scripts/setup/serena-doctor.py \
+  --target-repo /path/to/repo \
+  --profile android|swift-ios|python|generic \
+  --source-file path/to/SourceFile.ext \
+  --symbol-smoke RealSourceSymbol
+```
+
 # Swift/iOS Tool Routing
 
 Use this routing when working on Swift/iOS code.

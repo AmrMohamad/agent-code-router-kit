@@ -6,11 +6,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'Remember Swift/iOS routing: LSP for known symbols, rg/fd for literals, ast-grep for syntax, build tools for proof.'"
+            "command": "echo 'Serena reminder: activate the exact repo, confirm .serena/project.yml, smoke one real source symbol, and keep build/runtime proof separate.'"
           }
         ]
       }
     ]
   }
 }
-

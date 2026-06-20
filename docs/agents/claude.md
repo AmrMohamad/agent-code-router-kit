@@ -1,19 +1,62 @@
 # Claude Usage
 
-Use the same policy in Claude project instructions or a reusable prompt.
+Claude can use this routing policy through `CLAUDE.md` or a project instruction
+fragment.
 
-Recommended instruction:
+## Install
 
-```text
-Before searching a Swift/iOS or Android/Kotlin codebase, classify the task.
-
-Known Swift symbol: use SourceKit-LSP or an equivalent semantic tool first.
-Known Kotlin/Java symbol: use Serena/Kotlin LSP, Java LSP, or an equivalent semantic tool first.
-High-fanout symbol: request grouped counts first; do not dump references.
-Literal/resource/generated surface: use rg/fd first.
-GraphQL operation/schema: use GraphQL tools plus rg/fd first; use LSP only for generated/source symbols after discovery.
-Structural Swift/Kotlin pattern: use ast-grep first.
-Build/runtime proof: use the project's build, test, simulator, or CI proof layer.
+```bash
+./scripts/setup/agent-self-install.sh \
+  --target-repo /path/to/repo \
+  --agent claude \
+  --profile android|swift-ios|python|all \
+  --dry-run
 ```
 
-The policy is tool-agnostic. If Claude has a different LSP bridge, use that bridge for the semantic layer.
+Then apply after review:
+
+```bash
+./scripts/setup/agent-self-install.sh \
+  --target-repo /path/to/repo \
+  --agent claude \
+  --profile all \
+  --apply
+```
+
+If `CLAUDE.md` already exists, the installer writes
+`.agent-code-router/CLAUDE.fragment.md` for manual merge.
+
+Use `templates/claude/mcp.example.json` as a project-scoped `.mcp.json` starting
+point. Prefer Serena's own setup command when available:
+
+```bash
+serena setup claude-code
+```
+
+Then verify in-session with `/mcp`.
+
+The example uses `${CLAUDE_PROJECT_DIR:-.}`, which Claude Code provides to
+stdio MCP servers for the current project root.
+
+For sessions where Claude Code keeps preferring built-in tools over Serena,
+Serena recommends starting Claude with its system-prompt override:
+
+```bash
+claude --system-prompt="$(serena prompts print-cc-system-prompt-override)"
+```
+
+Serena also provides hook commands such as `serena-hooks remind`,
+`serena-hooks activate`, and `serena-hooks cleanup`. Treat these as nudges and
+session hygiene, not as semantic readiness proof.
+
+## Required Behavior
+
+Claude should classify the task before searching:
+
+- known source symbol: use Serena or the strongest available semantic layer after source-symbol smoke;
+- high-fanout symbol: request grouped counts before reading references;
+- literals/resources/generated files: use `rg` / `fd` first;
+- GraphQL: use GraphQL tools plus search first;
+- build/runtime claims: use the project build, test, simulator, emulator, device, or CI layer.
+
+MCP connection, hooks, and local text matches are not Serena readiness proof.

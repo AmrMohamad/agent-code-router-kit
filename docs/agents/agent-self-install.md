@@ -1,7 +1,7 @@
 # Agent Self-Install Playbook
 
 This playbook is for an AI coding agent that has been asked to install the
-Swift/iOS routing policy into a local repo. It is intentionally conservative:
+Serena-first routing policy into a local repo. It is intentionally conservative:
 the default scripted path is read-only, and any file-writing step requires an
 explicit `--apply`.
 
@@ -10,19 +10,21 @@ tests, alter global developer paths, or overwrite an existing project setup.
 
 ## What Gets Installed
 
-The system has four layers:
+The system has six layers:
 
 1. Project policy:
    `templates/AGENTS.md`
 2. Agent skill or reusable instruction:
    `templates/codebase-tool-router/SKILL.md`
    and, for Android-specific work, `templates/android-codebase-tool-router/SKILL.md`
-3. Swift/iOS project context:
+3. Agent-specific snippets:
+   Codex MCP/hooks examples, Claude instructions, or Cursor rules
+4. Serena project context:
+   `.serena/project.yml` with the smallest correct language set
+5. Swift/iOS project context:
    `buildServer.json` created by `xcode-build-server`
-   or Android/Kotlin project context:
-   `.serena/project.yml` with `kotlin` and `json` languages
-4. Verification discipline:
-   benchmark validation plus explicit proof boundaries
+6. Verification discipline:
+   Serena doctor checks plus explicit proof boundaries
 
 The routing rule is:
 
@@ -68,6 +70,35 @@ Build/test/runtime proof:
   Gradle, Android Studio, emulator/device, or CI only.
 ```
 
+For Python:
+
+```text
+Known Python symbol:
+  Serena / Python LSP first after a source-symbol smoke.
+
+Literal/config/generated lookup:
+  rg / fd first.
+
+Build/test/runtime proof:
+  pytest, unittest, app runtime, or CI only.
+```
+
+Serena boundaries:
+
+```text
+MCP connected:
+  transport only.
+
+Active project:
+  repository selection only.
+
+Source-symbol smoke:
+  first semantic readiness proof.
+
+Hooks:
+  reminders only, not proof.
+```
+
 ## Non-Mutating First Pass
 
 From the toolkit repo:
@@ -90,16 +121,21 @@ For Android/Kotlin:
   --dry-run
 ```
 
+For Claude, Cursor, or generic instruction installs, replace `--agent codex`
+with `--agent claude`, `--agent cursor`, or `--agent generic`.
+
 This checks:
 
 - toolkit files exist;
 - the minimum same-results dependency gate is satisfied:
   SourceKit-LSP from Xcode, `xcode-build-server`, Serena or equivalent LSP
   access, and `rg` / `fd` / `ast-grep`;
-- benchmark manifest is valid;
+- benchmark manifest is valid where relevant;
 - target repo exists;
 - project policy destination status;
-- Codex skill destination status when `--agent codex` is used;
+- Codex skill/snippet status when `--agent codex` is used;
+- Claude instruction and MCP example status when `--agent claude` is used;
+- Cursor rule and MCP example status when `--agent cursor` is used;
 - optional `buildServer.json` command shape when project/workspace and scheme are provided.
 
 It does not copy files, create `buildServer.json`, edit git excludes, install
@@ -115,6 +151,19 @@ For Android dependency checks, run:
 If the dependency gate fails, stop there. The policy can still be reviewed, but
 the agent should not claim the same Swift/iOS LSP-guided behavior until the
 missing layer is installed and the gate passes.
+
+Run the Serena doctor when a target repo already has Serena metadata:
+
+```bash
+python3 scripts/setup/serena-doctor.py \
+  --target-repo /path/to/repo \
+  --profile android \
+  --source-file app/src/main/java/example/FeatureViewModel.kt \
+  --symbol-smoke FeatureViewModel
+```
+
+Use `--json` for machine-readable output. The doctor is read-only and never
+kills processes.
 
 ## Apply The Safe Install
 
@@ -138,6 +187,26 @@ For Android/Kotlin:
   --apply
 ```
 
+For Claude:
+
+```bash
+./scripts/setup/agent-self-install.sh \
+  --target-repo /path/to/repo \
+  --agent claude \
+  --profile all \
+  --apply
+```
+
+For Cursor:
+
+```bash
+./scripts/setup/agent-self-install.sh \
+  --target-repo /path/to/repo \
+  --agent cursor \
+  --profile all \
+  --apply
+```
+
 Apply mode is still non-destructive:
 
 - if the target repo has no `AGENTS.md`, the template is copied to `AGENTS.md`;
@@ -146,6 +215,13 @@ Apply mode is still non-destructive:
 - if the Codex skill destination does not exist, the skill is copied there;
 - if the Codex skill destination exists and differs, the script refuses to
   overwrite it unless `--overwrite` is provided;
+- if Claude already has `CLAUDE.md`, a review fragment is written instead;
+- Claude gets a reviewable `.agent-code-router/claude-mcp.example.json`
+  snippet instead of an automatic `.mcp.json` write;
+- Cursor rules are written to `.cursor/rules/agent-code-router.mdc` without
+  replacing a differing existing file unless `--overwrite` is provided;
+- Cursor gets a reviewable `.agent-code-router/cursor-mcp.example.json`
+  snippet instead of an automatic `.cursor/mcp.json` write;
 - no build, test, simulator, or Xcode GUI action is performed.
 
 ## Optional buildServer.json

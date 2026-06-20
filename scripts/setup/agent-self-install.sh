@@ -16,7 +16,7 @@ OVERWRITE=0
 usage() {
   cat <<'USAGE'
 Usage:
-  agent-self-install.sh --target-repo /path/to/repo [--agent generic|codex] [--profile swift-ios|android|all] [--dry-run]
+  agent-self-install.sh --target-repo /path/to/repo [--agent generic|codex|claude|cursor] [--profile swift-ios|android|python|all] [--dry-run]
   agent-self-install.sh --target-repo /path/to/repo --agent codex --profile android --apply
 
 Optional buildServer.json configuration:
@@ -113,6 +113,30 @@ install_project_policy() {
   copy_file_safe "$src" "$fragment" "Project AGENTS.md review fragment"
 }
 
+install_root_or_fragment() {
+  local src="$1"
+  local root_dst="$2"
+  local fragment="$3"
+  local label="$4"
+
+  require_file "$src"
+
+  if [ ! -f "$root_dst" ]; then
+    log "$label will be installed: $root_dst"
+    run_or_print cp "$src" "$root_dst"
+    return
+  fi
+
+  if cmp -s "$src" "$root_dst"; then
+    log "$label already matches template: $root_dst"
+    return
+  fi
+
+  log "Existing $label found; it will not be overwritten: $root_dst"
+  log "Writing review fragment instead: $fragment"
+  copy_file_safe "$src" "$fragment" "$label review fragment"
+}
+
 install_codex_skill() {
   local src="$ROOT/templates/codebase-tool-router/SKILL.md"
   local dst="$CODEX_HOME/skills/codebase-tool-router/SKILL.md"
@@ -123,16 +147,55 @@ install_codex_skill() {
     dst="$CODEX_HOME/skills/android-codebase-tool-router/SKILL.md"
     copy_file_safe "$src" "$dst" "Codex android-codebase-tool-router skill"
   fi
+
+  copy_file_safe \
+    "$ROOT/templates/codex/config-snippets.toml" \
+    "$TARGET_REPO/.agent-code-router/codex-config-snippets.toml" \
+    "Codex Serena MCP config snippet"
+  copy_file_safe \
+    "$ROOT/templates/codex/hooks-example.json" \
+    "$TARGET_REPO/.agent-code-router/codex-hooks-example.json" \
+    "Codex Serena hooks example"
+}
+
+install_claude_instructions() {
+  install_root_or_fragment \
+    "$ROOT/templates/claude/instructions-example.md" \
+    "$TARGET_REPO/CLAUDE.md" \
+    "$TARGET_REPO/.agent-code-router/CLAUDE.fragment.md" \
+    "Claude instructions"
+  copy_file_safe \
+    "$ROOT/templates/claude/mcp.example.json" \
+    "$TARGET_REPO/.agent-code-router/claude-mcp.example.json" \
+    "Claude Serena MCP example"
+}
+
+install_cursor_rules() {
+  copy_file_safe \
+    "$ROOT/templates/cursor/rules-example.md" \
+    "$TARGET_REPO/.cursor/rules/agent-code-router.mdc" \
+    "Cursor Serena routing rule"
+  copy_file_safe \
+    "$ROOT/templates/cursor/mcp.example.json" \
+    "$TARGET_REPO/.agent-code-router/cursor-mcp.example.json" \
+    "Cursor Serena MCP example"
 }
 
 validate_toolkit() {
   require_file "$ROOT/templates/AGENTS.md"
   require_file "$ROOT/templates/codebase-tool-router/SKILL.md"
   require_file "$ROOT/templates/android-codebase-tool-router/SKILL.md"
+  require_file "$ROOT/templates/codex/config-snippets.toml"
+  require_file "$ROOT/templates/codex/hooks-example.json"
+  require_file "$ROOT/templates/claude/instructions-example.md"
+  require_file "$ROOT/templates/claude/mcp.example.json"
+  require_file "$ROOT/templates/cursor/rules-example.md"
+  require_file "$ROOT/templates/cursor/mcp.example.json"
   require_file "$ROOT/scripts/setup/check-swift-ios-prereqs.sh"
   require_file "$ROOT/scripts/setup/check-android-prereqs.sh"
   require_file "$ROOT/scripts/setup/create-build-server-json.sh"
   require_file "$ROOT/scripts/setup/create-android-serena-project.sh"
+  require_file "$ROOT/scripts/setup/serena-doctor.py"
   require_file "$ROOT/scripts/benchmarks/shared/benchmark_runner.py"
   require_file "$ROOT/benchmarks/ios/cases.example.tsv"
 
@@ -263,13 +326,13 @@ if [ -z "$TARGET_REPO" ]; then
   exit 2
 fi
 
-if [ "$AGENT" != "generic" ] && [ "$AGENT" != "codex" ]; then
-  echo "--agent must be generic or codex." >&2
+if [ "$AGENT" != "generic" ] && [ "$AGENT" != "codex" ] && [ "$AGENT" != "claude" ] && [ "$AGENT" != "cursor" ]; then
+  echo "--agent must be generic, codex, claude, or cursor." >&2
   exit 2
 fi
 
-if [ "$PROFILE" != "swift-ios" ] && [ "$PROFILE" != "android" ] && [ "$PROFILE" != "all" ]; then
-  echo "--profile must be swift-ios, android, or all." >&2
+if [ "$PROFILE" != "swift-ios" ] && [ "$PROFILE" != "android" ] && [ "$PROFILE" != "python" ] && [ "$PROFILE" != "all" ]; then
+  echo "--profile must be swift-ios, android, python, or all." >&2
   exit 2
 fi
 
@@ -291,6 +354,10 @@ install_project_policy
 
 if [ "$AGENT" = "codex" ]; then
   install_codex_skill
+elif [ "$AGENT" = "claude" ]; then
+  install_claude_instructions
+elif [ "$AGENT" = "cursor" ]; then
+  install_cursor_rules
 else
   log "Generic agent selected; no Codex skill path will be written."
 fi

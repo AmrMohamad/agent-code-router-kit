@@ -39,6 +39,18 @@ Classify first:
 
 ## Serena Setup
 
+Before trusting Serena for Android semantics:
+
+1. Activate the exact Android repo.
+2. Confirm `.serena/project.yml` uses the smallest correct language set.
+3. Check duplicate Serena/Kotlin/JSON/JDTLS processes if results look stale.
+4. Prove one real handwritten `.kt` source symbol through Serena.
+
+MCP connection, visible tools, and hook reminders are not readiness proof. A
+local text match is only a precondition; the Serena/Kotlin LSP lookup is the
+semantic proof. Gradle, Android Studio, emulator/device, or CI remains required
+for build, test, install, launch, screenshot, crash, and runtime claims.
+
 For Android projects, create or update Serena project config with the real project languages:
 
 ```bash

@@ -39,6 +39,37 @@ project's build or Xcode/plugin layer.
 | Structural Swift/Kotlin pattern | `ast-grep` | Matches syntax-shaped patterns and migration candidates more safely than regex |
 | Build/runtime truth | Xcode, Android Studio, Gradle, plugin, CI, or build system | Proves compile, test, simulator/emulator, UI, and runtime behavior |
 
+## Serena-First Agent Path
+
+For day-to-day agent setup, start with the Serena operating guide before the
+benchmark material:
+
+```bash
+python3 scripts/setup/serena-doctor.py \
+  --target-repo /path/to/repo \
+  --profile android|swift-ios|python|generic \
+  --json
+```
+
+The doctor is read-only. It checks Serena availability, project language
+metadata, duplicate process risk, optional source-symbol smoke preconditions,
+and explicit proof boundaries.
+
+Then install agent-facing instructions without overwriting existing project
+files:
+
+```bash
+./scripts/setup/agent-self-install.sh \
+  --target-repo /path/to/repo \
+  --agent codex|claude|cursor|generic \
+  --profile android|swift-ios|python|all \
+  --dry-run
+```
+
+See `docs/serena/README.md`,
+`docs/serena/agent-integration-research.md`, and
+`docs/agents/agent-self-install.md`.
+
 ## Quick Start
 
 Clone the toolkit, then make sure the minimum same-results dependency gate
@@ -720,6 +751,8 @@ See `docs/concepts/proof-boundaries.md`.
 - `docs/concepts/lsp-vs-search.md`
 - `docs/concepts/high-fanout-symbols.md`
 - `docs/concepts/proof-boundaries.md`
+- `docs/serena/README.md`
+- `docs/serena/agent-integration-research.md`
 - `docs/swift-ios/sourcekit-lsp-setup.md`
 - `docs/swift-ios/xcode-build-server.md`
 - `docs/swift-ios/serena-sourcekit-lsp.md`

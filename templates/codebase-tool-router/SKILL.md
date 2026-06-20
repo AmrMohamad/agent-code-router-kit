@@ -7,6 +7,35 @@ description: Route Swift/iOS, Android/Kotlin, and general codebase work between 
 
 Use this skill when an agent must understand, change, or verify code across files.
 
+## Serena Readiness Contract
+
+Use Serena for source-code semantics only after the current repository is active
+and one real source-symbol smoke has passed.
+
+Treat each layer separately:
+
+- MCP connected: transport only.
+- Active project: repository selection only.
+- `.serena/project.yml`: language-server intent only.
+- Source-symbol smoke: first semantic readiness proof.
+- Build/test/runtime tools: compile, behavior, UI, and release proof.
+
+If Serena tools are visible but fail, activate the exact project and retry one
+small symbol lookup. If a health check chooses a build file or generated file,
+smoke a handwritten source symbol before calling the language server broken.
+
+Default language policy:
+
+- Android: `kotlin,json`; add `java` only when Java proof is needed and Gradle
+  sync is healthy.
+- Swift/iOS: `swift`.
+- Python: `python`.
+- GraphQL: route through GraphQL tooling first, then use Serena only for
+  generated/source symbols after discovery.
+
+Do not claim build, test, install, launch, runtime, screenshot, or backend proof
+from Serena.
+
 ## Core Principle
 
 ```text
