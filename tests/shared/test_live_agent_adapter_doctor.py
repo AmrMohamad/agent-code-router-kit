@@ -19,6 +19,15 @@ from scripts.benchmarks.doctor_live_agent_adapters import (
 from scripts.lib.serena_readiness import SerenaProcessState
 
 
+@contextlib.contextmanager
+def installed_codex_cli():
+    def fake_which(command: str) -> str | None:
+        return "/usr/bin/true" if command == "codex" else None
+
+    with mock.patch("scripts.benchmarks.doctor_live_agent_adapters.shutil.which", side_effect=fake_which):
+        yield
+
+
 class LiveAgentAdapterDoctorTests(unittest.TestCase):
     def test_classifies_known_blocker_next_actions(self) -> None:
         self.assertIn("authenticate", classify_next_action("authentication_failed"))
@@ -73,14 +82,15 @@ class LiveAgentAdapterDoctorTests(unittest.TestCase):
 
     def test_no_probe_reports_installed_metadata_without_claiming_ready(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            summary = run_doctor(
-                agents=["codex"],
-                repo=Path(tmp),
-                out_root=Path(tmp) / "doctor",
-                timeout_seconds=1,
-                terminal_mode="subprocess",
-                run_probe=False,
-            )
+            with installed_codex_cli():
+                summary = run_doctor(
+                    agents=["codex"],
+                    repo=Path(tmp),
+                    out_root=Path(tmp) / "doctor",
+                    timeout_seconds=1,
+                    terminal_mode="subprocess",
+                    run_probe=False,
+                )
             self.assertEqual(summary["status"], "fail")
             self.assertEqual(summary["rows"][0]["reason"], "probe_skipped")
             self.assertFalse(summary["rows"][0]["ready_for_live_benchmark"])
@@ -95,7 +105,10 @@ class LiveAgentAdapterDoctorTests(unittest.TestCase):
             "completion_reason": "sentinel",
         }
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe):
+            with (
+                installed_codex_cli(),
+                mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe),
+            ):
                 summary = run_doctor(
                     agents=["codex"],
                     repo=Path(tmp),
@@ -117,7 +130,10 @@ class LiveAgentAdapterDoctorTests(unittest.TestCase):
             "route_weak_controls": ["weak_control"],
         }
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe):
+            with (
+                installed_codex_cli(),
+                mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe),
+            ):
                 summary = run_doctor(
                     agents=["codex"],
                     repo=Path(tmp),
@@ -141,7 +157,10 @@ class LiveAgentAdapterDoctorTests(unittest.TestCase):
             "exact_total_tokens": 42,
         }
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe):
+            with (
+                installed_codex_cli(),
+                mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe),
+            ):
                 summary = run_doctor(
                     agents=["codex"],
                     repo=Path(tmp),
@@ -167,6 +186,7 @@ class LiveAgentAdapterDoctorTests(unittest.TestCase):
         dirty_state = SerenaProcessState(serena_mcp=2, kotlin_lsp=3, json_lsp=1)
         with tempfile.TemporaryDirectory() as tmp:
             with (
+                installed_codex_cli(),
                 mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe),
                 mock.patch("scripts.benchmarks.doctor_live_agent_adapters.serena_process_state", return_value=dirty_state),
             ):
@@ -197,7 +217,10 @@ class LiveAgentAdapterDoctorTests(unittest.TestCase):
             "exact_usage_event_count": 2,
         }
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe):
+            with (
+                installed_codex_cli(),
+                mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe),
+            ):
                 summary = run_doctor(
                     agents=["codex"],
                     repo=Path(tmp),
@@ -220,7 +243,10 @@ class LiveAgentAdapterDoctorTests(unittest.TestCase):
             "token_source": "proxy",
         }
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe):
+            with (
+                installed_codex_cli(),
+                mock.patch("scripts.benchmarks.doctor_live_agent_adapters.probe_agent", return_value=fake_probe),
+            ):
                 summary = run_doctor(
                     agents=["codex"],
                     repo=Path(tmp),
@@ -239,17 +265,18 @@ class LiveAgentAdapterDoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             stdout = io.StringIO()
             with contextlib.redirect_stdout(stdout):
-                code = main(
-                    [
-                        "--agents",
-                        "codex",
-                        "--repo",
-                        tmp,
-                        "--out",
-                        str(Path(tmp) / "doctor"),
-                        "--no-probe",
-                    ]
-                )
+                with installed_codex_cli():
+                    code = main(
+                        [
+                            "--agents",
+                            "codex",
+                            "--repo",
+                            tmp,
+                            "--out",
+                            str(Path(tmp) / "doctor"),
+                            "--no-probe",
+                        ]
+                    )
             self.assertEqual(code, 2)
             self.assertEqual(json.loads(stdout.getvalue())["rows"][0]["reason"], "probe_skipped")
 

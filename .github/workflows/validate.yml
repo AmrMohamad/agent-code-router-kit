@@ -10,6 +10,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install benchmark tools
+        run: |
+          brew list ripgrep >/dev/null 2>&1 || brew install ripgrep
+          brew list fd >/dev/null 2>&1 || brew install fd
+          brew list ast-grep >/dev/null 2>&1 || brew install ast-grep
+          command -v rg
+          command -v fd
+          command -v ast-grep
       - name: Python syntax
         run: |
           find scripts -type f -name '*.py' -print0 | xargs -0 python3 -m py_compile
@@ -23,14 +31,6 @@ jobs:
           bash -n scripts/setup/create-android-serena-project.sh
           bash -n scripts/setup/repair-serena-android-sessions.sh
           bash -n scripts/setup/agent-self-install.sh
-      - name: Install benchmark tools
-        run: |
-          brew list ripgrep >/dev/null 2>&1 || brew install ripgrep
-          brew list fd >/dev/null 2>&1 || brew install fd
-          brew list ast-grep >/dev/null 2>&1 || brew install ast-grep
-          command -v rg
-          command -v fd
-          command -v ast-grep
       - name: Benchmark fixture smoke
         run: |
           pwd
