@@ -12,23 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Python syntax
         run: |
-          python3 -m py_compile \
-            scripts/agents/*.py \
-            scripts/bridges/*.py \
-            scripts/lib/*.py \
-            scripts/benchmarks/shared/benchmark_runner.py \
-            scripts/benchmarks/shared/sanitize_results.py \
-            scripts/benchmarks/ios/benchmark_runner.py \
-            scripts/benchmarks/android/run_benchmark_suite.py \
-            scripts/benchmarks/run_real_agent_benchmark.py \
-            scripts/benchmarks/collect_agent_telemetry.py \
-            scripts/benchmarks/judge_agent_run.py \
-            scripts/benchmarks/judge_real_agent_run.py \
-            scripts/benchmarks/build_real_agent_report.py \
-            scripts/benchmarks/probe_live_agent_adapters.py \
-            scripts/benchmarks/doctor_live_agent_adapters.py \
-            scripts/benchmarks/audit_real_agent_benchmark_readiness.py \
-            scripts/benchmarks/rejudge_real_agent_benchmark.py
+          find scripts -type f -name '*.py' -print0 | xargs -0 python3 -m py_compile
       - name: Unit tests
         run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Shell syntax

@@ -197,9 +197,9 @@ def resolved_repo_file(repo: Path, source_file: str) -> tuple[Path | None, Check
     raw_path = Path(source_file).expanduser()
     if raw_path.is_absolute():
         return None, Check(
-            "source_symbol_smoke",
+            "source_symbol_precondition",
             "fail",
-            "Smoke source file must be relative to the target repo.",
+            "Source-symbol precondition file must be relative to the target repo.",
             {"source_file": source_file, "target_repo": str(repo)},
         )
 
@@ -209,21 +209,21 @@ def resolved_repo_file(repo: Path, source_file: str) -> tuple[Path | None, Check
         source_path.relative_to(repo_root)
     except (OSError, ValueError):
         return None, Check(
-            "source_symbol_smoke",
+            "source_symbol_precondition",
             "fail",
-            "Smoke source file resolves outside the target repo.",
+            "Source-symbol precondition file resolves outside the target repo.",
             {"source_file": source_file, "target_repo": str(repo)},
         )
 
     return source_path, None
 
 
-def source_symbol_check(repo: Path, source_file: str, symbol: str) -> Check:
+def source_symbol_precondition_check(repo: Path, source_file: str, symbol: str) -> Check:
     if not source_file and not symbol:
         return Check(
-            "source_symbol_smoke",
+            "source_symbol_precondition",
             "warn",
-            "No source-symbol smoke target was provided.",
+            "No source-symbol precondition target was provided.",
             {
                 "next_action": "Provide --source-file and --symbol-smoke for the first real source symbol the agent should prove through Serena.",
                 "proof_boundary": "Without a real Serena symbolic lookup, MCP connectivity is not semantic readiness proof.",
@@ -232,7 +232,7 @@ def source_symbol_check(repo: Path, source_file: str, symbol: str) -> Check:
 
     if not source_file or not symbol:
         return Check(
-            "source_symbol_smoke",
+            "source_symbol_precondition",
             "fail",
             "--source-file and --symbol-smoke must be provided together.",
             {"source_file": source_file, "symbol": symbol},
@@ -245,9 +245,9 @@ def source_symbol_check(repo: Path, source_file: str, symbol: str) -> Check:
 
     if not source_path.exists() or not source_path.is_file():
         return Check(
-            "source_symbol_smoke",
+            "source_symbol_precondition",
             "fail",
-            "Smoke source file was not found.",
+            "Source-symbol precondition file was not found.",
             {"source_file": str(source_path), "symbol": symbol},
         )
 
@@ -255,19 +255,19 @@ def source_symbol_check(repo: Path, source_file: str, symbol: str) -> Check:
     found_locally = re.search(rf"\b{re.escape(symbol)}\b", text) is not None
     status = "warn" if found_locally else "fail"
     message = (
-        "Smoke target exists locally; run the Serena symbolic lookup before making semantic claims."
+        "Source-symbol precondition exists locally; run the Serena symbolic lookup before making semantic claims."
         if found_locally
-        else "Smoke symbol was not found in the provided source file."
+        else "Source-symbol precondition was not found in the provided source file."
     )
     return Check(
-        "source_symbol_smoke",
+        "source_symbol_precondition",
         status,
         message,
         {
             "source_file": str(source_path),
             "symbol": symbol,
             "local_text_match": found_locally,
-            "suggested_semantic_smoke": f"Use Serena to find declaration/references for {symbol} in {source_file}.",
+            "suggested_semantic_probe": f"Use Serena to find declaration/references for {symbol} in {source_file}.",
             "proof_boundary": "Local text match is only a precondition; Serena/LSP lookup is the semantic proof.",
         },
     )
@@ -338,7 +338,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         executable_check(),
         project_config_check(repo, expected_languages),
         process_state_check(),
-        source_symbol_check(repo, args.source_file, args.symbol_smoke),
+        source_symbol_precondition_check(repo, args.source_file, args.symbol_smoke),
         hooks_check(repo),
         proof_boundary_check(),
     ]
@@ -357,8 +357,8 @@ def main() -> int:
     parser.add_argument("--target-repo", required=True, help="Repository root to inspect.")
     parser.add_argument("--profile", choices=sorted(PROFILE_LANGUAGES), default="generic")
     parser.add_argument("--expected-languages", default="", help="Comma-separated Serena language list. Overrides --profile defaults.")
-    parser.add_argument("--source-file", default="", help="Relative source file used for the source-symbol smoke precondition.")
-    parser.add_argument("--symbol-smoke", default="", help="Symbol expected in --source-file for a Serena semantic smoke.")
+    parser.add_argument("--source-file", default="", help="Relative source file used for the source-symbol precondition.")
+    parser.add_argument("--symbol-smoke", default="", help="Symbol expected in --source-file before a real Serena semantic probe.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     args = parser.parse_args()
 
