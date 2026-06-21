@@ -251,6 +251,27 @@ Pass `--pricing pricing.json` only when the model identifier and per-1M token
 prices are explicit. Cost estimates are reported separately from context
 efficiency and are not inferred from uncached tokens alone.
 
+Estimate whether the observed pilot variance supports the planned confirmatory
+sample size:
+
+```bash
+python3 scripts/benchmarks/estimate_study_power.py \
+  --runs results/real-agent-routing/router-effect-v1-dry-run/runs.jsonl \
+  --metric exact_uncached_input_tokens \
+  --minimum-effect 0.15 \
+  --floor-repeats 4 \
+  --out results/real-agent-routing/router-effect-v1-dry-run/study-power.json
+```
+
+Use the stricter audit before any publishable claim:
+
+```bash
+python3 scripts/benchmarks/audit_real_agent_study.py \
+  --root results/real-agent-routing/router-effect-v1-dry-run \
+  --confirmatory \
+  --out results/real-agent-routing/router-effect-v1-dry-run/confirmatory-audit.json
+```
+
 Build a public bundle only after verifying that private paths, prompts, source
 snippets, symbols, and transcripts are excluded:
 

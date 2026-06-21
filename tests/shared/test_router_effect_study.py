@@ -12,6 +12,7 @@ from unittest.mock import patch
 from scripts.benchmarks.audit_real_agent_study import audit
 from scripts.benchmarks.analyze_real_agent_study import analyze
 from scripts.benchmarks.build_public_study_evidence import build_public_bundle
+from scripts.benchmarks.estimate_study_power import estimate
 from scripts.benchmarks.run_real_agent_benchmark import main
 from scripts.lib.agent_session import AgentProfile, load_route_profile
 from scripts.lib.experiment_design import balanced_latin_square
@@ -82,6 +83,37 @@ def fake_codex_home(path: Path) -> Path:
     home.mkdir()
     (home / "auth.json").write_text('{"mode":"test"}\n', encoding="utf-8")
     return home
+
+
+def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
+    manifest = json.loads((out / "run-manifest.json").read_text(encoding="utf-8"))
+    manifest["dry_run"] = False
+    manifest["live"] = True
+    (out / "run-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    token_values = {
+        "A-search-only": 1000,
+        "B-search-summary": 850,
+        "C-lsp-naive": 900,
+        "D-full-router": 700,
+    }
+    rows = [json.loads(line) for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines()]
+    with (out / "runs.jsonl").open("w", encoding="utf-8") as handle:
+        for row in rows:
+            value = token_values[row["profile"]]
+            row.update(
+                {
+                    "token_source": "exact",
+                    "exact_input_tokens": value + 100,
+                    "exact_cached_input_tokens": 100,
+                    "exact_uncached_input_tokens": value,
+                    "exact_output_tokens": 50,
+                    "exact_total_tokens": value + 150,
+                    "codex_version": "codex-test 1.0",
+                    "serena_version": "serena-test 1.0",
+                    "os_version": "test-os",
+                }
+            )
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
 class RouterEffectStudyTests(unittest.TestCase):
@@ -245,12 +277,83 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertEqual(manifest["order_design"], "balanced-latin-square")
             self.assertEqual(audit(out)["status"], "pass")
+            confirmatory_dry_run = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertEqual(confirmatory_dry_run["status"], "fail")
+            self.assertIn("confirmatory_live", {issue["code"] for issue in confirmatory_dry_run["issues"]})
 
             manifest["live"] = True
             (out / "run-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
             failed_audit = audit(out)
             self.assertEqual(failed_audit["status"], "fail")
             self.assertIn("exact_uncached_input_tokens", {issue["code"] for issue in failed_audit["issues"]})
+
+    def test_confirmatory_audit_requires_analysis_power_and_can_pass_synthetic_live_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            make_git_repo(repo)
+            tasks = root / "tasks.tsv"
+            oracles = root / "oracles.json"
+            out = root / "out"
+            write_study_task(tasks)
+            write_permissive_oracle(oracles)
+
+            env = {
+                "CODEX_HOME": str(fake_codex_home(root)),
+                "RARB_PRIVATE_HMAC_KEY": "test-hmac-key",
+            }
+            with contextlib.redirect_stdout(io.StringIO()), patch.dict("os.environ", env):
+                main(
+                    [
+                        "--dry-run",
+                        "--agent",
+                        "codex",
+                        "--repo",
+                        str(repo),
+                        "--repo-map",
+                        f"sample={repo}",
+                        "--tasks",
+                        str(tasks),
+                        "--task-oracles",
+                        str(oracles),
+                        "--study-plan",
+                        str(ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml"),
+                        "--arms",
+                        "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
+                        "--repeats",
+                        "4",
+                        "--snapshot-repos",
+                        "--model-id",
+                        "codex-test-model",
+                        "--reasoning-effort",
+                        "low",
+                        "--out",
+                        str(out),
+                    ]
+                )
+
+            promote_dry_run_to_synthetic_live_study(out)
+            missing_artifacts = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertEqual(missing_artifacts["status"], "fail")
+            self.assertIn("study_analysis", {issue["code"] for issue in missing_artifacts["issues"]})
+            self.assertIn("study_power", {issue["code"] for issue in missing_artifacts["issues"]})
+
+            rows = [json.loads(line) for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines()]
+            analysis = analyze(out, metric="exact_uncached_input_tokens")
+            (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            power = estimate(
+                rows,
+                metric="exact_uncached_input_tokens",
+                minimum_effect=0.15,
+                floor_repeats=4,
+                alpha=0.05,
+                power=0.80,
+            )
+            (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            confirmatory = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertEqual(confirmatory["status"], "pass", confirmatory)
 
     def test_study_analysis_and_public_bundle_are_anonymized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -305,9 +408,20 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(analysis["correctness_pairwise"]["A-search-only_to_D-full-router"]["noninferiority_passed"])
             self.assertIn("cluster_bootstrap_95ci_percent", analysis["pairwise_effects"]["A-search-only_to_D-full-router"])
             (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            rows = [json.loads(line) for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines()]
+            power = estimate(
+                rows,
+                metric="model_visible_proxy_tokens",
+                minimum_effect=0.15,
+                floor_repeats=4,
+                alpha=0.05,
+                power=0.80,
+            )
+            (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             result = build_public_bundle(root=out, out=public)
             self.assertTrue((public / "analysis.sanitized.json").exists())
+            self.assertTrue((public / "power.sanitized.json").exists())
             self.assertTrue((public / "audit.sanitized.json").exists())
             public_text = (public / "runs.sanitized.jsonl").read_text(encoding="utf-8")
             self.assertNotIn("study_task", public_text)

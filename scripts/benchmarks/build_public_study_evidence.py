@@ -132,6 +132,9 @@ def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
     analysis_path = root / "study-analysis.json"
     if analysis_path.exists():
         to_json_file(out / "analysis.sanitized.json", json.loads(analysis_path.read_text(encoding="utf-8")))
+    power_path = root / "study-power.json"
+    if power_path.exists():
+        to_json_file(out / "power.sanitized.json", json.loads(power_path.read_text(encoding="utf-8")))
     readme = (
         "# Router Effect V1 Public Evidence\n\n"
         "This bundle contains sanitized study metadata and run rows. It intentionally "

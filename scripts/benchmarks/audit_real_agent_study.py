@@ -45,7 +45,32 @@ def semantic_session_for_row(row: dict[str, object]) -> dict[str, object] | None
     return load_json(path)
 
 
-def audit(root: str | Path) -> dict[str, object]:
+def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
+    required = [
+        "pairwise_effects",
+        "pass_pass_sensitivity_pairwise_effects",
+        "factorial_effects",
+        "correctness_pairwise",
+        "correctness_noninferiority_margin",
+    ]
+    if any(key not in analysis for key in required):
+        return False
+    pairwise = analysis.get("pairwise_effects")
+    if not isinstance(pairwise, dict):
+        return False
+    for row in pairwise.values():
+        if isinstance(row, dict) and row.get("pair_count", 0) and "cluster_bootstrap_95ci_percent" not in row:
+            return False
+    return True
+
+
+def audit(
+    root: str | Path,
+    *,
+    confirmatory: bool = False,
+    min_task_families: int = 5,
+    min_tasks_per_family: int = 3,
+) -> dict[str, object]:
     base = Path(root).expanduser().resolve()
     issues: list[dict[str, object]] = []
     manifest_path = base / "run-manifest.json"
@@ -59,6 +84,8 @@ def audit(root: str | Path) -> dict[str, object]:
     manifest = load_json(manifest_path)
     rows = load_jsonl(runs_path)
 
+    if confirmatory and manifest.get("live") is not True:
+        add_issue(issues, "fail", "confirmatory_live", "confirmatory study audit requires live runs, not dry-run output")
     if manifest.get("study_id") != "router-effect-v1":
         add_issue(issues, "fail", "study_id", "manifest does not identify router-effect-v1")
     if manifest.get("order_design") != "balanced-latin-square":
@@ -82,6 +109,26 @@ def audit(root: str | Path) -> dict[str, object]:
     missing_arms = [arm for arm in FACTORIAL_ARM_ORDER if arm not in arms]
     if missing_arms:
         add_issue(issues, "fail", "arm_coverage", f"missing arms: {','.join(missing_arms)}")
+    if confirmatory:
+        tasks_by_family: dict[str, set[str]] = defaultdict(set)
+        for row in rows:
+            tasks_by_family[str(row.get("task_family", ""))].add(str(row.get("task_id", "")))
+        populated_families = {family: tasks for family, tasks in tasks_by_family.items() if family and "" not in tasks}
+        if len(populated_families) < min_task_families:
+            add_issue(
+                issues,
+                "fail",
+                "confirmatory_task_family_count",
+                f"confirmatory study requires at least {min_task_families} task families; observed {len(populated_families)}",
+            )
+        for family, tasks in populated_families.items():
+            if len(tasks) < min_tasks_per_family:
+                add_issue(
+                    issues,
+                    "fail",
+                    "confirmatory_tasks_per_family",
+                    f"family {family} has {len(tasks)} tasks; requires at least {min_tasks_per_family}",
+                )
 
     positions_by_arm: Counter[tuple[str, int]] = Counter()
     positions_by_task_arm: Counter[tuple[str, str, str, int]] = Counter()
@@ -215,10 +262,34 @@ def audit(root: str | Path) -> dict[str, object]:
                     f"{key} {left} vs {right} has disallowed config fields: {','.join(diff['disallowed_fields'])}",
                 )
 
+    if confirmatory:
+        analysis_path = base / "study-analysis.json"
+        if not analysis_path.exists():
+            add_issue(issues, "fail", "study_analysis", "confirmatory study requires study-analysis.json")
+        else:
+            analysis = load_json(analysis_path)
+            if not _analysis_has_required_shape(analysis):
+                add_issue(issues, "fail", "study_analysis_shape", "study-analysis.json lacks required paired, sensitivity, factorial, correctness, or CI fields")
+            correctness = analysis.get("correctness_pairwise", {})
+            if isinstance(correctness, dict):
+                for name, value in correctness.items():
+                    if isinstance(value, dict) and value.get("noninferiority_passed") is not True:
+                        add_issue(issues, "fail", "correctness_noninferiority", f"{name} did not pass correctness non-inferiority")
+        power_path = base / "study-power.json"
+        if not power_path.exists():
+            add_issue(issues, "fail", "study_power", "confirmatory study requires study-power.json")
+        else:
+            power = load_json(power_path)
+            if power.get("status") != "estimated":
+                add_issue(issues, "fail", "study_power_status", "study-power.json must have status=estimated")
+            if power.get("power_target_met") is not True:
+                add_issue(issues, "fail", "study_power_target", "observed study cells do not meet the planned power target")
+
     status = "pass" if not any(issue["severity"] == "fail" for issue in issues) else "fail"
     return {
         "status": status,
         "run_count": len(rows),
+        "confirmatory": confirmatory,
         "issues": issues,
         "arm_counts": dict(Counter(str(row.get("profile", "")) for row in rows)),
     }
@@ -228,8 +299,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit a router-effect-v1 real-agent study output.")
     parser.add_argument("--root", required=True, help="Benchmark output directory.")
     parser.add_argument("--out", help="Optional JSON output path.")
+    parser.add_argument("--confirmatory", action="store_true", help="Apply publishable confirmatory-study gates.")
+    parser.add_argument("--min-task-families", type=int, default=5)
+    parser.add_argument("--min-tasks-per-family", type=int, default=3)
     args = parser.parse_args(argv)
-    result = audit(args.root)
+    result = audit(
+        args.root,
+        confirmatory=args.confirmatory,
+        min_task_families=args.min_task_families,
+        min_tasks_per_family=args.min_tasks_per_family,
+    )
     if args.out:
         to_json_file(args.out, result)
     print(json.dumps(result, indent=2, sort_keys=True))
