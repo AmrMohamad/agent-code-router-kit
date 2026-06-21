@@ -41,6 +41,15 @@ LANGUAGE_SERVER_VERSION_FIELDS = {
     "vscode-json-languageserver": "json_language_server_version",
 }
 SERENA_PROCESS_STATE_KEYS = ("serena_mcp", "sourcekit_lsp", "kotlin_lsp", "json_lsp")
+EXACT_TOKEN_FIELDS = (
+    "exact_input_tokens",
+    "exact_cached_input_tokens",
+    "exact_uncached_input_tokens",
+    "exact_output_tokens",
+    "exact_total_tokens",
+    "exact_uncached_total_tokens",
+    "exact_reasoning_output_tokens",
+)
 
 
 def load_json(path: Path) -> dict[str, object]:
@@ -92,6 +101,13 @@ def process_state_is_zero(value: object, *, keys: tuple[str, ...] = SERENA_PROCE
         if isinstance(count, bool) or not isinstance(count, int) or count != 0:
             return False
     return True
+
+
+def exact_token_value(row: dict[str, object], field: str) -> int | None:
+    value = row.get(field)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
 
 
 def has_arg_pair(args: list[str], option: str, value: str) -> bool:
@@ -874,8 +890,32 @@ def audit(
                     add_issue(issues, "fail", field, f"live study run {row.get('run_id')} lacks usable {field}")
             if row.get("token_source") != "exact":
                 add_issue(issues, "fail", "exact_token_source", f"live study run {row.get('run_id')} is not exact-token sourced")
-            if not isinstance(row.get("exact_uncached_input_tokens"), int):
-                add_issue(issues, "fail", "exact_uncached_input_tokens", f"live study run {row.get('run_id')} lacks exact uncached input tokens")
+            exact_values = {field: exact_token_value(row, field) for field in EXACT_TOKEN_FIELDS}
+            missing_exact = [field for field, value in exact_values.items() if value is None]
+            if missing_exact:
+                add_issue(
+                    issues,
+                    "fail",
+                    "exact_token_telemetry",
+                    f"live study run {row.get('run_id')} lacks usable exact token fields: {','.join(missing_exact)}",
+                )
+            else:
+                exact_input = exact_values["exact_input_tokens"] or 0
+                exact_cached = exact_values["exact_cached_input_tokens"] or 0
+                exact_uncached_input = exact_values["exact_uncached_input_tokens"] or 0
+                exact_output = exact_values["exact_output_tokens"] or 0
+                exact_total = exact_values["exact_total_tokens"] or 0
+                exact_uncached_total = exact_values["exact_uncached_total_tokens"] or 0
+                if exact_input <= 0 or exact_uncached_input <= 0 or exact_total <= 0:
+                    add_issue(issues, "fail", "exact_token_telemetry", f"live study run {row.get('run_id')} has non-positive primary exact token fields")
+                if exact_cached > exact_input or exact_input - exact_cached != exact_uncached_input:
+                    add_issue(issues, "fail", "exact_token_consistency", f"live study run {row.get('run_id')} exact uncached input does not equal input minus cached input")
+                if exact_input + exact_output != exact_total:
+                    add_issue(issues, "fail", "exact_token_consistency", f"live study run {row.get('run_id')} exact total does not equal input plus output")
+                if exact_uncached_input + exact_output != exact_uncached_total:
+                    add_issue(issues, "fail", "exact_token_consistency", f"live study run {row.get('run_id')} exact uncached total does not equal uncached input plus output")
+            if exact_token_value(row, "exact_usage_event_count") is None or int(row.get("exact_usage_event_count", 0) or 0) <= 0:
+                add_issue(issues, "fail", "exact_usage_event_count", f"live study run {row.get('run_id')} lacks a positive exact usage event count")
             for timing_field in ("semantic_setup_seconds", "task_execution_seconds", "end_to_end_seconds"):
                 value = row.get(timing_field)
                 if not isinstance(value, int | float) or value < 0:

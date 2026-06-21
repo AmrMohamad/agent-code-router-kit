@@ -94,6 +94,11 @@ Secondary outcomes:
 - estimated cost when pricing and model identifiers are available
 - tool calls, opened files, policy violations, timeouts, and failures
 
+Every live row must include exact input, cached input, uncached input, output,
+total, uncached total, reasoning-output tokens, and a positive usage-event
+count. The audit rejects rows whose uncached and total fields are internally
+inconsistent.
+
 Cost is a secondary outcome only. A cost claim requires explicit pricing for
 the pinned model: uncached input, cached input, output, and reasoning-output
 rates per one million tokens. Cost reporting must include total cost, median

@@ -123,6 +123,9 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                     "exact_uncached_input_tokens": value,
                     "exact_output_tokens": 50,
                     "exact_total_tokens": value + 150,
+                    "exact_uncached_total_tokens": value + 50,
+                    "exact_reasoning_output_tokens": 0,
+                    "exact_usage_event_count": 1,
                     "semantic_setup_seconds": 0.25 if row["semantic_access_enabled"] else 0.0,
                     "task_execution_seconds": 1.0,
                     "end_to_end_seconds": 1.25 if row["semantic_access_enabled"] else 1.0,
@@ -508,7 +511,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             (out / "run-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
             failed_audit = audit(out)
             self.assertEqual(failed_audit["status"], "fail")
-            self.assertIn("exact_uncached_input_tokens", {issue["code"] for issue in failed_audit["issues"]})
+            self.assertIn("exact_token_telemetry", {issue["code"] for issue in failed_audit["issues"]})
 
             row_lines = [json.loads(line) for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines()]
             row_lines[0]["snapshot_commit"] = "0" * 40
@@ -700,6 +703,26 @@ class RouterEffectStudyTests(unittest.TestCase):
             )
             mismatched_controller = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("row_protocol_commit_match", {issue["code"] for issue in mismatched_controller["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            missing_usage_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            missing_usage_rows[0]["exact_usage_event_count"] = 0
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in missing_usage_rows),
+                encoding="utf-8",
+            )
+            missing_usage_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("exact_usage_event_count", {issue["code"] for issue in missing_usage_audit["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            inconsistent_token_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            inconsistent_token_rows[0]["exact_uncached_input_tokens"] += 1
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in inconsistent_token_rows),
+                encoding="utf-8",
+            )
+            inconsistent_token_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("exact_token_consistency", {issue["code"] for issue in inconsistent_token_audit["issues"]})
             runs_path.write_text(original_runs_text, encoding="utf-8")
 
             analysis = analyze(out, metric="exact_uncached_input_tokens")
