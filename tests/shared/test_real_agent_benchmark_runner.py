@@ -613,6 +613,7 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
                     next_action="restart stale Serena sessions",
                     semantic_session_home=str(Path(kwargs["semantic_session_home"]).resolve()),
                     isolated_env_keys=sorted(kwargs["env"]),
+                    process_state_after=SerenaProcessState(serena_mcp=0, kotlin_lsp=0, json_lsp=0),
                 )
 
             isolation = RouteIsolation(
@@ -682,6 +683,8 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
             readiness_payload = json.loads((run_dir / "serena-readiness.json").read_text(encoding="utf-8"))
             self.assertEqual(readiness_payload["semantic_session_home"], str(Path(readiness_session_home).resolve()))
             self.assertEqual(readiness_payload["isolated_env_keys"], sorted(readiness_env))
+            self.assertEqual(readiness_payload["process_state_after"]["serena_mcp"], 0)
+            self.assertEqual(row["serena_process_state_after_readiness"], readiness_payload["process_state_after"])
             self.assertTrue((run_dir / "dynamic-task-target.json").exists())
             self.assertIn("Ready: false", (run_dir / "task-packet.md").read_text(encoding="utf-8"))
             self.assertIn("Find RandomRealViewModel", (run_dir / "task-packet.md").read_text(encoding="utf-8"))

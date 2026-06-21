@@ -21,6 +21,7 @@ FACTORIAL_COMPARISONS = [
     ("A-search-only", "C-lsp-naive"),
     ("C-lsp-naive", "D-full-router"),
     ("B-search-summary", "D-full-router"),
+    ("A-search-only", "D-full-router"),
 ]
 
 

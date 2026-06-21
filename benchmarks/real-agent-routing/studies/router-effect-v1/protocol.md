@@ -25,7 +25,8 @@ Semantic-access arms require a readiness prewarm before task execution. The
 readiness result and semantic setup time are reported separately from task
 execution time.
 Every completed four-arm block publishes `treatment-diffs.jsonl`, comparing
-effective agent configs for the preregistered A/B, A/C, C/D, and B/D contrasts.
+effective agent configs for the preregistered A/B, A/C, C/D, B/D, and A/D
+contrasts.
 
 ## Order Design
 

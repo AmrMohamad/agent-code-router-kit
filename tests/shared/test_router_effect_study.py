@@ -129,6 +129,14 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                     "serena_readiness_status": "pass" if row["semantic_access_enabled"] else "",
                     "serena_readiness_ready": True if row["semantic_access_enabled"] else None,
                     "serena_readiness_reason": "",
+                    "serena_process_state_after_readiness": {
+                        "serena_mcp": 0,
+                        "sourcekit_lsp": 0,
+                        "kotlin_lsp": 0,
+                        "json_lsp": 0,
+                    }
+                    if row["semantic_access_enabled"]
+                    else {},
                     "semantic_lifecycle_owner": "codex_subprocess_stdio" if row["semantic_access_enabled"] else "none",
                     "semantic_teardown_verified": True,
                     "semantic_process_survivor_count": 0,
@@ -163,6 +171,7 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                     "warnings": [],
                     "semantic_session_home": semantic_payload["semantic_session_home"],
                     "isolated_env_keys": sorted(semantic_payload["mcp_env_keys"]),
+                    "process_state_after": row["serena_process_state_after_readiness"],
                 }
                 (run_dir / "serena-readiness.json").write_text(
                     json.dumps(readiness, indent=2, sort_keys=True) + "\n",
@@ -170,6 +179,7 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                 )
                 semantic_payload["readiness_status"] = "pass"
                 semantic_payload["readiness_ready"] = True
+                semantic_payload["readiness_process_state_after"] = row["serena_process_state_after_readiness"]
                 semantic_payload["lifecycle_owner"] = "codex_subprocess_stdio"
                 semantic_payload["teardown_verified"] = True
                 semantic_payload["process_survivor_count"] = 0
@@ -447,7 +457,20 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(len(treatment_diffs), 4)
             for treatment_diff in treatment_diffs:
                 self.assertTrue(treatment_diff["valid"], treatment_diff)
-                self.assertEqual(len(treatment_diff["comparisons"]), 4)
+                comparison_pairs = {
+                    (comparison["left_profile"], comparison["right_profile"])
+                    for comparison in treatment_diff["comparisons"]
+                }
+                self.assertEqual(
+                    comparison_pairs,
+                    {
+                        ("A-search-only", "B-search-summary"),
+                        ("A-search-only", "C-lsp-naive"),
+                        ("C-lsp-naive", "D-full-router"),
+                        ("B-search-summary", "D-full-router"),
+                        ("A-search-only", "D-full-router"),
+                    },
+                )
             self.assertEqual(audit(out)["status"], "pass")
             semantic_row = next(row for row in rows if row["semantic_access_enabled"])
             semantic_path = Path(semantic_row["run_dir"]) / "semantic-session.json"
@@ -887,6 +910,15 @@ class RouterEffectStudyTests(unittest.TestCase):
             readiness_path.write_text(json.dumps(readiness_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             readiness_env_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("semantic_readiness_isolation", {issue["code"] for issue in readiness_env_audit["issues"]})
+            readiness_path.write_text(readiness_text, encoding="utf-8")
+
+            readiness_payload = json.loads(readiness_text)
+            dirty_readiness_state = dict(readiness_payload["process_state_after"])
+            dirty_readiness_state["sourcekit_lsp"] = 1
+            readiness_payload["process_state_after"] = dirty_readiness_state
+            readiness_path.write_text(json.dumps(readiness_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            readiness_process_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("semantic_readiness_process_state", {issue["code"] for issue in readiness_process_audit["issues"]})
             readiness_path.write_text(readiness_text, encoding="utf-8")
 
             row_lines = [json.loads(line) for line in original_runs_text.splitlines()]

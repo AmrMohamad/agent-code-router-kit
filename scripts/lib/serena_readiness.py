@@ -75,6 +75,7 @@ class SerenaReadiness:
     next_action: str
     semantic_session_home: str = ""
     isolated_env_keys: list[str] = field(default_factory=list)
+    process_state_after: SerenaProcessState | None = None
 
 
 def count_processes(pattern: str) -> int:
@@ -579,6 +580,7 @@ def run_serena_source_symbol_readiness(
             check=False,
             env=readiness_command_env,
         )
+        process_state_after = serena_process_state()
         status, ready, reason, next_action = classify_index_output(
             symbol=symbol,
             source_file=selected_file,
@@ -603,6 +605,7 @@ def run_serena_source_symbol_readiness(
             next_action=next_action,
             semantic_session_home=semantic_home_text,
             isolated_env_keys=readiness_env_keys,
+            process_state_after=process_state_after,
         )
     except subprocess.TimeoutExpired as exc:
         return SerenaReadiness(

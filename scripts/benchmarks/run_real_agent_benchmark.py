@@ -190,6 +190,7 @@ def semantic_session_artifact(
             "project_path_hmac": "",
             "readiness_status": "",
             "readiness_ready": None,
+            "readiness_process_state_after": {},
             "language_server_versions": language_versions,
             "lifecycle_owner": "none",
             "pre_task_process_state": pre_task_process_state,
@@ -222,6 +223,7 @@ def semantic_session_artifact(
         "requires_unique_port": False,
         "readiness_status": serena_readiness.get("status") if serena_readiness else "",
         "readiness_ready": serena_readiness.get("ready") if serena_readiness else None,
+        "readiness_process_state_after": serena_readiness.get("process_state_after") if serena_readiness else {},
         "language_server_versions": language_versions,
         "lifecycle_owner": "dry_run_no_process_started" if dry_run else "codex_subprocess_stdio",
         "pre_task_process_state": pre_task_process_state,
@@ -1115,6 +1117,13 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 )
             if args.require_clean_serena_process_state:
                 enforce_clean_serena_process_state(readiness=serena_readiness, run_dir=run_dir)
+                readiness_process_state_after = serena_readiness.get("process_state_after")
+                if isinstance(readiness_process_state_after, dict):
+                    enforce_zero_serena_process_counts(
+                        process_state={key: int(readiness_process_state_after.get(key, 0) or 0) for key in SERENA_PROCESS_STATE_KEYS},
+                        run_dir=run_dir,
+                        phase="after semantic readiness prewarm",
+                    )
         prompt = render_task_packet(
             run_id=run_id,
             agent=agent_profile.agent_id,
@@ -1287,6 +1296,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "serena_readiness_warnings": serena_readiness.get("warnings") if serena_readiness else [],
             "serena_readiness_symbol": serena_readiness.get("symbol") if serena_readiness else "",
             "serena_readiness_source_file": serena_readiness.get("source_file") if serena_readiness else "",
+            "serena_process_state_after_readiness": serena_readiness.get("process_state_after") if serena_readiness else {},
             "model_visible_proxy_tokens": metrics.get("model_visible_proxy_tokens", 0),
             "tool_call_count": metrics.get("tool_call_count", 0),
             "files_opened_count": metrics.get("files_opened_count", 0),

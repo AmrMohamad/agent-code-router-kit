@@ -130,6 +130,7 @@ class SerenaReadinessTests(unittest.TestCase):
         self.assertEqual(readiness.warnings, ["multiple_serena_mcp_processes", "multiple_kotlin_lsp_processes"])
         self.assertEqual(readiness.semantic_session_home, str(Path("/tmp/semantic-session").resolve()))
         self.assertEqual(readiness.isolated_env_keys, sorted(isolated_env))
+        self.assertEqual(readiness.process_state_after, SerenaProcessState(serena_mcp=2, kotlin_lsp=3, json_lsp=0))
         index_env = run_mock.call_args_list[1].kwargs["env"]
         for key, value in isolated_env.items():
             self.assertEqual(index_env[key], value)
