@@ -285,6 +285,7 @@ ROUTER_EFFECT_STUDY_RUN_ROW_KEYS = {
     "controller_commit",
     "controller_tree_hash",
     "correctness_status",
+    "dynamic_target_hmac",
     "end_to_end_seconds",
     "exact_cached_input_tokens",
     "exact_input_tokens",

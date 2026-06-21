@@ -1017,6 +1017,8 @@ def audit(
                 add_issue(issues, "fail", "row_route_profile_hash_match", f"run {row.get('run_id')} route profile hash does not match manifest")
         if not is_sha256_hex(row.get("task_prompt_sha256")):
             add_issue(issues, "fail", "task_prompt_sha256", f"run {row.get('run_id')} has no valid task prompt SHA-256")
+        if confirmatory and not is_hmac_fingerprint(row.get("dynamic_target_hmac")):
+            add_issue(issues, "fail", "dynamic_target_hmac", f"run {row.get('run_id')} has no valid dynamic target HMAC")
         if confirmatory:
             if not is_sha256_hex(row.get("response_contract_hash")):
                 add_issue(issues, "fail", "response_contract_hash", f"run {row.get('run_id')} has no valid response contract hash")
@@ -1332,6 +1334,10 @@ def audit(
         prompt_hmacs = {str(row.get("task_prompt_hmac", "")) for row in profile_rows.values()}
         if len(prompt_hmacs) != 1:
             add_issue(issues, "fail", "block_task_prompt_hmac_match", f"{key} task prompt HMAC differs across arms")
+        if confirmatory:
+            target_hmacs = {str(row.get("dynamic_target_hmac", "")) for row in profile_rows.values()}
+            if len(target_hmacs) != 1:
+                add_issue(issues, "fail", "block_dynamic_target_match", f"{key} dynamic target HMAC differs across arms")
         source_hmacs = {str(row.get("source_state_hmac", "")) for row in profile_rows.values()}
         if len(source_hmacs) != 1:
             add_issue(issues, "fail", "block_source_state_match", f"{key} source state HMAC differs across arms")

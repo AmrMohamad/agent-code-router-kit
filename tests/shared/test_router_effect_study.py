@@ -532,6 +532,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                 self.assertEqual(row["model_id"], manifest["model_id"])
                 self.assertEqual(row["reasoning_effort"], manifest["reasoning_effort"])
                 self.assertEqual(row["response_contract_hash"], expected_response_contract_hash)
+                self.assertRegex(row["dynamic_target_hmac"], r"^[0-9a-f]{24}$")
                 semantic_session = json.loads((run_dir / "semantic-session.json").read_text(encoding="utf-8"))
                 self.assertTrue(row["semantic_teardown_verified"])
                 self.assertEqual(row["semantic_process_survivor_count"], 0)
@@ -995,6 +996,16 @@ class RouterEffectStudyTests(unittest.TestCase):
             )
             mismatched_prompt_hmac = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("block_task_prompt_hmac_match", {issue["code"] for issue in mismatched_prompt_hmac["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            mismatched_target_hmac_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            mismatched_target_hmac_rows[0]["dynamic_target_hmac"] = "0" * 24
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in mismatched_target_hmac_rows),
+                encoding="utf-8",
+            )
+            mismatched_target_hmac = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("block_dynamic_target_match", {issue["code"] for issue in mismatched_target_hmac["issues"]})
             runs_path.write_text(original_runs_text, encoding="utf-8")
 
             mismatched_snapshot_hmac_rows = [json.loads(line) for line in original_runs_text.splitlines()]
@@ -1508,6 +1519,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                 public_rows[0]["response_contract_hash"],
                 text_sha256(RESPONSE_CONTRACT_PATH.read_text(encoding="utf-8")),
             )
+            self.assertRegex(public_rows[0]["dynamic_target_hmac"], r"^[0-9a-f]{24}$")
             self.assertIn("semantic_teardown_verified", public_rows[0])
             self.assertIn("semantic_child_lsp_survivor_count", public_rows[0])
             self.assertIn("serena_process_state_before", public_rows[0])
@@ -1530,6 +1542,8 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(semantic_public_row["semantic_child_lsp_survivor_count"], 0)
             self.assertNotIn("task_id", public_rows[0])
             self.assertNotIn("repo", public_rows[0])
+            self.assertNotIn("dynamic_target_symbol", public_rows[0])
+            self.assertNotIn("dynamic_target_source_file", public_rows[0])
             self.assertNotIn("source_commit", public_rows[0])
             self.assertNotIn("snapshot_commit", public_rows[0])
             manifest = json.loads((public / "manifest.sanitized.json").read_text(encoding="utf-8"))

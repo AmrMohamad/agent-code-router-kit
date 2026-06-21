@@ -1241,6 +1241,10 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "expected_proof_layer": run_task.expected_proof_layer,
             "expected_success_signal": run_task.expected_success_signal,
             "dynamic_target_symbol": dynamic_target.get("symbol") if dynamic_target else "",
+            "dynamic_target_hmac": private_hmac(
+                json.dumps(dynamic_target or {}, sort_keys=True, separators=(",", ":")),
+                key_env=args.hmac_key_env,
+            ),
             "dynamic_target_symbol_hmac": private_hmac(str(dynamic_target.get("symbol")) if dynamic_target else "", key_env=args.hmac_key_env),
             "dynamic_target_source_file": dynamic_target.get("source_file") if dynamic_target else "",
             "dynamic_target_line": dynamic_target.get("line") if dynamic_target else None,

@@ -60,6 +60,7 @@ PUBLIC_ROW_FIELDS = [
     "agent_config_hash",
     "route_profile_hash",
     "response_contract_hash",
+    "dynamic_target_hmac",
     "task_prompt_hmac",
     "source_state_hmac",
     "snapshot_state_hmac",
