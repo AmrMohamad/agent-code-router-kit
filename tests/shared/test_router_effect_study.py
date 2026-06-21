@@ -1121,6 +1121,16 @@ class RouterEffectStudyTests(unittest.TestCase):
             runs_path.write_text(original_runs_text, encoding="utf-8")
 
             analysis = analyze(out, metric="exact_uncached_input_tokens")
+            self.assertEqual(
+                analysis["bootstrap"],
+                {
+                    "method": "repository_task_cluster_resampling",
+                    "cluster_unit": "repository_task",
+                    "confidence_interval": 0.95,
+                    "iterations": 1000,
+                    "seed": 12345,
+                },
+            )
             self.assertIn("pairwise_effects_by_task_family", analysis)
             self.assertIn("pairwise_effects_by_repo", analysis)
             self.assertIn("pairwise_effects_by_sequence_position", analysis)
@@ -1163,6 +1173,16 @@ class RouterEffectStudyTests(unittest.TestCase):
             (out / "study-analysis.json").write_text(json.dumps(stale_analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             stale_analysis_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("study_analysis_consistency", {issue["code"] for issue in stale_analysis_audit["issues"]})
+            (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            bad_bootstrap_analysis = json.loads(json.dumps(analysis))
+            bad_bootstrap_analysis["bootstrap"]["seed"] = 999
+            (out / "study-analysis.json").write_text(
+                json.dumps(bad_bootstrap_analysis, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            bad_bootstrap_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("study_analysis_bootstrap", {issue["code"] for issue in bad_bootstrap_audit["issues"]})
             (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             stale_power = json.loads(json.dumps(power))
@@ -1341,6 +1361,25 @@ class RouterEffectStudyTests(unittest.TestCase):
             bad_plan_codes = {issue["code"] for issue in bad_plan_audit["issues"]}
             self.assertIn("analysis_plan", bad_plan_codes)
             self.assertIn("study_package_hash_match", bad_plan_codes)
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            bad_bootstrap_plan = root / "bad-bootstrap-analysis-plan.yaml"
+            bad_bootstrap_plan.write_text(
+                good_analysis_plan_text.replace("bootstrap_iterations: 1000", "bootstrap_iterations: 999"),
+                encoding="utf-8",
+            )
+            bad_bootstrap_plan_manifest = dict(manifest)
+            bad_bootstrap_plan_package = dict(manifest["study_package"])
+            bad_bootstrap_plan_package["analysis_plan_path"] = str(bad_bootstrap_plan)
+            bad_bootstrap_plan_manifest["study_package"] = bad_bootstrap_plan_package
+            manifest_path.write_text(
+                json.dumps(bad_bootstrap_plan_manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            bad_bootstrap_plan_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            bad_bootstrap_plan_codes = {issue["code"] for issue in bad_bootstrap_plan_audit["issues"]}
+            self.assertIn("analysis_plan", bad_bootstrap_plan_codes)
+            self.assertIn("study_package_hash_match", bad_bootstrap_plan_codes)
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             bad_tasks = root / "bad-tasks.tsv"
@@ -1529,6 +1568,8 @@ class RouterEffectStudyTests(unittest.TestCase):
                 "reasoning_output_per_1m": 8.0,
             }
             analysis = analyze(out, metric="exact_uncached_input_tokens", pricing=pricing)
+            self.assertEqual(analysis["bootstrap"]["iterations"], 1000)
+            self.assertEqual(analysis["bootstrap"]["seed"], 12345)
             self.assertIn("pairwise_effects_by_repo", analysis)
             self.assertIn("ios_reference", analysis["pairwise_effects_by_repo"]["A-search-only_to_D-full-router"])
             self.assertIn("factorial_effects", analysis)
@@ -1563,6 +1604,9 @@ class RouterEffectStudyTests(unittest.TestCase):
             public_audit = json.loads((public / "audit.sanitized.json").read_text(encoding="utf-8"))
             self.assertEqual(public_audit["audit_mode"], "confirmatory")
             self.assertEqual(public_audit["status"], "pass")
+            public_analysis = json.loads((public / "analysis.sanitized.json").read_text(encoding="utf-8"))
+            self.assertEqual(public_analysis["bootstrap"]["iterations"], 1000)
+            self.assertEqual(public_analysis["bootstrap"]["seed"], 12345)
             self.assertEqual(public_audit["min_task_families"], 1)
             self.assertEqual(public_audit["min_tasks_per_family"], 1)
             public_text = (public / "runs.sanitized.jsonl").read_text(encoding="utf-8")

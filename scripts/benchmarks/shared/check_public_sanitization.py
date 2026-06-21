@@ -230,6 +230,7 @@ ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS = {
     "analysis.sanitized.json": {
         "analysis_id",
         "arm_counts",
+        "bootstrap",
         "cell_key_fields",
         "cluster_unit",
         "correctness_counts",

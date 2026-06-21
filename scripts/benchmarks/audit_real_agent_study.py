@@ -13,6 +13,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.benchmarks.analyze_real_agent_study import analyze as compute_study_analysis
+from scripts.benchmarks.analyze_real_agent_study import DEFAULT_BOOTSTRAP_ITERATIONS, DEFAULT_BOOTSTRAP_SEED
 from scripts.benchmarks.estimate_study_power import estimate as compute_study_power
 from scripts.lib.agent_session import to_json_file
 from scripts.lib.agent_session import load_simple_yaml, load_tasks
@@ -180,6 +181,7 @@ def has_disable_plugins(args: list[str]) -> bool:
 
 def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
     required = [
+        "bootstrap",
         "pairwise_effects",
         "pairwise_effects_by_task_family",
         "pairwise_effects_by_repo",
@@ -200,6 +202,8 @@ def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
     if analysis.get("cell_key_fields") != ["agent", "task_id", "repo", "repeat_index"]:
         return False
     if analysis.get("cluster_unit") != "repository_task":
+        return False
+    if not _analysis_matches_preregistered_bootstrap(analysis):
         return False
     pairwise = analysis.get("pairwise_effects")
     if not isinstance(pairwise, dict):
@@ -266,6 +270,19 @@ def _analysis_matches_preregistered_primary(analysis: dict[str, object]) -> bool
     return analysis.get("metric") == "exact_uncached_input_tokens"
 
 
+def _analysis_matches_preregistered_bootstrap(analysis: dict[str, object]) -> bool:
+    bootstrap = analysis.get("bootstrap")
+    if not isinstance(bootstrap, dict):
+        return False
+    return (
+        bootstrap.get("method") == "repository_task_cluster_resampling"
+        and bootstrap.get("cluster_unit") == "repository_task"
+        and bootstrap.get("confidence_interval") == 0.95
+        and bootstrap.get("iterations") == DEFAULT_BOOTSTRAP_ITERATIONS
+        and bootstrap.get("seed") == DEFAULT_BOOTSTRAP_SEED
+    )
+
+
 def _pricing_from_analysis(analysis: dict[str, object]) -> dict[str, object] | None:
     cost = analysis.get("cost")
     if not isinstance(cost, dict) or cost.get("status") != "estimated":
@@ -279,10 +296,15 @@ def _pricing_from_analysis(analysis: dict[str, object]) -> dict[str, object] | N
 
 
 def _analysis_matches_rows(analysis: dict[str, object], root: Path) -> bool:
+    bootstrap = analysis.get("bootstrap")
+    if not isinstance(bootstrap, dict):
+        return False
     expected = compute_study_analysis(
         root,
         metric="exact_uncached_input_tokens",
         pricing=_pricing_from_analysis(analysis),
+        bootstrap_iterations=int(bootstrap.get("iterations", DEFAULT_BOOTSTRAP_ITERATIONS)),
+        bootstrap_seed=int(bootstrap.get("seed", DEFAULT_BOOTSTRAP_SEED)),
     )
     return analysis == expected
 
@@ -703,6 +725,22 @@ def _plan_float(plan: dict[str, object], key: str) -> float | None:
     return None
 
 
+def _plan_int(plan: dict[str, object], key: str) -> int | None:
+    value = plan.get(key)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
 def audit_confirmatory_analysis_plan(*, manifest: dict[str, object], issues: list[dict[str, object]]) -> None:
     package = manifest.get("study_package")
     if not isinstance(package, dict):
@@ -748,6 +786,15 @@ def audit_confirmatory_analysis_plan(*, manifest: dict[str, object], issues: lis
         for key, expected in required_floats.items()
         if _plan_float(plan, key) != expected
     ]
+    required_ints = {
+        "bootstrap_iterations": DEFAULT_BOOTSTRAP_ITERATIONS,
+        "bootstrap_seed": DEFAULT_BOOTSTRAP_SEED,
+    }
+    wrong_ints = [
+        key
+        for key, expected in required_ints.items()
+        if _plan_int(plan, key) != expected
+    ]
     list_like_fields = {
         "factorial_effects": {"semantic_access", "routing_discipline", "interaction"},
         "stratified_effects": {"task_family", "repository", "sequence_position"},
@@ -758,7 +805,7 @@ def audit_confirmatory_analysis_plan(*, manifest: dict[str, object], issues: lis
         observed = {item.strip() for item in str(raw).split(",") if item.strip()}
         if not expected.issubset(observed):
             wrong_list_like.append(key)
-    wrong_fields = sorted(wrong_scalars + wrong_booleans + wrong_floats + wrong_list_like)
+    wrong_fields = sorted(wrong_scalars + wrong_booleans + wrong_floats + wrong_ints + wrong_list_like)
     if wrong_fields:
         add_issue(
             issues,
@@ -1495,6 +1542,8 @@ def audit(
                 add_issue(issues, "fail", "study_analysis_shape", "study-analysis.json lacks required paired, sensitivity, factorial, correctness, or CI fields")
             if not _analysis_matches_preregistered_primary(analysis):
                 add_issue(issues, "fail", "study_analysis_metric", "confirmatory analysis must use preregistered exact_uncached_input_tokens metric")
+            if not _analysis_matches_preregistered_bootstrap(analysis):
+                add_issue(issues, "fail", "study_analysis_bootstrap", "study-analysis.json must use preregistered cluster-bootstrap seed and iteration settings")
             if not _analysis_cost_has_required_shape(analysis, manifest):
                 add_issue(issues, "fail", "study_analysis_cost", "study-analysis.json has missing or invalid estimated-cost metadata")
             if _analysis_has_required_shape(analysis) and not _analysis_matches_rows(analysis, base):

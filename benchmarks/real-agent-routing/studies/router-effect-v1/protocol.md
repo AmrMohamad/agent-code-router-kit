@@ -136,10 +136,12 @@ replace. Valid resume carry-forward is allowed only for intact prior rows with
 self-contained artifacts.
 
 Continuous outcomes use paired log ratios with repository/task-cluster bootstrap
-confidence intervals. The analysis block key is agent, task id, repository id,
-and repetition index, so reused task ids in different repositories remain
-independent cells. Confirmatory analysis reports pairwise effects, pass/pass
-sensitivity, factorial effects, task-family effects, repository-stratified
-effects, and Latin-square sequence-position sensitivity. Pairwise correctness
-comparisons use Holm correction. Public evidence must replace
-repository-stratified keys with opaque repository ids.
+confidence intervals. The preregistered bootstrap uses 1,000 iterations and seed
+12,345; generated analysis artifacts must publish those settings and the audit
+must reject drift from them. The analysis block key is agent, task id,
+repository id, and repetition index, so reused task ids in different
+repositories remain independent cells. Confirmatory analysis reports pairwise
+effects, pass/pass sensitivity, factorial effects, task-family effects,
+repository-stratified effects, and Latin-square sequence-position sensitivity.
+Pairwise correctness comparisons use Holm correction. Public evidence must
+replace repository-stratified keys with opaque repository ids.

@@ -23,6 +23,8 @@ PRICE_FIELDS = [
     "output_per_1m",
     "reasoning_output_per_1m",
 ]
+DEFAULT_BOOTSTRAP_ITERATIONS = 1000
+DEFAULT_BOOTSTRAP_SEED = 12345
 
 
 def load_jsonl(path: Path) -> list[dict[str, object]]:
@@ -110,9 +112,16 @@ def percentile(values: list[float], q: float) -> float:
     return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
 
 
-def cluster_bootstrap_log_ci(rows: list[dict[str, object]], *, iterations: int = 1000, seed: int = 12345) -> dict[str, float]:
+def cluster_bootstrap_log_ci(
+    rows: list[dict[str, object]],
+    *,
+    iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict[str, float]:
     if not rows:
         return {}
+    if iterations <= 0:
+        raise ValueError("bootstrap iterations must be positive")
     by_task: dict[tuple[str, str], list[float]] = defaultdict(list)
     for row in rows:
         by_task[analysis_cluster_key(row)].append(float(row["log_ratio"]))
@@ -134,7 +143,12 @@ def cluster_bootstrap_log_ci(rows: list[dict[str, object]], *, iterations: int =
     }
 
 
-def summarize_effect(rows: list[dict[str, object]]) -> dict[str, object]:
+def summarize_effect(
+    rows: list[dict[str, object]],
+    *,
+    bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict[str, object]:
     if not rows:
         return {"pair_count": 0}
     changes = [float(row["percent_change"]) for row in rows]
@@ -144,18 +158,35 @@ def summarize_effect(rows: list[dict[str, object]]) -> dict[str, object]:
         "median_percent_change": round(statistics.median(changes), 2),
         "mean_log_effect": round(statistics.mean(logs), 6),
         "mean_log_effect_as_percent": round((math.exp(statistics.mean(logs)) - 1.0) * 100.0, 2),
-        "cluster_bootstrap_95ci_percent": cluster_bootstrap_log_ci(rows),
+        "cluster_bootstrap_95ci_percent": cluster_bootstrap_log_ci(
+            rows,
+            iterations=bootstrap_iterations,
+            seed=bootstrap_seed,
+        ),
     }
 
 
-def grouped_effects(rows: list[dict[str, object]], *, group_key: str) -> dict[str, dict[str, object]]:
+def grouped_effects(
+    rows: list[dict[str, object]],
+    *,
+    group_key: str,
+    bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict[str, dict[str, object]]:
     groups: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in rows:
         value = row.get(group_key)
         if value in {"", None}:
             value = "unknown"
         groups[str(value)].append(row)
-    return {key: summarize_effect(values) for key, values in sorted(groups.items())}
+    return {
+        key: summarize_effect(
+            values,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        for key, values in sorted(groups.items())
+    }
 
 
 def binomial_cdf(k: int, n: int, p: float = 0.5) -> float:
@@ -272,9 +303,23 @@ def factorial_effect_rows(rows: list[dict[str, object]], *, metric: str, pass_al
     return effects
 
 
-def summarize_factorial_effects(rows: list[dict[str, object]], *, metric: str, pass_all_only: bool = False) -> dict[str, object]:
+def summarize_factorial_effects(
+    rows: list[dict[str, object]],
+    *,
+    metric: str,
+    pass_all_only: bool = False,
+    bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict[str, object]:
     effects = factorial_effect_rows(rows, metric=metric, pass_all_only=pass_all_only)
-    return {name: summarize_effect(values) for name, values in effects.items()}
+    return {
+        name: summarize_effect(
+            values,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        for name, values in effects.items()
+    }
 
 
 def summarize_factorial_effects_by_group(
@@ -283,9 +328,19 @@ def summarize_factorial_effects_by_group(
     metric: str,
     group_key: str,
     pass_all_only: bool = False,
+    bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
 ) -> dict[str, object]:
     effects = factorial_effect_rows(rows, metric=metric, pass_all_only=pass_all_only)
-    return {name: grouped_effects(values, group_key=group_key) for name, values in effects.items()}
+    return {
+        name: grouped_effects(
+            values,
+            group_key=group_key,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        for name, values in effects.items()
+    }
 
 
 def holm_correct_pairwise(correctness_pairwise: dict[str, dict[str, object]], *, alpha: float = 0.05) -> dict[str, object]:
@@ -414,6 +469,8 @@ def analyze(
     metric: str,
     pricing: dict[str, object] | None = None,
     correctness_noninferiority_margin: float = 0.05,
+    bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
 ) -> dict[str, object]:
     base = Path(root).expanduser().resolve()
     rows = load_jsonl(base / "runs.jsonl")
@@ -432,12 +489,35 @@ def analyze(
     ]:
         effects = paired_log_ratios(rows, metric=metric, left=left, right=right)
         comparison = f"{left}_to_{right}"
-        pairwise[comparison] = summarize_effect(effects)
-        pairwise_by_task_family[comparison] = grouped_effects(effects, group_key="task_family")
-        pairwise_by_repo[comparison] = grouped_effects(effects, group_key="repo")
-        pairwise_by_sequence_position[comparison] = grouped_effects(effects, group_key="right_sequence_position")
+        pairwise[comparison] = summarize_effect(
+            effects,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        pairwise_by_task_family[comparison] = grouped_effects(
+            effects,
+            group_key="task_family",
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        pairwise_by_repo[comparison] = grouped_effects(
+            effects,
+            group_key="repo",
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        pairwise_by_sequence_position[comparison] = grouped_effects(
+            effects,
+            group_key="right_sequence_position",
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
         pass_pass_effects = paired_log_ratios(rows, metric=metric, left=left, right=right, pass_pass_only=True)
-        pass_pass_pairwise[comparison] = summarize_effect(pass_pass_effects)
+        pass_pass_pairwise[comparison] = summarize_effect(
+            pass_pass_effects,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
         correctness_pairwise[comparison] = paired_correctness(
             rows,
             left=left,
@@ -447,6 +527,13 @@ def analyze(
     return {
         "analysis_id": "router-effect-v1",
         "metric": metric,
+        "bootstrap": {
+            "method": "repository_task_cluster_resampling",
+            "cluster_unit": "repository_task",
+            "confidence_interval": 0.95,
+            "iterations": bootstrap_iterations,
+            "seed": bootstrap_seed,
+        },
         "cell_key_fields": ["agent", "task_id", "repo", "repeat_index"],
         "cluster_unit": "repository_task",
         "run_count": len(rows),
@@ -461,10 +548,33 @@ def analyze(
         "pairwise_effects_by_repo": pairwise_by_repo,
         "pairwise_effects_by_sequence_position": pairwise_by_sequence_position,
         "pass_pass_sensitivity_pairwise_effects": pass_pass_pairwise,
-        "factorial_effects": summarize_factorial_effects(rows, metric=metric),
-        "factorial_effects_by_task_family": summarize_factorial_effects_by_group(rows, metric=metric, group_key="task_family"),
-        "factorial_effects_by_repo": summarize_factorial_effects_by_group(rows, metric=metric, group_key="repo"),
-        "pass_all_sensitivity_factorial_effects": summarize_factorial_effects(rows, metric=metric, pass_all_only=True),
+        "factorial_effects": summarize_factorial_effects(
+            rows,
+            metric=metric,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        ),
+        "factorial_effects_by_task_family": summarize_factorial_effects_by_group(
+            rows,
+            metric=metric,
+            group_key="task_family",
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        ),
+        "factorial_effects_by_repo": summarize_factorial_effects_by_group(
+            rows,
+            metric=metric,
+            group_key="repo",
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        ),
+        "pass_all_sensitivity_factorial_effects": summarize_factorial_effects(
+            rows,
+            metric=metric,
+            pass_all_only=True,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        ),
         "multiple_comparison_correction": holm_correct_pairwise(correctness_pairwise),
         "cost": summarize_costs(rows, pricing or {}),
         "notes": [
@@ -483,6 +593,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--metric", default="exact_uncached_input_tokens")
     parser.add_argument("--pricing", help="Optional JSON pricing file with per-1M token prices.")
     parser.add_argument("--correctness-noninferiority-margin", type=float, default=0.05)
+    parser.add_argument("--bootstrap-iterations", type=int, default=DEFAULT_BOOTSTRAP_ITERATIONS)
+    parser.add_argument("--bootstrap-seed", type=int, default=DEFAULT_BOOTSTRAP_SEED)
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
     result = analyze(
@@ -490,6 +602,8 @@ def main(argv: list[str] | None = None) -> int:
         metric=args.metric,
         pricing=load_pricing(args.pricing),
         correctness_noninferiority_margin=args.correctness_noninferiority_margin,
+        bootstrap_iterations=args.bootstrap_iterations,
+        bootstrap_seed=args.bootstrap_seed,
     )
     to_json_file(args.out, result)
     print(json.dumps(result, indent=2, sort_keys=True))
