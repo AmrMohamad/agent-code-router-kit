@@ -40,6 +40,7 @@ LANGUAGE_SERVER_VERSION_FIELDS = {
     "kotlin-language-server": "kotlin_language_server_version",
     "vscode-json-languageserver": "json_language_server_version",
 }
+SERENA_PROCESS_STATE_KEYS = ("serena_mcp", "sourcekit_lsp", "kotlin_lsp", "json_lsp")
 
 
 def load_json(path: Path) -> dict[str, object]:
@@ -67,6 +68,16 @@ def semantic_session_for_row(row: dict[str, object]) -> dict[str, object] | None
     if not path.exists():
         return None
     return load_json(path)
+
+
+def process_state_is_zero(value: object, *, keys: tuple[str, ...] = SERENA_PROCESS_STATE_KEYS) -> bool:
+    if not isinstance(value, dict):
+        return False
+    for key in keys:
+        count = value.get(key)
+        if isinstance(count, bool) or not isinstance(count, int) or count != 0:
+            return False
+    return True
 
 
 def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
@@ -688,6 +699,34 @@ def audit(
                         )
             if semantic_session.get("semantic_access_enabled") != factors.semantic_access_enabled:
                 add_issue(issues, "fail", "semantic_session_factor", f"run {row.get('run_id')} semantic-session factor mismatch")
+            pre_process_state = semantic_session.get("pre_task_process_state")
+            post_process_state = semantic_session.get("post_task_process_state")
+            if not isinstance(pre_process_state, dict) or not isinstance(post_process_state, dict):
+                add_issue(issues, "fail", "semantic_process_state", f"run {row.get('run_id')} lacks semantic pre/post process-state evidence")
+            else:
+                if row.get("serena_process_state_before") != pre_process_state:
+                    add_issue(issues, "fail", "semantic_process_state_match", f"run {row.get('run_id')} pre-task process state differs between row and artifact")
+                if row.get("serena_process_state_after") != post_process_state:
+                    add_issue(issues, "fail", "semantic_process_state_match", f"run {row.get('run_id')} post-task process state differs between row and artifact")
+                if confirmatory and not process_state_is_zero(pre_process_state):
+                    add_issue(issues, "fail", "semantic_process_state_clean", f"run {row.get('run_id')} did not start from zero Serena/LSP process state")
+                if confirmatory and not process_state_is_zero(post_process_state):
+                    add_issue(issues, "fail", "semantic_teardown", f"run {row.get('run_id')} left Serena/LSP processes after completion")
+            if row.get("semantic_lifecycle_owner") != semantic_session.get("lifecycle_owner"):
+                add_issue(issues, "fail", "semantic_lifecycle_owner", f"run {row.get('run_id')} lifecycle owner differs between row and artifact")
+            if row.get("semantic_teardown_verified") != semantic_session.get("teardown_verified"):
+                add_issue(issues, "fail", "semantic_teardown", f"run {row.get('run_id')} teardown verification differs between row and artifact")
+            if row.get("semantic_process_survivor_count") != semantic_session.get("process_survivor_count"):
+                add_issue(issues, "fail", "semantic_teardown", f"run {row.get('run_id')} survivor count differs between row and artifact")
+            if row.get("semantic_child_lsp_survivor_count") != semantic_session.get("child_lsp_survivor_count"):
+                add_issue(issues, "fail", "semantic_teardown", f"run {row.get('run_id')} child LSP survivor count differs between row and artifact")
+            if confirmatory:
+                if semantic_session.get("teardown_verified") is not True or row.get("semantic_teardown_verified") is not True:
+                    add_issue(issues, "fail", "semantic_teardown", f"run {row.get('run_id')} lacks verified semantic teardown")
+                if semantic_session.get("process_survivor_count") != 0 or row.get("semantic_process_survivor_count") != 0:
+                    add_issue(issues, "fail", "semantic_teardown", f"run {row.get('run_id')} has nonzero Serena/LSP survivors")
+                if semantic_session.get("child_lsp_survivor_count") != 0 or row.get("semantic_child_lsp_survivor_count") != 0:
+                    add_issue(issues, "fail", "semantic_teardown", f"run {row.get('run_id')} has nonzero child LSP survivors")
             if factors.semantic_access_enabled:
                 session_id = str(semantic_session.get("session_id", ""))
                 semantic_session_ids[session_id] += 1

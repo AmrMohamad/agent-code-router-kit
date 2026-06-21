@@ -33,7 +33,11 @@ from scripts.lib.environment_capture import capture_tool_versions, file_sha256, 
 from scripts.lib.experiment_design import assign_sequence, load_study_plan, sequence_metadata
 from scripts.lib.hermetic_agent_environment import materialize_hermetic_agent_environment
 from scripts.lib.route_isolation import materialize_route_isolation
-from scripts.lib.serena_readiness import run_serena_source_symbol_readiness, write_serena_readiness
+from scripts.lib.serena_readiness import (
+    run_serena_source_symbol_readiness,
+    serena_process_state as capture_serena_process_state,
+    write_serena_readiness,
+)
 from scripts.lib.task_oracles import load_task_oracles, verify_transcript_file
 from scripts.lib.treatment_diff_artifacts import write_treatment_diff_artifact
 from scripts.lib.treatment_config import FACTORIAL_ARM_ORDER, factors_for_profile, hmac_sha256_hex, validate_factorial_arm_set
@@ -44,9 +48,12 @@ DEFAULT_TASKS = ROOT / "benchmarks" / "real-agent-routing" / "tasks" / "android-
 DEFAULT_OUT = ROOT / "results" / "real-agent-routing"
 SERENA_PROCESS_STATE_WARNING_CODES = {
     "multiple_serena_mcp_processes",
+    "multiple_sourcekit_lsp_processes",
     "multiple_kotlin_lsp_processes",
     "multiple_json_lsp_processes",
 }
+SERENA_PROCESS_STATE_KEYS = ("serena_mcp", "sourcekit_lsp", "kotlin_lsp", "json_lsp")
+SERENA_LANGUAGE_SERVER_PROCESS_KEYS = ("sourcekit_lsp", "kotlin_lsp", "json_lsp")
 HIGH_FANOUT_RAW_OUTPUT_CEILING_BYTES = 50000
 DEFAULT_STUDY_MODEL_ID = "not_pinned"
 DEFAULT_REASONING_EFFORT = "default"
@@ -157,6 +164,9 @@ def semantic_session_artifact(
     serena_readiness: dict[str, object] | None,
     tool_versions: dict[str, str],
     project_path_hmac: str,
+    dry_run: bool,
+    pre_task_process_state: dict[str, int],
+    post_task_process_state: dict[str, int],
 ) -> dict[str, object]:
     language_versions = {
         "sourcekit-lsp": tool_versions.get("sourcekit-lsp", ""),
@@ -181,6 +191,12 @@ def semantic_session_artifact(
             "readiness_status": "",
             "readiness_ready": None,
             "language_server_versions": language_versions,
+            "lifecycle_owner": "none",
+            "pre_task_process_state": pre_task_process_state,
+            "post_task_process_state": post_task_process_state,
+            "process_survivor_count": serena_process_survivor_count(post_task_process_state),
+            "child_lsp_survivor_count": serena_child_lsp_survivor_count(post_task_process_state),
+            "teardown_verified": serena_process_survivor_count(post_task_process_state) == 0,
             "teardown_policy": "no semantic MCP server configured for this arm",
         }
     semantic_home = Path(hermetic_environment.semantic_session_home) if hermetic_environment else None
@@ -207,6 +223,12 @@ def semantic_session_artifact(
         "readiness_status": serena_readiness.get("status") if serena_readiness else "",
         "readiness_ready": serena_readiness.get("ready") if serena_readiness else None,
         "language_server_versions": language_versions,
+        "lifecycle_owner": "dry_run_no_process_started" if dry_run else "codex_subprocess_stdio",
+        "pre_task_process_state": pre_task_process_state,
+        "post_task_process_state": post_task_process_state,
+        "process_survivor_count": serena_process_survivor_count(post_task_process_state),
+        "child_lsp_survivor_count": serena_child_lsp_survivor_count(post_task_process_state),
+        "teardown_verified": dry_run or serena_process_survivor_count(post_task_process_state) == 0,
         "teardown_policy": "Codex subprocess owns the stdio MCP server; session exit closes the per-run Serena process",
     }
 
@@ -311,7 +333,7 @@ Symbol: {readiness.get("symbol") or ""}
 Source file: {readiness.get("source_file") or ""}
 Reason: {readiness.get("reason") or ""}
 Next action: {readiness.get("next_action") or ""}
-Process state: serena_mcp={process_state.get("serena_mcp", "unknown")}, kotlin_lsp={process_state.get("kotlin_lsp", "unknown")}, json_lsp={process_state.get("json_lsp", "unknown")}
+Process state: serena_mcp={process_state.get("serena_mcp", "unknown")}, sourcekit_lsp={process_state.get("sourcekit_lsp", "unknown")}, kotlin_lsp={process_state.get("kotlin_lsp", "unknown")}, json_lsp={process_state.get("json_lsp", "unknown")}
 Warnings: {warning_text}
 
 Serena coordination rules:
@@ -369,6 +391,34 @@ def serena_process_state_warnings(readiness: dict[str, object] | None) -> list[s
     if not isinstance(warnings, list):
         return []
     return [str(warning) for warning in warnings if str(warning) in SERENA_PROCESS_STATE_WARNING_CODES]
+
+
+def zero_serena_process_counts() -> dict[str, int]:
+    return {key: 0 for key in SERENA_PROCESS_STATE_KEYS}
+
+
+def serena_process_counts() -> dict[str, int]:
+    captured = asdict(capture_serena_process_state())
+    return {key: int(captured.get(key, 0) or 0) for key in SERENA_PROCESS_STATE_KEYS}
+
+
+def serena_process_survivor_count(process_state: dict[str, int]) -> int:
+    return sum(max(0, int(process_state.get(key, 0) or 0)) for key in SERENA_PROCESS_STATE_KEYS)
+
+
+def serena_child_lsp_survivor_count(process_state: dict[str, int]) -> int:
+    return sum(max(0, int(process_state.get(key, 0) or 0)) for key in SERENA_LANGUAGE_SERVER_PROCESS_KEYS)
+
+
+def enforce_zero_serena_process_counts(*, process_state: dict[str, int], run_dir: Path, phase: str) -> None:
+    nonzero = {key: value for key, value in process_state.items() if value}
+    if not nonzero:
+        return
+    details = ", ".join(f"{key}={value}" for key, value in sorted(nonzero.items()))
+    raise SystemExit(
+        f"Serena process state is not clean {phase} a live controlled study cell; "
+        f"{details}. Inspect {run_dir} and clean stale Serena/SourceKit/Kotlin/JSON LSP sessions before rerunning."
+    )
 
 
 def enforce_clean_serena_process_state(*, readiness: dict[str, object] | None, run_dir: Path) -> None:
@@ -969,6 +1019,15 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         effective_profile = effective_route_profile(profile, task=task)
         terminal_mode = args.terminal_mode or agent_profile.terminal_mode
         run_dir.mkdir(parents=True, exist_ok=True)
+        pre_task_process_state = zero_serena_process_counts()
+        if args.require_clean_serena_process_state:
+            pre_task_process_state = zero_serena_process_counts() if args.dry_run else serena_process_counts()
+            if not args.dry_run:
+                enforce_zero_serena_process_counts(
+                    process_state=pre_task_process_state,
+                    run_dir=run_dir,
+                    phase="before launching",
+                )
         dynamic_target: dict[str, object] | None = None
         run_task = task
         if not args.static_code_prompts and task_supports_dynamic_code_prompt(task):
@@ -1083,6 +1142,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             task_id=task.task_id,
             max_output_bytes=effective_profile.max_raw_output_bytes,
         )
+        post_task_process_state = zero_serena_process_counts()
+        if args.require_clean_serena_process_state:
+            post_task_process_state = zero_serena_process_counts() if args.dry_run else serena_process_counts()
         metrics = json.loads((run_dir / "metrics.normalized.json").read_text(encoding="utf-8"))
         judge = judge_file(
             bridge_result.transcript_path,
@@ -1219,6 +1281,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             serena_readiness=serena_readiness,
             tool_versions=tool_versions,
             project_path_hmac=private_hmac(task_repo_path, key_env=args.hmac_key_env),
+            dry_run=args.dry_run,
+            pre_task_process_state=pre_task_process_state,
+            post_task_process_state=post_task_process_state,
         )
         to_json_file(run_dir / "semantic-session.json", semantic_session)
         oracle_payload = asdict(oracle_result)
@@ -1232,6 +1297,12 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 if semantic_session.get("semantic_access_enabled")
                 else "",
                 "semantic_project_path_hmac": semantic_session.get("project_path_hmac", ""),
+                "semantic_lifecycle_owner": semantic_session.get("lifecycle_owner", ""),
+                "semantic_teardown_verified": semantic_session.get("teardown_verified"),
+                "semantic_process_survivor_count": semantic_session.get("process_survivor_count"),
+                "semantic_child_lsp_survivor_count": semantic_session.get("child_lsp_survivor_count"),
+                "serena_process_state_before": pre_task_process_state,
+                "serena_process_state_after": post_task_process_state,
                 "codex_version": tool_versions.get("codex", ""),
                 "serena_version": tool_versions.get("serena", ""),
                 "sourcekit_lsp_version": tool_versions.get("sourcekit-lsp", ""),
@@ -1245,6 +1316,12 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             }
         )
         append_jsonl(runs_path, row)
+        if args.require_clean_serena_process_state and not args.dry_run and not row["semantic_teardown_verified"]:
+            enforce_zero_serena_process_counts(
+                process_state=post_task_process_state,
+                run_dir=run_dir,
+                phase="after completing",
+            )
         monitor_event(
             monitor_path,
             {

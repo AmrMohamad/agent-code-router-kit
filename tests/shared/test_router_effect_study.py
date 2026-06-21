@@ -129,6 +129,22 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                     "serena_readiness_status": "pass" if row["semantic_access_enabled"] else "",
                     "serena_readiness_ready": True if row["semantic_access_enabled"] else None,
                     "serena_readiness_reason": "",
+                    "semantic_lifecycle_owner": "codex_subprocess_stdio" if row["semantic_access_enabled"] else "none",
+                    "semantic_teardown_verified": True,
+                    "semantic_process_survivor_count": 0,
+                    "semantic_child_lsp_survivor_count": 0,
+                    "serena_process_state_before": {
+                        "serena_mcp": 0,
+                        "sourcekit_lsp": 0,
+                        "kotlin_lsp": 0,
+                        "json_lsp": 0,
+                    },
+                    "serena_process_state_after": {
+                        "serena_mcp": 0,
+                        "sourcekit_lsp": 0,
+                        "kotlin_lsp": 0,
+                        "json_lsp": 0,
+                    },
                     "codex_version": "codex-test 1.0",
                     "serena_version": "serena-test 1.0",
                     "os_version": "test-os",
@@ -152,6 +168,12 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                 semantic_payload = json.loads(semantic_path.read_text(encoding="utf-8"))
                 semantic_payload["readiness_status"] = "pass"
                 semantic_payload["readiness_ready"] = True
+                semantic_payload["lifecycle_owner"] = "codex_subprocess_stdio"
+                semantic_payload["teardown_verified"] = True
+                semantic_payload["process_survivor_count"] = 0
+                semantic_payload["child_lsp_survivor_count"] = 0
+                semantic_payload["pre_task_process_state"] = row["serena_process_state_before"]
+                semantic_payload["post_task_process_state"] = row["serena_process_state_after"]
                 semantic_path.write_text(json.dumps(semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -369,11 +391,19 @@ class RouterEffectStudyTests(unittest.TestCase):
                 self.assertEqual(row["source_lockfile_hash"], row["lockfile_hash"])
                 self.assertRegex(row["snapshot_state_hmac"], r"^[0-9a-f]{24}$")
                 semantic_session = json.loads((run_dir / "semantic-session.json").read_text(encoding="utf-8"))
+                self.assertTrue(row["semantic_teardown_verified"])
+                self.assertEqual(row["semantic_process_survivor_count"], 0)
+                self.assertEqual(row["semantic_child_lsp_survivor_count"], 0)
+                self.assertEqual(row["serena_process_state_before"], semantic_session["pre_task_process_state"])
+                self.assertEqual(row["serena_process_state_after"], semantic_session["post_task_process_state"])
                 if row["semantic_access_enabled"]:
                     self.assertEqual(semantic_session["session_id"], row["run_id"])
                     self.assertEqual(semantic_session["mode"], "codex_mcp_stdio_per_run")
                     self.assertTrue(semantic_session["isolated"])
                     self.assertEqual(semantic_session["transport"], "stdio")
+                    self.assertEqual(row["semantic_lifecycle_owner"], "dry_run_no_process_started")
+                    self.assertEqual(semantic_session["lifecycle_owner"], "dry_run_no_process_started")
+                    self.assertTrue(semantic_session["teardown_verified"])
                     self.assertTrue(Path(semantic_session["semantic_session_home"]).is_relative_to(run_dir))
                     self.assertTrue(Path(semantic_session["serena_home"]).is_relative_to(Path(semantic_session["semantic_session_home"])))
                     self.assertTrue(Path(semantic_session["xdg_config_home"]).is_relative_to(Path(semantic_session["semantic_session_home"])))
@@ -391,6 +421,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                     self.assertEqual(semantic_session["mode"], "disabled")
                     self.assertFalse(semantic_session["mcp_server_configured"])
                     self.assertEqual(row["semantic_session_id_hmac"], "")
+                    self.assertEqual(row["semantic_lifecycle_owner"], "none")
             self.assertTrue(manifest["snapshot_repos"])
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertTrue(manifest["require_clean_serena_process_state"])
@@ -806,6 +837,28 @@ class RouterEffectStudyTests(unittest.TestCase):
             readiness_path.write_text(readiness_text, encoding="utf-8")
             runs_path.write_text(original_runs_text, encoding="utf-8")
 
+            row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
+            semantic_index = next(index for index, row in enumerate(row_lines) if row["semantic_access_enabled"])
+            semantic_path = Path(row_lines[semantic_index]["run_dir"]) / "semantic-session.json"
+            semantic_payload = json.loads(semantic_path.read_text(encoding="utf-8"))
+            original_semantic_payload = dict(semantic_payload)
+            survivor_state = dict(semantic_payload["post_task_process_state"])
+            survivor_state["sourcekit_lsp"] = 1
+            semantic_payload["post_task_process_state"] = survivor_state
+            semantic_payload["teardown_verified"] = False
+            semantic_payload["process_survivor_count"] = 1
+            semantic_payload["child_lsp_survivor_count"] = 1
+            row_lines[semantic_index]["serena_process_state_after"] = survivor_state
+            row_lines[semantic_index]["semantic_teardown_verified"] = False
+            row_lines[semantic_index]["semantic_process_survivor_count"] = 1
+            row_lines[semantic_index]["semantic_child_lsp_survivor_count"] = 1
+            semantic_path.write_text(json.dumps(semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            runs_path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in row_lines), encoding="utf-8")
+            teardown_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("semantic_teardown", {issue["code"] for issue in teardown_audit["issues"]})
+            semantic_path.write_text(json.dumps(original_semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
             tainted_manifest = dict(manifest)
             tainted_manifest.update(
                 {
@@ -910,6 +963,10 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(public_rows[0]["task_public_id"], "task_001")
             self.assertEqual(public_rows[0]["repo_public_id"], "repo_001")
             self.assertIn("semantic_session_mode", public_rows[0])
+            self.assertIn("semantic_teardown_verified", public_rows[0])
+            self.assertIn("semantic_child_lsp_survivor_count", public_rows[0])
+            self.assertIn("serena_process_state_before", public_rows[0])
+            self.assertIn("serena_process_state_after", public_rows[0])
             self.assertIn("codex_version", public_rows[0])
             self.assertRegex(public_rows[0]["protocol_commit"], r"^[0-9a-f]{40,64}$")
             self.assertEqual(public_rows[0]["controller_commit"], public_rows[0]["protocol_commit"])
@@ -918,6 +975,8 @@ class RouterEffectStudyTests(unittest.TestCase):
             semantic_public_row = next(row for row in public_rows if row["semantic_access_enabled"])
             self.assertRegex(semantic_public_row["semantic_session_id_hmac"], r"^[0-9a-f]{24}$")
             self.assertRegex(semantic_public_row["semantic_project_path_hmac"], r"^[0-9a-f]{24}$")
+            self.assertTrue(semantic_public_row["semantic_teardown_verified"])
+            self.assertEqual(semantic_public_row["semantic_child_lsp_survivor_count"], 0)
             self.assertNotIn("task_id", public_rows[0])
             self.assertNotIn("repo", public_rows[0])
             self.assertNotIn("source_commit", public_rows[0])

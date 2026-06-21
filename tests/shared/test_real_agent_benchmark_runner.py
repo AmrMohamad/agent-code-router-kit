@@ -780,6 +780,10 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
                     "scripts.benchmarks.run_real_agent_benchmark.run_serena_source_symbol_readiness",
                     return_value=readiness,
                 ),
+                mock.patch(
+                    "scripts.benchmarks.run_real_agent_benchmark.capture_serena_process_state",
+                    return_value=SerenaProcessState(serena_mcp=0, kotlin_lsp=0, json_lsp=0),
+                ),
                 mock.patch("scripts.benchmarks.run_real_agent_benchmark.TerminalAgentBridge") as bridge_mock,
                 contextlib.redirect_stdout(io.StringIO()),
                 self.assertRaises(SystemExit) as context,

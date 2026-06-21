@@ -13,10 +13,12 @@ from scripts.lib.agent_session import to_json_file, utc_now
 
 SOURCE_SYMBOL_RE = re.compile(r"\b[A-Z][A-Za-z0-9_]{3,}\b")
 SERENA_MCP_PATTERN = "serena start-mcp-server"
+SOURCEKIT_LSP_PATTERN = "sourcekit-lsp"
 KOTLIN_LSP_PATTERN = "KotlinLspServerKt"
 JSON_LSP_PATTERN = "vscode-json-languageserver"
 PROCESS_KIND_PATTERNS = {
     "serena_mcp": SERENA_MCP_PATTERN,
+    "sourcekit_lsp": SOURCEKIT_LSP_PATTERN,
     "kotlin_lsp": KOTLIN_LSP_PATTERN,
     "json_lsp": JSON_LSP_PATTERN,
 }
@@ -34,6 +36,7 @@ class SerenaProcessState:
     serena_mcp: int
     kotlin_lsp: int
     json_lsp: int
+    sourcekit_lsp: int = 0
 
 
 @dataclass(frozen=True)
@@ -250,6 +253,7 @@ def terminate_processes(processes: list[SerenaProcess], *, grace_seconds: float 
 def serena_process_state() -> SerenaProcessState:
     return SerenaProcessState(
         serena_mcp=count_processes(SERENA_MCP_PATTERN),
+        sourcekit_lsp=count_processes(SOURCEKIT_LSP_PATTERN),
         kotlin_lsp=count_processes(KOTLIN_LSP_PATTERN),
         json_lsp=count_processes(JSON_LSP_PATTERN),
     )
@@ -259,6 +263,8 @@ def serena_process_state_warnings(process_state: SerenaProcessState) -> list[str
     warnings: list[str] = []
     if process_state.serena_mcp > 1:
         warnings.append("multiple_serena_mcp_processes")
+    if process_state.sourcekit_lsp > 1:
+        warnings.append("multiple_sourcekit_lsp_processes")
     if process_state.kotlin_lsp > 1:
         warnings.append("multiple_kotlin_lsp_processes")
     if process_state.json_lsp > 1:
@@ -277,11 +283,18 @@ def serena_process_cleanup_plan(
     state = process_state or serena_process_state()
     warning_values = warnings if warnings is not None else serena_process_state_warnings(state)
     process_values = processes if processes is not None else serena_related_processes()
-    grouped: dict[str, list[SerenaProcess]] = {"serena_mcp": [], "kotlin_lsp": [], "json_lsp": [], "unknown": []}
+    grouped: dict[str, list[SerenaProcess]] = {
+        "serena_mcp": [],
+        "sourcekit_lsp": [],
+        "kotlin_lsp": [],
+        "json_lsp": [],
+        "unknown": [],
+    }
     for process in process_values:
         grouped.setdefault(serena_process_kind(process.command), []).append(process)
     stale_kinds = {
         "serena_mcp": state.serena_mcp > 1,
+        "sourcekit_lsp": state.sourcekit_lsp > 1,
         "kotlin_lsp": state.kotlin_lsp > 1,
         "json_lsp": state.json_lsp > 1,
     }
