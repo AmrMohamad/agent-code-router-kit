@@ -97,6 +97,22 @@ def is_hmac_fingerprint(value: object) -> bool:
     return isinstance(value, str) and len(value) == 24 and all(char in hexdigits for char in value)
 
 
+def is_git_object_id(value: object) -> bool:
+    return isinstance(value, str) and len(value) in {40, 64} and all(char in hexdigits for char in value)
+
+
+def lock_hash_present(value: object) -> bool:
+    return value == "none" or is_sha256_hex(value)
+
+
+def manifest_repo_state(manifest: dict[str, object], key: str, field: str) -> dict[str, object]:
+    payload = manifest.get(field)
+    if not isinstance(payload, dict):
+        return {}
+    value = payload.get(key) or payload.get("default")
+    return value if isinstance(value, dict) else {}
+
+
 def audit_confirmatory_study_package(
     *,
     manifest: dict[str, object],
@@ -195,6 +211,12 @@ def audit(
         add_issue(issues, "fail", "model_id", "study requires an exact pinned model id")
     if manifest.get("private_hmac_configured") is not True:
         add_issue(issues, "fail", "private_hmac", "study requires private HMAC key configuration")
+    source_states = manifest.get("source_repo_states")
+    snapshot_states = manifest.get("repo_snapshots")
+    if not isinstance(source_states, dict) or not source_states:
+        add_issue(issues, "fail", "source_repo_states", "manifest must record clean source repository states")
+    if not isinstance(snapshot_states, dict) or not snapshot_states:
+        add_issue(issues, "fail", "repo_snapshots", "manifest must record detached repository snapshots")
     if confirmatory:
         audit_confirmatory_study_package(manifest=manifest, rows=rows, issues=issues)
         audit_confirmatory_oracle_plan(manifest=manifest, issues=issues)
@@ -264,10 +286,44 @@ def audit(
             add_issue(issues, "fail", "task_prompt_hmac", f"run {row.get('run_id')} has no task prompt HMAC")
         if not row.get("source_state_hmac"):
             add_issue(issues, "fail", "source_state_hmac", f"run {row.get('run_id')} has no source state HMAC")
+        if not row.get("snapshot_state_hmac"):
+            add_issue(issues, "fail", "snapshot_state_hmac", f"run {row.get('run_id')} has no snapshot state HMAC")
+        for field in ("source_commit", "snapshot_commit", "source_tree_hash", "snapshot_tree_hash"):
+            if not is_git_object_id(row.get(field)):
+                add_issue(issues, "fail", field, f"run {row.get('run_id')} has no valid {field}")
+        if row.get("source_commit") and row.get("snapshot_commit") and row.get("source_commit") != row.get("snapshot_commit"):
+            add_issue(issues, "fail", "source_snapshot_commit_match", f"run {row.get('run_id')} source and snapshot commits differ")
+        if row.get("source_tree_hash") and row.get("snapshot_tree_hash") and row.get("source_tree_hash") != row.get("snapshot_tree_hash"):
+            add_issue(issues, "fail", "source_snapshot_tree_match", f"run {row.get('run_id')} source and snapshot trees differ")
         if not row.get("snapshot_tree_hash"):
             add_issue(issues, "fail", "snapshot_tree_hash", f"run {row.get('run_id')} has no snapshot tree hash")
         if "lockfile_hash" not in row or row.get("lockfile_hash") in {"", None}:
             add_issue(issues, "fail", "lockfile_hash", f"run {row.get('run_id')} has no lockfile hash marker")
+        if not lock_hash_present(row.get("source_lockfile_hash")) or not lock_hash_present(row.get("lockfile_hash")):
+            add_issue(issues, "fail", "lockfile_hash_shape", f"run {row.get('run_id')} has invalid lockfile hash markers")
+        if row.get("source_lockfile_hash") != row.get("lockfile_hash"):
+            add_issue(issues, "fail", "source_snapshot_lockfile_match", f"run {row.get('run_id')} source and snapshot lockfile hashes differ")
+        repo_key = str(row.get("repo", "")) or "default"
+        source_state = manifest_repo_state(manifest, repo_key, "source_repo_states")
+        snapshot_state = manifest_repo_state(manifest, repo_key, "repo_snapshots")
+        if source_state:
+            if source_state.get("dirty") is not False:
+                add_issue(issues, "fail", "source_repo_clean", f"run {row.get('run_id')} source repository state is not clean")
+            if row.get("source_commit") != source_state.get("commit"):
+                add_issue(issues, "fail", "row_source_commit_match", f"run {row.get('run_id')} source commit does not match manifest")
+            if row.get("source_tree_hash") != source_state.get("tree_hash"):
+                add_issue(issues, "fail", "row_source_tree_match", f"run {row.get('run_id')} source tree hash does not match manifest")
+            if row.get("source_lockfile_hash") != source_state.get("lockfile_hash"):
+                add_issue(issues, "fail", "row_source_lockfile_match", f"run {row.get('run_id')} source lockfile hash does not match manifest")
+        if snapshot_state:
+            if snapshot_state.get("snapshot_dirty") is not False:
+                add_issue(issues, "fail", "snapshot_repo_clean", f"run {row.get('run_id')} snapshot repository state is not clean")
+            if row.get("snapshot_commit") != snapshot_state.get("snapshot_commit"):
+                add_issue(issues, "fail", "row_snapshot_commit_match", f"run {row.get('run_id')} snapshot commit does not match manifest")
+            if row.get("snapshot_tree_hash") != snapshot_state.get("snapshot_tree_hash"):
+                add_issue(issues, "fail", "row_snapshot_tree_match", f"run {row.get('run_id')} snapshot tree hash does not match manifest")
+            if row.get("lockfile_hash") != snapshot_state.get("lockfile_hash"):
+                add_issue(issues, "fail", "row_snapshot_lockfile_match", f"run {row.get('run_id')} snapshot lockfile hash does not match manifest")
         if live:
             for field in ("codex_version", "serena_version", "os_version"):
                 value = str(row.get(field, ""))

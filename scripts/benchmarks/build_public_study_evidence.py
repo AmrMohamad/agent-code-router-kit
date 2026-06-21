@@ -56,6 +56,7 @@ PUBLIC_ROW_FIELDS = [
     "route_profile_hash",
     "task_prompt_hmac",
     "source_state_hmac",
+    "snapshot_state_hmac",
     "semantic_session_mode",
     "semantic_session_isolated",
     "semantic_session_artifact",

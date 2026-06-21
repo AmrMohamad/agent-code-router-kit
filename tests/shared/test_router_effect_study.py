@@ -274,6 +274,11 @@ class RouterEffectStudyTests(unittest.TestCase):
                 self.assertTrue((run_dir / "semantic-session.json").exists())
                 self.assertEqual(row["semantic_session_artifact"], "semantic-session.json")
                 self.assertIn("codex_version", row)
+                self.assertRegex(row["source_commit"], r"^[0-9a-f]{40,64}$")
+                self.assertEqual(row["source_commit"], row["snapshot_commit"])
+                self.assertEqual(row["source_tree_hash"], row["snapshot_tree_hash"])
+                self.assertEqual(row["source_lockfile_hash"], row["lockfile_hash"])
+                self.assertRegex(row["snapshot_state_hmac"], r"^[0-9a-f]{24}$")
                 semantic_session = json.loads((run_dir / "semantic-session.json").read_text(encoding="utf-8"))
                 if row["semantic_access_enabled"]:
                     self.assertEqual(semantic_session["mode"], "codex_mcp_stdio_per_run")
@@ -290,6 +295,13 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertRegex(manifest["study_package"]["task_manifest_sha256"], r"^[0-9a-f]{64}$")
             self.assertRegex(manifest["study_package"]["task_manifest_hmac"], r"^[0-9a-f]{24}$")
             self.assertEqual({row["task_manifest_hash"] for row in rows}, {manifest["study_package"]["task_manifest_sha256"]})
+            for source_state in manifest["source_repo_states"].values():
+                self.assertFalse(source_state["dirty"])
+                self.assertRegex(source_state["tree_hash"], r"^[0-9a-f]{40,64}$")
+            for snapshot_state in manifest["repo_snapshots"].values():
+                self.assertFalse(snapshot_state["snapshot_dirty"])
+                self.assertEqual(snapshot_state["source_commit"], snapshot_state["snapshot_commit"])
+                self.assertEqual(snapshot_state["source_tree_hash"], snapshot_state["snapshot_tree_hash"])
             self.assertEqual(audit(out)["status"], "pass")
             confirmatory_dry_run = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertEqual(confirmatory_dry_run["status"], "fail")
@@ -303,6 +315,15 @@ class RouterEffectStudyTests(unittest.TestCase):
             failed_audit = audit(out)
             self.assertEqual(failed_audit["status"], "fail")
             self.assertIn("exact_uncached_input_tokens", {issue["code"] for issue in failed_audit["issues"]})
+
+            row_lines = [json.loads(line) for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines()]
+            row_lines[0]["snapshot_commit"] = "0" * 40
+            (out / "runs.jsonl").write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in row_lines),
+                encoding="utf-8",
+            )
+            snapshot_audit = audit(out)
+            self.assertIn("source_snapshot_commit_match", {issue["code"] for issue in snapshot_audit["issues"]})
 
     def test_task_oracle_plan_requires_task_specific_external_checks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -567,8 +588,11 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(public_rows[0]["repo_public_id"], "repo_001")
             self.assertIn("semantic_session_mode", public_rows[0])
             self.assertIn("codex_version", public_rows[0])
+            self.assertIn("snapshot_state_hmac", public_rows[0])
             self.assertNotIn("task_id", public_rows[0])
             self.assertNotIn("repo", public_rows[0])
+            self.assertNotIn("source_commit", public_rows[0])
+            self.assertNotIn("snapshot_commit", public_rows[0])
             manifest = json.loads((public / "manifest.sanitized.json").read_text(encoding="utf-8"))
             self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])

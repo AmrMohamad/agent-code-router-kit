@@ -491,8 +491,11 @@ def git_metadata(repo: str | Path) -> dict[str, object]:
         "git_root": git("rev-parse", "--show-toplevel"),
         "branch": git("branch", "--show-current") or git("rev-parse", "--abbrev-ref", "HEAD"),
         "commit": git("rev-parse", "HEAD"),
+        "tree_hash": git("rev-parse", "HEAD^{tree}"),
+        "lockfile_hash": lockfile_hash(repo_path),
         "dirty": bool(status),
         "dirty_entries": len([line for line in status.splitlines() if line.strip()]),
+        "status_sha256": text_sha256(status),
     }
 
 
@@ -548,6 +551,7 @@ def snapshot_repo_map(repo_map: dict[str, str], *, out_root: Path) -> tuple[dict
             "source_path": str(repo_path),
             "source_git_root": str(git_root),
             "source_commit": commit,
+            "source_tree_hash": _git(git_root, "rev-parse", f"{commit}^{{tree}}", check=True).stdout.strip(),
             "snapshot_path": str(effective_path),
             "snapshot_git_root": str(snapshot_base),
         }
@@ -768,6 +772,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         for repo_id, snapshot in repo_snapshots.items():
             snapshot_path = str(snapshot.get("snapshot_path", ""))
             if snapshot_path:
+                snapshot_state = git_metadata(snapshot_path)
+                snapshot["snapshot_commit"] = snapshot_state.get("commit", "")
+                snapshot["snapshot_dirty"] = snapshot_state.get("dirty", True)
                 snapshot["snapshot_tree_hash"] = git_tree_hash(snapshot_path)
                 snapshot["lockfile_hash"] = lockfile_hash(snapshot_path)
     repo_states = {repo_id or "default": git_metadata(path) for repo_id, path in repo_map.items()}
@@ -1036,6 +1043,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             dry_run=args.dry_run,
             out=run_dir / "judge.json",
         )
+        repo_key = task.repo or "default"
+        source_state = source_repo_states.get(repo_key, source_repo_states.get("default", {}))
+        snapshot_state = repo_snapshots.get(repo_key, repo_snapshots.get("default", {}))
         row = {
             "run_id": run_id,
             "study_id": study_plan.study_id if study_plan else "",
@@ -1066,11 +1076,19 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "repo": task.repo,
             "repo_path": task_repo_path,
             "source_state_hmac": private_hmac(
-                json.dumps(repo_states.get(task.repo or "default", repo_states.get("default", {})), sort_keys=True),
+                json.dumps(source_state, sort_keys=True),
                 key_env=args.hmac_key_env,
             ),
-            "snapshot_tree_hash": repo_snapshots.get(task.repo or "default", repo_snapshots.get("default", {})).get("snapshot_tree_hash", ""),
-            "lockfile_hash": repo_snapshots.get(task.repo or "default", repo_snapshots.get("default", {})).get("lockfile_hash", ""),
+            "snapshot_state_hmac": private_hmac(
+                json.dumps(repo_states.get(repo_key, repo_states.get("default", {})), sort_keys=True),
+                key_env=args.hmac_key_env,
+            ),
+            "source_commit": source_state.get("commit", ""),
+            "snapshot_commit": snapshot_state.get("snapshot_commit", ""),
+            "source_tree_hash": source_state.get("tree_hash", ""),
+            "snapshot_tree_hash": snapshot_state.get("snapshot_tree_hash", ""),
+            "source_lockfile_hash": source_state.get("lockfile_hash", ""),
+            "lockfile_hash": snapshot_state.get("lockfile_hash", ""),
             "task_manifest_hash": task_manifest_hash,
             "route_profile_hash": hermetic_environment.effective_config.get("route_profile_hash") if hermetic_environment else "",
             "agent_config_hash": hermetic_environment.effective_config_sha256 if hermetic_environment else "",
