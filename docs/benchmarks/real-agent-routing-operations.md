@@ -302,6 +302,9 @@ custom task manifests, custom oracle files, dry-runs, missing
 `task_manifest_hash` does not match the frozen package in `run-manifest.json`.
 The analysis and power artifacts must use the preregistered primary context
 metric, `exact_uncached_input_tokens`.
+The confirmatory audit recomputes both artifacts from the current `runs.jsonl`;
+stale, hand-edited, or mismatched `study-analysis.json` and `study-power.json`
+files fail even when their schema is otherwise valid.
 If `study-analysis.json` reports `cost.status=estimated`, the audit also
 requires the pricing model to match the pinned study model and every arm to
 include total cost, median cost, cost per run, and cost per successful task.

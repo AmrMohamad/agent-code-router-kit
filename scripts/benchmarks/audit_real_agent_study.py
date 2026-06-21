@@ -11,6 +11,8 @@ from string import hexdigits
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.benchmarks.analyze_real_agent_study import analyze as compute_study_analysis
+from scripts.benchmarks.estimate_study_power import estimate as compute_study_power
 from scripts.lib.agent_session import to_json_file
 from scripts.lib.agent_session import load_tasks
 from scripts.lib.task_oracles import load_task_oracles, validate_task_oracle_plan
@@ -132,6 +134,27 @@ def _analysis_matches_preregistered_primary(analysis: dict[str, object]) -> bool
     return analysis.get("metric") == "exact_uncached_input_tokens"
 
 
+def _pricing_from_analysis(analysis: dict[str, object]) -> dict[str, object] | None:
+    cost = analysis.get("cost")
+    if not isinstance(cost, dict) or cost.get("status") != "estimated":
+        return None
+    prices = cost.get("pricing_per_1m_tokens")
+    if not isinstance(prices, dict):
+        return None
+    pricing = dict(prices)
+    pricing["model_id"] = cost.get("pricing_model_id", "")
+    return pricing
+
+
+def _analysis_matches_rows(analysis: dict[str, object], root: Path) -> bool:
+    expected = compute_study_analysis(
+        root,
+        metric="exact_uncached_input_tokens",
+        pricing=_pricing_from_analysis(analysis),
+    )
+    return analysis == expected
+
+
 def _power_matches_preregistered_primary(power: dict[str, object]) -> bool:
     return (
         power.get("metric") == "exact_uncached_input_tokens"
@@ -157,6 +180,18 @@ def _power_has_required_shape(power: dict[str, object]) -> bool:
         and required.issubset(set(pairwise))
         and power.get("all_preregistered_comparisons_power_target_met") is True
     )
+
+
+def _power_matches_rows(power: dict[str, object], rows: list[dict[str, object]]) -> bool:
+    expected = compute_study_power(
+        rows,
+        metric="exact_uncached_input_tokens",
+        minimum_effect=0.15,
+        floor_repeats=4,
+        alpha=0.05,
+        power=0.80,
+    )
+    return power == expected
 
 
 def is_sha256_hex(value: object) -> bool:
@@ -563,6 +598,8 @@ def audit(
                 add_issue(issues, "fail", "study_analysis_metric", "confirmatory analysis must use preregistered exact_uncached_input_tokens metric")
             if not _analysis_cost_has_required_shape(analysis, manifest):
                 add_issue(issues, "fail", "study_analysis_cost", "study-analysis.json has missing or invalid estimated-cost metadata")
+            if _analysis_has_required_shape(analysis) and not _analysis_matches_rows(analysis, base):
+                add_issue(issues, "fail", "study_analysis_consistency", "study-analysis.json does not match recomputed results from runs.jsonl")
             correctness = analysis.get("correctness_pairwise", {})
             if isinstance(correctness, dict):
                 for name, value in correctness.items():
@@ -579,6 +616,8 @@ def audit(
                 add_issue(issues, "fail", "study_power_metric", "study-power.json must use the preregistered exact_uncached_input_tokens planning inputs")
             if not _power_has_required_shape(power):
                 add_issue(issues, "fail", "study_power_shape", "study-power.json must include all preregistered pairwise power estimates")
+            if _power_has_required_shape(power) and not _power_matches_rows(power, rows):
+                add_issue(issues, "fail", "study_power_consistency", "study-power.json does not match recomputed results from runs.jsonl")
             if power.get("power_target_met") is not True:
                 add_issue(issues, "fail", "study_power_target", "observed study cells do not meet the planned power target")
 

@@ -546,6 +546,20 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_power_shape", {issue["code"] for issue in malformed["issues"]})
             (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            stale_analysis = json.loads(json.dumps(analysis))
+            stale_analysis["pairwise_effects"]["A-search-only_to_D-full-router"]["median_percent_change"] = 123.45
+            (out / "study-analysis.json").write_text(json.dumps(stale_analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            stale_analysis_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("study_analysis_consistency", {issue["code"] for issue in stale_analysis_audit["issues"]})
+            (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            stale_power = json.loads(json.dumps(power))
+            stale_power["pairwise_power"]["A-search-only_to_D-full-router"]["observed_pairs"] = 999
+            (out / "study-power.json").write_text(json.dumps(stale_power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            stale_power_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("study_power_consistency", {issue["code"] for issue in stale_power_audit["issues"]})
+            (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             pricing = {
                 "model_id": "codex-test-model",
                 "input_per_1m": 2.0,
