@@ -913,12 +913,14 @@ def audit(
         elif isinstance(route_profile_hashes, dict) and is_sha256_hex(route_profile_hashes.get(profile)):
             if row_route_profile_hash != route_profile_hashes.get(profile):
                 add_issue(issues, "fail", "row_route_profile_hash_match", f"run {row.get('run_id')} route profile hash does not match manifest")
-        if not row.get("task_prompt_hmac"):
-            add_issue(issues, "fail", "task_prompt_hmac", f"run {row.get('run_id')} has no task prompt HMAC")
-        if not row.get("source_state_hmac"):
-            add_issue(issues, "fail", "source_state_hmac", f"run {row.get('run_id')} has no source state HMAC")
-        if not row.get("snapshot_state_hmac"):
-            add_issue(issues, "fail", "snapshot_state_hmac", f"run {row.get('run_id')} has no snapshot state HMAC")
+        if not is_sha256_hex(row.get("task_prompt_sha256")):
+            add_issue(issues, "fail", "task_prompt_sha256", f"run {row.get('run_id')} has no valid task prompt SHA-256")
+        if not is_hmac_fingerprint(row.get("task_prompt_hmac")):
+            add_issue(issues, "fail", "task_prompt_hmac", f"run {row.get('run_id')} has no valid task prompt HMAC")
+        if not is_hmac_fingerprint(row.get("source_state_hmac")):
+            add_issue(issues, "fail", "source_state_hmac", f"run {row.get('run_id')} has no valid source state HMAC")
+        if not is_hmac_fingerprint(row.get("snapshot_state_hmac")):
+            add_issue(issues, "fail", "snapshot_state_hmac", f"run {row.get('run_id')} has no valid snapshot state HMAC")
         for field in ("source_commit", "snapshot_commit", "source_tree_hash", "snapshot_tree_hash"):
             if not is_git_object_id(row.get(field)):
                 add_issue(issues, "fail", field, f"run {row.get('run_id')} has no valid {field}")
@@ -1200,9 +1202,15 @@ def audit(
         prompt_hashes = {str(row.get("task_prompt_sha256", "")) for row in profile_rows.values()}
         if len(prompt_hashes) != 1:
             add_issue(issues, "fail", "block_prompt_match", f"{key} task prompt hash differs across arms")
+        prompt_hmacs = {str(row.get("task_prompt_hmac", "")) for row in profile_rows.values()}
+        if len(prompt_hmacs) != 1:
+            add_issue(issues, "fail", "block_task_prompt_hmac_match", f"{key} task prompt HMAC differs across arms")
         source_hmacs = {str(row.get("source_state_hmac", "")) for row in profile_rows.values()}
         if len(source_hmacs) != 1:
             add_issue(issues, "fail", "block_source_state_match", f"{key} source state HMAC differs across arms")
+        snapshot_hmacs = {str(row.get("snapshot_state_hmac", "")) for row in profile_rows.values()}
+        if len(snapshot_hmacs) != 1:
+            add_issue(issues, "fail", "block_snapshot_state_match", f"{key} snapshot state HMAC differs across arms")
         tree_hashes = {str(row.get("snapshot_tree_hash", "")) for row in profile_rows.values()}
         if len(tree_hashes) != 1:
             add_issue(issues, "fail", "block_snapshot_tree_match", f"{key} snapshot tree hash differs across arms")

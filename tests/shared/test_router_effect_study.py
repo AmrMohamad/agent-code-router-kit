@@ -847,6 +847,26 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("block_sequence_positions", {issue["code"] for issue in wrong_sequence["issues"]})
             runs_path.write_text(original_runs_text, encoding="utf-8")
 
+            mismatched_prompt_hmac_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            mismatched_prompt_hmac_rows[0]["task_prompt_hmac"] = "0" * 24
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in mismatched_prompt_hmac_rows),
+                encoding="utf-8",
+            )
+            mismatched_prompt_hmac = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("block_task_prompt_hmac_match", {issue["code"] for issue in mismatched_prompt_hmac["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            mismatched_snapshot_hmac_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            mismatched_snapshot_hmac_rows[0]["snapshot_state_hmac"] = "0" * 24
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in mismatched_snapshot_hmac_rows),
+                encoding="utf-8",
+            )
+            mismatched_snapshot_hmac = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("block_snapshot_state_match", {issue["code"] for issue in mismatched_snapshot_hmac["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
             missing_usage_rows = [json.loads(line) for line in original_runs_text.splitlines()]
             missing_usage_rows[0]["exact_usage_event_count"] = 0
             runs_path.write_text(
