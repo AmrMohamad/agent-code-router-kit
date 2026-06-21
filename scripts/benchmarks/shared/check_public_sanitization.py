@@ -207,6 +207,7 @@ ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS = {
         "privacy",
         "reasoning_effort",
         "repo_count",
+        "repository_labels",
         "require_clean_serena_process_state",
         "require_explicit_reasoning_effort",
         "route_profile_hashes",

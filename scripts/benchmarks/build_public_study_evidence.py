@@ -226,6 +226,7 @@ def build_public_bundle(
         "order_design": manifest.get("order_design"),
         "parallelism": manifest.get("parallelism"),
         "agents": manifest.get("agents", []),
+        "repository_labels": manifest.get("repository_labels", []),
         "snapshot_repos": manifest.get("snapshot_repos"),
         "snapshot_scope": manifest.get("snapshot_scope"),
         "isolated_agent_home": manifest.get("isolated_agent_home"),

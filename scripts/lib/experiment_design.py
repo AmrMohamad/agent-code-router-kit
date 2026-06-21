@@ -34,6 +34,7 @@ class StudyPlan:
     require_external_oracles: bool
     agents: list[str]
     arms: list[str]
+    repository_labels: list[str]
     protocol_path: str
     analysis_plan_path: str
     pilot_tasks_path: str
@@ -56,14 +57,23 @@ def assign_sequence(task_id: str, block_index: int, *, arms: list[str] | None = 
     return list(sequences[block_index % len(sequences)])
 
 
+def _csv_list(value: object, *, default: str = "") -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [item.strip() for item in str(value if value is not None else default).split(",") if item.strip()]
+
+
 def load_study_plan(path: str | Path) -> StudyPlan:
     source = Path(path).expanduser().resolve()
     data = load_simple_yaml(source)
-    arms = [item.strip() for item in str(data.get("arms", ",".join(FACTORIAL_ARM_ORDER))).split(",") if item.strip()]
+    arms = _csv_list(data.get("arms"), default=",".join(FACTORIAL_ARM_ORDER))
     validate_factorial_arm_set(arms)
-    agents = [item.strip() for item in str(data.get("agents", "codex")).split(",") if item.strip()]
+    agents = _csv_list(data.get("agents"), default="codex")
     if not agents:
         raise ValueError("study plan must declare at least one agent")
+    repository_labels = _csv_list(data.get("repository_labels"))
+    if not repository_labels:
+        raise ValueError("study plan must declare repository_labels")
     return StudyPlan(
         study_id=str(data.get("study_id", source.stem)),
         design_type=str(data.get("design_type", "2x2_factorial")),
@@ -82,6 +92,7 @@ def load_study_plan(path: str | Path) -> StudyPlan:
         require_external_oracles=bool(data.get("require_external_oracles", True)),
         agents=agents,
         arms=arms,
+        repository_labels=repository_labels,
         protocol_path=str((source.parent / str(data.get("protocol_path", "protocol.md"))).resolve()),
         analysis_plan_path=str((source.parent / str(data.get("analysis_plan_path", "analysis-plan.yaml"))).resolve()),
         pilot_tasks_path=str((source.parent / str(data.get("pilot_tasks_path", "pilot-tasks.tsv"))).resolve()),

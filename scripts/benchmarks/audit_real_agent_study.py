@@ -635,6 +635,19 @@ def audit_confirmatory_matrix_completion(
         add_issue(issues, "fail", "confirmatory_matrix_tasks", "frozen confirmatory task manifest has no tasks")
         return
     expected_repos = _study_plan_repository_labels(study_plan_path)
+    manifest_repos_raw = manifest.get("repository_labels")
+    manifest_repos = {
+        str(item).strip()
+        for item in manifest_repos_raw
+        if str(item).strip()
+    } if isinstance(manifest_repos_raw, list) else set()
+    if expected_repos and manifest_repos != expected_repos:
+        add_issue(
+            issues,
+            "fail",
+            "confirmatory_repository_labels",
+            "manifest repository labels do not match the preregistered study plan: " + ",".join(sorted(expected_repos)),
+        )
     observed_task_repos = {repo for repo, _task_id in expected_tasks}
     if any("web" in repo.lower() for repo in observed_task_repos) and not _study_plan_requires_web_tool_versions(study_plan_path):
         add_issue(issues, "fail", "confirmatory_web_tool_versions", "web study plan must preregister frontend tool-version capture")
@@ -646,6 +659,16 @@ def audit_confirmatory_matrix_completion(
                 "fail",
                 "confirmatory_repository_labels",
                 "frozen confirmatory task manifest uses undeclared repository labels: " + ",".join(unexpected_repos),
+            )
+    source_states = manifest.get("source_repo_states")
+    if isinstance(source_states, dict):
+        missing_source_states = sorted(repo for repo in observed_task_repos if repo not in source_states)
+        if missing_source_states:
+            add_issue(
+                issues,
+                "fail",
+                "confirmatory_repository_labels",
+                "manifest source repository states are missing declared task labels: " + ",".join(missing_source_states),
             )
 
     observed_counts: Counter[tuple[str, str, str, str, int]] = Counter()

@@ -300,6 +300,7 @@ class RouterEffectStudyTests(unittest.TestCase):
         study_plan = load_study_plan(study_dir / "study.yaml")
         self.assertTrue(study_plan.require_explicit_reasoning_effort)
         self.assertEqual(study_plan.agents, ["codex"])
+        self.assertEqual(study_plan.repository_labels, ["ios_reference", "web_reference"])
         self.assertEqual(Path(study_plan.pilot_tasks_path), study_dir / "pilot-tasks.tsv")
         self.assertEqual(Path(study_plan.confirmatory_tasks_path), study_dir / "confirmatory-tasks.tsv")
         task_ids_by_split: dict[str, set[str]] = {}
@@ -601,6 +602,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                     self.assertEqual(row["semantic_lifecycle_owner"], "none")
             self.assertTrue(manifest["snapshot_repos"])
             self.assertEqual(manifest["snapshot_scope"], "block")
+            self.assertEqual(manifest["repository_labels"], ["ios_reference"])
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertTrue(manifest["require_clean_serena_process_state"])
             self.assertTrue(manifest["require_explicit_reasoning_effort"])
@@ -726,6 +728,112 @@ class RouterEffectStudyTests(unittest.TestCase):
             )
             snapshot_audit = audit(out)
             self.assertIn("source_snapshot_commit_match", {issue["code"] for issue in snapshot_audit["issues"]})
+
+    def test_study_mode_rejects_missing_explicit_repo_mapping_for_task_label(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            make_git_repo(repo)
+            tasks = root / "tasks.tsv"
+            pilot_tasks = root / "pilot-tasks.tsv"
+            oracles = root / "oracles.json"
+            write_study_task(tasks)
+            write_pilot_task(pilot_tasks)
+            write_permissive_oracle(oracles)
+            study_plan = write_temp_study_plan(
+                root,
+                confirmatory_tasks=tasks,
+                pilot_tasks=pilot_tasks,
+                oracles=oracles,
+            )
+            env = {
+                "CODEX_HOME": str(fake_codex_home(root)),
+                "RARB_PRIVATE_HMAC_KEY": "test-hmac-key",
+            }
+            with patch.dict("os.environ", env), self.assertRaisesRegex(SystemExit, "missing explicit --repo-map entries"):
+                main(
+                    [
+                        "--dry-run",
+                        "--agent",
+                        "codex",
+                        "--repo",
+                        str(repo),
+                        "--tasks",
+                        str(tasks),
+                        "--task-oracles",
+                        str(oracles),
+                        "--study-plan",
+                        str(study_plan),
+                        "--arms",
+                        "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
+                        "--repeats",
+                        "4",
+                        "--snapshot-repos",
+                        "--model-id",
+                        "codex-test-model",
+                        "--reasoning-effort",
+                        "low",
+                        "--out",
+                        str(root / "out"),
+                    ]
+                )
+
+    def test_study_snapshot_clean_out_prunes_stale_worktree_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            make_git_repo(repo)
+            tasks = root / "tasks.tsv"
+            pilot_tasks = root / "pilot-tasks.tsv"
+            oracles = root / "oracles.json"
+            out = root / "out"
+            write_study_task(tasks)
+            write_pilot_task(pilot_tasks)
+            write_permissive_oracle(oracles)
+            study_plan = write_temp_study_plan(
+                root,
+                confirmatory_tasks=tasks,
+                pilot_tasks=pilot_tasks,
+                oracles=oracles,
+            )
+            env = {
+                "CODEX_HOME": str(fake_codex_home(root)),
+                "RARB_PRIVATE_HMAC_KEY": "test-hmac-key",
+            }
+            argv = [
+                "--dry-run",
+                "--agent",
+                "codex",
+                "--repo",
+                str(repo),
+                "--repo-map",
+                f"ios_reference={repo}",
+                "--tasks",
+                str(tasks),
+                "--task-oracles",
+                str(oracles),
+                "--study-plan",
+                str(study_plan),
+                "--arms",
+                "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
+                "--repeats",
+                "4",
+                "--snapshot-repos",
+                "--model-id",
+                "codex-test-model",
+                "--reasoning-effort",
+                "low",
+                "--clean-out",
+                "--out",
+                str(out),
+            ]
+            with patch.dict("os.environ", env):
+                for _attempt in range(2):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        self.assertEqual(main(argv), 0, stdout.getvalue())
 
     def test_live_study_mode_requires_explicit_reasoning_effort(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1358,6 +1466,13 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("reasoning_effort_policy", {issue["code"] for issue in no_reasoning_policy["issues"]})
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            wrong_repo_labels_manifest = dict(manifest)
+            wrong_repo_labels_manifest["repository_labels"] = ["web_reference"]
+            manifest_path.write_text(json.dumps(wrong_repo_labels_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            wrong_repo_labels = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("confirmatory_repository_labels", {issue["code"] for issue in wrong_repo_labels["issues"]})
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             bad_analysis_plan = root / "bad-analysis-plan.yaml"
             good_analysis_plan_text = (
                 ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/analysis-plan.yaml"
@@ -1680,6 +1795,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertNotIn("snapshot_key", public_rows[0])
             manifest = json.loads((public / "manifest.sanitized.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["agents"], ["codex"])
+            self.assertEqual(manifest["repository_labels"], ["ios_reference"])
             self.assertEqual(manifest["snapshot_scope"], "block")
             self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])

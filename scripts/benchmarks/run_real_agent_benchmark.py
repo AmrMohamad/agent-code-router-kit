@@ -670,6 +670,7 @@ def materialize_snapshot(
     git_root_text = _git(repo_path, "rev-parse", "--show-toplevel", check=True).stdout.strip()
     commit = _git(repo_path, "rev-parse", "HEAD", check=True).stdout.strip()
     git_root = Path(git_root_text).resolve()
+    _git(git_root, "worktree", "prune")
     try:
         relative = repo_path.relative_to(git_root)
     except ValueError:
@@ -817,6 +818,20 @@ def repo_for_task(repo_map: dict[str, str], task_repo: str) -> str:
 
 def missing_live_repo_mappings(tasks: list[TaskSpec], repo_map: dict[str, str]) -> list[str]:
     return sorted({task.repo for task in tasks if task.repo and task.repo not in repo_map})
+
+
+def study_repo_label_issues(*, tasks: list[TaskSpec], repo_map: dict[str, str], study_plan) -> list[str]:
+    if not study_plan:
+        return []
+    allowed = set(study_plan.repository_labels)
+    issues: list[str] = []
+    undeclared = sorted({task.repo for task in tasks if task.repo not in allowed})
+    if undeclared:
+        issues.append("undeclared task repository labels: " + ",".join(undeclared))
+    unmapped = sorted({task.repo for task in tasks if task.repo and task.repo not in repo_map})
+    if unmapped:
+        issues.append("missing explicit --repo-map entries: " + ",".join(unmapped))
+    return issues
 
 
 def monitor_event(path: Path, event: dict[str, object], *, enabled: bool) -> None:
@@ -980,6 +995,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
     repo_map = parse_repo_map(args.repo_map, default_repo=args.repo)
     if args.require_snapshots:
         repo_map = restrict_repo_map_to_tasks(repo_map, tasks)
+    study_repo_issues = study_repo_label_issues(tasks=tasks, repo_map=repo_map, study_plan=study_plan)
+    if study_repo_issues:
+        raise SystemExit("study plan repository label check failed; " + "; ".join(study_repo_issues))
     if not args.dry_run:
         missing_repos = missing_live_repo_mappings(tasks, repo_map)
         if missing_repos:
@@ -1072,6 +1090,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "task_manifest": str(task_manifest_path),
         "task_manifest_hash": task_manifest_hash,
         "task_ids": [task.task_id for task in tasks],
+        "repository_labels": list(study_plan.repository_labels) if study_plan else [],
         "source_repo_states": source_repo_states,
         "repo_snapshots": repo_snapshots,
         "repo_states": repo_states,
