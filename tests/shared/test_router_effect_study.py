@@ -14,6 +14,7 @@ from scripts.benchmarks.analyze_real_agent_study import analyze
 from scripts.benchmarks.build_public_study_evidence import build_public_bundle
 from scripts.benchmarks.estimate_study_power import estimate
 from scripts.benchmarks.run_real_agent_benchmark import main
+from scripts.benchmarks.shared.check_public_sanitization import public_evidence_schema_violations
 from scripts.benchmarks.verify_task_oracles import main as verify_task_oracles_main
 from scripts.lib.agent_session import AgentProfile, load_route_profile, load_tasks
 from scripts.lib.environment_capture import file_sha256
@@ -1000,7 +1001,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             tasks = root / "tasks.tsv"
             oracles = root / "oracles.json"
             out = root / "out"
-            public = root / "public"
+            public = root / "benchmarks" / "real-agent-routing" / "evidence" / "router-effect-v1-public"
             write_study_task(tasks)
             write_permissive_oracle(oracles)
 
@@ -1059,6 +1060,10 @@ class RouterEffectStudyTests(unittest.TestCase):
             (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             result = build_public_bundle(root=out, out=public)
+            schema_violations = []
+            for path in sorted(public.iterdir()):
+                schema_violations.extend(public_evidence_schema_violations(path, root))
+            self.assertEqual(schema_violations, [])
             self.assertTrue((public / "analysis.sanitized.json").exists())
             self.assertTrue((public / "power.sanitized.json").exists())
             self.assertTrue((public / "audit.sanitized.json").exists())
@@ -1137,6 +1142,13 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(artifact_hashes, result["artifact_hashes"])
             for name, digest in artifact_hashes.items():
                 self.assertEqual(digest, file_sha256(public / name))
+            manifest["unexpected_private_shape"] = True
+            (public / "manifest.sanitized.json").write_text(
+                json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            manifest_violations = public_evidence_schema_violations(public / "manifest.sanitized.json", root)
+            self.assertIn("evidence_unexpected_json_field", {item["label"] for item in manifest_violations})
 
     def test_study_mode_requires_private_hmac_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
