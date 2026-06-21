@@ -228,6 +228,18 @@ class RouterEffectStudyTests(unittest.TestCase):
             for profile in {"A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"}:
                 positions = sorted(row["sequence_position"] for row in rows if row["profile"] == profile)
                 self.assertEqual(positions, [1, 2, 3, 4])
+            for row in rows:
+                run_dir = Path(row["run_dir"])
+                self.assertTrue((run_dir / "semantic-session.json").exists())
+                self.assertEqual(row["semantic_session_artifact"], "semantic-session.json")
+                self.assertIn("codex_version", row)
+                semantic_session = json.loads((run_dir / "semantic-session.json").read_text(encoding="utf-8"))
+                if row["semantic_access_enabled"]:
+                    self.assertEqual(semantic_session["mode"], "codex_mcp_stdio_per_run")
+                    self.assertTrue(semantic_session["isolated"])
+                else:
+                    self.assertEqual(semantic_session["mode"], "disabled")
+                    self.assertFalse(semantic_session["mcp_server_configured"])
             manifest = json.loads((out / "run-manifest.json").read_text(encoding="utf-8"))
             self.assertTrue(manifest["snapshot_repos"])
             self.assertTrue(manifest["isolated_agent_home"])
@@ -289,6 +301,8 @@ class RouterEffectStudyTests(unittest.TestCase):
 
             analysis = analyze(out, metric="model_visible_proxy_tokens")
             self.assertIn("factorial_effects", analysis)
+            self.assertIn("correctness_pairwise", analysis)
+            self.assertTrue(analysis["correctness_pairwise"]["A-search-only_to_D-full-router"]["noninferiority_passed"])
             self.assertIn("cluster_bootstrap_95ci_percent", analysis["pairwise_effects"]["A-search-only_to_D-full-router"])
             (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -302,6 +316,8 @@ class RouterEffectStudyTests(unittest.TestCase):
             public_rows = [json.loads(line) for line in public_text.splitlines()]
             self.assertEqual(public_rows[0]["task_public_id"], "task_001")
             self.assertEqual(public_rows[0]["repo_public_id"], "repo_001")
+            self.assertIn("semantic_session_mode", public_rows[0])
+            self.assertIn("codex_version", public_rows[0])
             self.assertNotIn("task_id", public_rows[0])
             self.assertNotIn("repo", public_rows[0])
             manifest = json.loads((public / "manifest.sanitized.json").read_text(encoding="utf-8"))

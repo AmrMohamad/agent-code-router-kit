@@ -202,7 +202,10 @@ The runner enforces the study controls when `--study-plan` is present:
 - clean detached snapshots;
 - fresh controlled Codex home per run;
 - isolated semantic-session configuration for C/D;
+- per-run `semantic-session.json` artifacts proving semantic access is either
+  disabled or isolated through Codex MCP stdio;
 - captured tool versions;
+- row-level Codex, Serena, language-server, and OS version provenance;
 - external task oracle artifacts;
 - model and reasoning-effort metadata.
 

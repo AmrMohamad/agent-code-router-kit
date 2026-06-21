@@ -93,6 +93,47 @@ def private_hmac(value: str, *, key_env: str) -> str:
     return hmac_sha256_hex(value, key=key)
 
 
+def semantic_session_artifact(
+    *,
+    profile_id: str,
+    semantic_access_enabled: bool,
+    isolated_serena_session: bool,
+    hermetic_environment,
+    serena_readiness: dict[str, object] | None,
+    tool_versions: dict[str, str],
+) -> dict[str, object]:
+    language_versions = {
+        "sourcekit-lsp": tool_versions.get("sourcekit-lsp", ""),
+        "kotlin-language-server": tool_versions.get("kotlin-language-server", ""),
+        "vscode-json-languageserver": tool_versions.get("vscode-json-languageserver", ""),
+    }
+    if not semantic_access_enabled:
+        return {
+            "profile": profile_id,
+            "semantic_access_enabled": False,
+            "mode": "disabled",
+            "isolated": True,
+            "mcp_server_configured": False,
+            "semantic_session_home": "",
+            "readiness_status": "",
+            "readiness_ready": None,
+            "language_server_versions": language_versions,
+            "teardown_policy": "no semantic MCP server configured for this arm",
+        }
+    return {
+        "profile": profile_id,
+        "semantic_access_enabled": True,
+        "mode": "codex_mcp_stdio_per_run",
+        "isolated": bool(isolated_serena_session and hermetic_environment),
+        "mcp_server_configured": True,
+        "semantic_session_home": hermetic_environment.semantic_session_home if hermetic_environment else "",
+        "readiness_status": serena_readiness.get("status") if serena_readiness else "",
+        "readiness_ready": serena_readiness.get("ready") if serena_readiness else None,
+        "language_server_versions": language_versions,
+        "teardown_policy": "Codex subprocess owns the stdio MCP server; session exit closes the per-run Serena process",
+    }
+
+
 def profile_path(profile_id: str) -> Path:
     return ROOT / "benchmarks" / "real-agent-routing" / "profiles" / f"{profile_id}.yaml"
 
@@ -690,6 +731,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 + " (rerun with --allow-dirty to override)"
             )
     route_profiles = {arm: load_route_profile(profile_path(arm)) for arm in arms}
+    tool_versions = capture_tool_versions(cwd=ROOT) if args.capture_versions else {}
     carried_rows = load_existing_run_rows(resume_root) if resume_root else []
     invalid_carried_rows: list[dict[str, object]] = []
     if resume_root:
@@ -713,7 +755,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "require_snapshots": args.require_snapshots,
         "model_id": args.model_id,
         "reasoning_effort": args.reasoning_effort,
-        "tool_versions": capture_tool_versions(cwd=ROOT) if args.capture_versions else {},
+        "tool_versions": tool_versions,
         "task_oracles": str(Path(args.task_oracles).expanduser().resolve()) if args.task_oracles else "",
         "hmac_key_env": args.hmac_key_env,
         "private_hmac_configured": bool(os.environ.get(args.hmac_key_env, "")),
@@ -1043,10 +1085,28 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             transcript_path=bridge_result.transcript_path,
             run_row=row,
         )
+        semantic_session = semantic_session_artifact(
+            profile_id=profile_id,
+            semantic_access_enabled=bool(row["semantic_access_enabled"]),
+            isolated_serena_session=args.isolated_serena_session,
+            hermetic_environment=hermetic_environment,
+            serena_readiness=serena_readiness,
+            tool_versions=tool_versions,
+        )
+        to_json_file(run_dir / "semantic-session.json", semantic_session)
         oracle_payload = asdict(oracle_result)
         to_json_file(run_dir / "oracle.json", oracle_payload)
         row.update(
             {
+                "semantic_session_mode": semantic_session["mode"],
+                "semantic_session_isolated": semantic_session["isolated"],
+                "semantic_session_artifact": "semantic-session.json",
+                "codex_version": tool_versions.get("codex", ""),
+                "serena_version": tool_versions.get("serena", ""),
+                "sourcekit_lsp_version": tool_versions.get("sourcekit-lsp", ""),
+                "kotlin_language_server_version": tool_versions.get("kotlin-language-server", ""),
+                "json_language_server_version": tool_versions.get("vscode-json-languageserver", ""),
+                "os_version": tool_versions.get("os", ""),
                 "oracle_id": oracle_result.oracle_id,
                 "oracle_type": oracle_result.oracle_type,
                 "oracle_status": oracle_result.status,

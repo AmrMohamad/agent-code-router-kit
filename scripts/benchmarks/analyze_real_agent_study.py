@@ -125,6 +125,59 @@ def summarize_effect(rows: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
+def binomial_cdf(k: int, n: int, p: float = 0.5) -> float:
+    if n <= 0:
+        return 1.0
+    return sum(math.comb(n, i) * (p**i) * ((1.0 - p) ** (n - i)) for i in range(k + 1))
+
+
+def mcnemar_exact_p(left_only: int, right_only: int) -> float:
+    discordant = left_only + right_only
+    if discordant == 0:
+        return 1.0
+    return min(1.0, 2.0 * binomial_cdf(min(left_only, right_only), discordant, 0.5))
+
+
+def paired_correctness(rows: list[dict[str, object]], *, left: str, right: str, noninferiority_margin: float) -> dict[str, object]:
+    by_cell: dict[tuple[str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
+    for row in rows:
+        key = (str(row.get("agent", "")), str(row.get("task_id", "")), int(row.get("repeat_index", 0)))
+        by_cell[key][str(row.get("profile", ""))] = row
+    both_pass = left_only = right_only = neither_pass = 0
+    for profiles in by_cell.values():
+        if left not in profiles or right not in profiles:
+            continue
+        left_pass = row_passes(profiles[left])
+        right_pass = row_passes(profiles[right])
+        if left_pass and right_pass:
+            both_pass += 1
+        elif left_pass and not right_pass:
+            left_only += 1
+        elif right_pass and not left_pass:
+            right_only += 1
+        else:
+            neither_pass += 1
+    total = both_pass + left_only + right_only + neither_pass
+    left_passes = both_pass + left_only
+    right_passes = both_pass + right_only
+    pass_rate_difference = ((right_passes - left_passes) / total) if total else 0.0
+    return {
+        "pair_count": total,
+        "left_profile": left,
+        "right_profile": right,
+        "both_pass": both_pass,
+        "left_only_pass": left_only,
+        "right_only_pass": right_only,
+        "neither_pass": neither_pass,
+        "left_pass_rate": round(left_passes / total, 4) if total else 0.0,
+        "right_pass_rate": round(right_passes / total, 4) if total else 0.0,
+        "right_minus_left_pass_rate": round(pass_rate_difference, 4),
+        "mcnemar_exact_p": round(mcnemar_exact_p(left_only, right_only), 6),
+        "noninferiority_margin": noninferiority_margin,
+        "noninferiority_passed": pass_rate_difference >= -noninferiority_margin if total else False,
+    }
+
+
 def block_metric_rows(rows: list[dict[str, object]], *, metric: str, pass_all_only: bool = False) -> list[dict[str, object]]:
     by_cell: dict[tuple[str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
     for row in rows:
@@ -222,12 +275,19 @@ def summarize_costs(rows: list[dict[str, object]], pricing: dict[str, float]) ->
     }
 
 
-def analyze(root: str | Path, *, metric: str, pricing: dict[str, float] | None = None) -> dict[str, object]:
+def analyze(
+    root: str | Path,
+    *,
+    metric: str,
+    pricing: dict[str, float] | None = None,
+    correctness_noninferiority_margin: float = 0.05,
+) -> dict[str, object]:
     base = Path(root).expanduser().resolve()
     rows = load_jsonl(base / "runs.jsonl")
     correctness = Counter(str(row.get("oracle_status") or row.get("correctness_status", "")) for row in rows)
     pairwise = {}
     pass_pass_pairwise = {}
+    correctness_pairwise = {}
     for left, right in [
         ("A-search-only", "B-search-summary"),
         ("A-search-only", "C-lsp-naive"),
@@ -238,6 +298,12 @@ def analyze(root: str | Path, *, metric: str, pricing: dict[str, float] | None =
         pairwise[f"{left}_to_{right}"] = summarize_effect(effects)
         pass_pass_effects = paired_log_ratios(rows, metric=metric, left=left, right=right, pass_pass_only=True)
         pass_pass_pairwise[f"{left}_to_{right}"] = summarize_effect(pass_pass_effects)
+        correctness_pairwise[f"{left}_to_{right}"] = paired_correctness(
+            rows,
+            left=left,
+            right=right,
+            noninferiority_margin=correctness_noninferiority_margin,
+        )
     return {
         "analysis_id": "router-effect-v1",
         "metric": metric,
@@ -245,6 +311,8 @@ def analyze(root: str | Path, *, metric: str, pricing: dict[str, float] | None =
         "arm_counts": dict(Counter(str(row.get("profile", "")) for row in rows)),
         "expected_arms": FACTORIAL_ARM_ORDER,
         "correctness_counts": dict(correctness),
+        "correctness_pairwise": correctness_pairwise,
+        "correctness_noninferiority_margin": correctness_noninferiority_margin,
         "intention_to_treat_run_count": len(rows),
         "pairwise_effects": pairwise,
         "pass_pass_sensitivity_pairwise_effects": pass_pass_pairwise,
@@ -264,9 +332,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", required=True)
     parser.add_argument("--metric", default="exact_uncached_input_tokens")
     parser.add_argument("--pricing", help="Optional JSON pricing file with per-1M token prices.")
+    parser.add_argument("--correctness-noninferiority-margin", type=float, default=0.05)
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
-    result = analyze(args.root, metric=args.metric, pricing=load_pricing(args.pricing))
+    result = analyze(
+        args.root,
+        metric=args.metric,
+        pricing=load_pricing(args.pricing),
+        correctness_noninferiority_margin=args.correctness_noninferiority_margin,
+    )
     to_json_file(args.out, result)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

@@ -121,6 +121,7 @@ serena-readiness.json         # live semantic-router source-symbol cells only
 effective-agent-config.json   # study/hermetic mode only
 effective-agent-config.sha256 # study/hermetic mode only
 treatment-diff.json           # study/hermetic mode only
+semantic-session.json         # study mode only
 oracle.json                   # study/oracle mode only
 visible-terminal-transcript.txt # codex-tui mode only
 codex-tui-process-cleanup.json # codex-tui mode only

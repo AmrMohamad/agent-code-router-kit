@@ -37,6 +37,14 @@ def config_for_row(row: dict[str, object]) -> dict[str, object] | None:
     return load_json(path)
 
 
+def semantic_session_for_row(row: dict[str, object]) -> dict[str, object] | None:
+    artifact = str(row.get("semantic_session_artifact") or "semantic-session.json")
+    path = Path(str(row.get("run_dir", ""))) / artifact
+    if not path.exists():
+        return None
+    return load_json(path)
+
+
 def audit(root: str | Path) -> dict[str, object]:
     base = Path(root).expanduser().resolve()
     issues: list[dict[str, object]] = []
@@ -120,10 +128,30 @@ def audit(root: str | Path) -> dict[str, object]:
         if "lockfile_hash" not in row or row.get("lockfile_hash") in {"", None}:
             add_issue(issues, "fail", "lockfile_hash", f"run {row.get('run_id')} has no lockfile hash marker")
         if live:
+            for field in ("codex_version", "serena_version", "os_version"):
+                value = str(row.get(field, ""))
+                if not value or value.startswith("not_available"):
+                    add_issue(issues, "fail", field, f"live study run {row.get('run_id')} lacks usable {field}")
             if row.get("token_source") != "exact":
                 add_issue(issues, "fail", "exact_token_source", f"live study run {row.get('run_id')} is not exact-token sourced")
             if not isinstance(row.get("exact_uncached_input_tokens"), int):
                 add_issue(issues, "fail", "exact_uncached_input_tokens", f"live study run {row.get('run_id')} lacks exact uncached input tokens")
+        semantic_session = semantic_session_for_row(row)
+        if semantic_session is None:
+            add_issue(issues, "fail", "semantic_session_artifact", f"run {row.get('run_id')} has no semantic-session.json")
+        else:
+            if semantic_session.get("semantic_access_enabled") != factors.semantic_access_enabled:
+                add_issue(issues, "fail", "semantic_session_factor", f"run {row.get('run_id')} semantic-session factor mismatch")
+            if factors.semantic_access_enabled:
+                if semantic_session.get("mode") != "codex_mcp_stdio_per_run":
+                    add_issue(issues, "fail", "semantic_session_mode", f"run {row.get('run_id')} semantic session is not per-run Codex MCP stdio")
+                if semantic_session.get("isolated") is not True:
+                    add_issue(issues, "fail", "semantic_session_isolation", f"run {row.get('run_id')} semantic session is not isolated")
+                if semantic_session.get("mcp_server_configured") is not True:
+                    add_issue(issues, "fail", "semantic_mcp_config", f"run {row.get('run_id')} has no semantic MCP config")
+            else:
+                if semantic_session.get("mode") != "disabled" or semantic_session.get("mcp_server_configured") is not False:
+                    add_issue(issues, "fail", "semantic_session_disabled", f"run {row.get('run_id')} search-only semantic session is not disabled")
         if not (Path(str(row.get("run_dir", ""))) / "oracle.json").exists():
             add_issue(issues, "fail", "oracle_artifact", f"run {row.get('run_id')} has no oracle.json")
         if row.get("oracle_status") in {"", "not_configured", None}:

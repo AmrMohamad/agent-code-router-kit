@@ -56,6 +56,15 @@ PUBLIC_ROW_FIELDS = [
     "route_profile_hash",
     "task_prompt_hmac",
     "source_state_hmac",
+    "semantic_session_mode",
+    "semantic_session_isolated",
+    "semantic_session_artifact",
+    "codex_version",
+    "serena_version",
+    "sourcekit_lsp_version",
+    "kotlin_language_server_version",
+    "json_language_server_version",
+    "os_version",
 ]
 
 
