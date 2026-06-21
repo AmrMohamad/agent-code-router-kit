@@ -546,6 +546,38 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_power_shape", {issue["code"] for issue in malformed["issues"]})
             (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            pricing = {
+                "model_id": "codex-test-model",
+                "input_per_1m": 2.0,
+                "cached_input_per_1m": 0.5,
+                "output_per_1m": 8.0,
+                "reasoning_output_per_1m": 8.0,
+            }
+            priced_analysis = analyze(out, metric="exact_uncached_input_tokens", pricing=pricing)
+            self.assertEqual(priced_analysis["cost"]["status"], "estimated")
+            self.assertEqual(priced_analysis["cost"]["pricing_model_id"], "codex-test-model")
+            self.assertEqual(
+                set(priced_analysis["cost"]["by_arm"]),
+                {"A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"},
+            )
+            self.assertIn("estimated_cost_per_run", priced_analysis["cost"]["by_arm"]["A-search-only"])
+            self.assertIn("estimated_cost_per_successful_task", priced_analysis["cost"]["by_arm"]["A-search-only"])
+            (out / "study-analysis.json").write_text(json.dumps(priced_analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            priced_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertEqual(priced_audit["status"], "pass", priced_audit)
+
+            malformed_cost_analysis = dict(priced_analysis)
+            malformed_cost_analysis["cost"] = {
+                "status": "estimated",
+                "pricing_model_id": "different-model",
+                "pricing_per_1m_tokens": {"input_per_1m": 2.0},
+                "by_arm": {},
+            }
+            (out / "study-analysis.json").write_text(json.dumps(malformed_cost_analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            malformed_cost = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("study_analysis_cost", {issue["code"] for issue in malformed_cost["issues"]})
+            (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             manifest_path = out / "run-manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             tainted_manifest = dict(manifest)

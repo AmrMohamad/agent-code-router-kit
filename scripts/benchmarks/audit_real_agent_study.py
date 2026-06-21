@@ -61,6 +61,7 @@ def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
         "correctness_pairwise",
         "multiple_comparison_correction",
         "correctness_noninferiority_margin",
+        "cost",
     ]
     if any(key not in analysis for key in required):
         return False
@@ -73,6 +74,57 @@ def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
     correction = analysis.get("multiple_comparison_correction")
     if not isinstance(correction, dict) or correction.get("method") != "holm":
         return False
+    return True
+
+
+def _analysis_cost_has_required_shape(analysis: dict[str, object], manifest: dict[str, object]) -> bool:
+    cost = analysis.get("cost")
+    if not isinstance(cost, dict):
+        return False
+    status = cost.get("status")
+    if status == "not_configured":
+        return True
+    if status != "estimated":
+        return False
+    if cost.get("pricing_model_id") != manifest.get("model_id"):
+        return False
+    prices = cost.get("pricing_per_1m_tokens")
+    required_prices = {
+        "input_per_1m",
+        "cached_input_per_1m",
+        "output_per_1m",
+        "reasoning_output_per_1m",
+    }
+    if not isinstance(prices, dict) or not required_prices.issubset(set(prices)):
+        return False
+    for field in required_prices:
+        value = prices.get(field)
+        if not isinstance(value, int | float) or value < 0:
+            return False
+    by_arm = cost.get("by_arm")
+    if not isinstance(by_arm, dict) or not set(FACTORIAL_ARM_ORDER).issubset(set(by_arm)):
+        return False
+    required_arm_fields = {
+        "run_count",
+        "successful_task_count",
+        "total_estimated_cost",
+        "median_estimated_cost",
+        "estimated_cost_per_run",
+        "estimated_cost_per_successful_task",
+    }
+    for arm in FACTORIAL_ARM_ORDER:
+        value = by_arm.get(arm)
+        if not isinstance(value, dict) or not required_arm_fields.issubset(set(value)):
+            return False
+        for field in ("run_count", "successful_task_count"):
+            if not isinstance(value.get(field), int):
+                return False
+        for field in ("total_estimated_cost", "median_estimated_cost", "estimated_cost_per_run"):
+            if not isinstance(value.get(field), int | float):
+                return False
+        success_cost = value.get("estimated_cost_per_successful_task")
+        if success_cost is not None and not isinstance(success_cost, int | float):
+            return False
     return True
 
 
@@ -509,6 +561,8 @@ def audit(
                 add_issue(issues, "fail", "study_analysis_shape", "study-analysis.json lacks required paired, sensitivity, factorial, correctness, or CI fields")
             if not _analysis_matches_preregistered_primary(analysis):
                 add_issue(issues, "fail", "study_analysis_metric", "confirmatory analysis must use preregistered exact_uncached_input_tokens metric")
+            if not _analysis_cost_has_required_shape(analysis, manifest):
+                add_issue(issues, "fail", "study_analysis_cost", "study-analysis.json has missing or invalid estimated-cost metadata")
             correctness = analysis.get("correctness_pairwise", {})
             if isinstance(correctness, dict):
                 for name, value in correctness.items():

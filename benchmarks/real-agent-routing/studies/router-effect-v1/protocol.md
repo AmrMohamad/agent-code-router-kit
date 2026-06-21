@@ -83,6 +83,11 @@ Secondary outcomes:
 - estimated cost when pricing and model identifiers are available
 - tool calls, opened files, policy violations, timeouts, and failures
 
+Cost is a secondary outcome only. A cost claim requires explicit pricing for
+the pinned model: uncached input, cached input, output, and reasoning-output
+rates per one million tokens. Cost reporting must include total cost, median
+cost, cost per run, and cost per successful task by arm.
+
 Every randomized run is retained for intention-to-treat analysis. Pass/pass
 comparisons are secondary sensitivity analyses only.
 Confirmatory runs must not use rerun-failed mode; wrong answers, timeouts,

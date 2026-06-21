@@ -267,8 +267,10 @@ Latin-square sequence-position sensitivity, and Holm-corrected paired
 correctness comparisons. Public bundles remap repository-stratified keys to
 opaque repository ids.
 
-Pass `--pricing pricing.json` only when the model identifier and per-1M token
-prices are explicit. Cost estimates are reported separately from context
+Pass `--pricing pricing.json` only when the pinned model identifier and per-1M
+token prices are explicit. The pricing JSON must include `model_id`,
+`input_per_1m`, `cached_input_per_1m`, `output_per_1m`, and
+`reasoning_output_per_1m`. Cost estimates are reported separately from context
 efficiency and are not inferred from uncached tokens alone.
 
 Estimate whether the observed pilot variance supports the planned confirmatory
@@ -300,6 +302,9 @@ custom task manifests, custom oracle files, dry-runs, missing
 `task_manifest_hash` does not match the frozen package in `run-manifest.json`.
 The analysis and power artifacts must use the preregistered primary context
 metric, `exact_uncached_input_tokens`.
+If `study-analysis.json` reports `cost.status=estimated`, the audit also
+requires the pricing model to match the pinned study model and every arm to
+include total cost, median cost, cost per run, and cost per successful task.
 Do not use `--rerun-failed` for confirmatory studies. Wrong answers, timeouts,
 policy violations, and controlled output-budget stops are randomized outcomes
 for the intention-to-treat analysis. The confirmatory audit fails packages that

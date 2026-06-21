@@ -17,6 +17,14 @@ from scripts.lib.agent_session import to_json_file
 from scripts.lib.treatment_config import FACTORIAL_ARM_ORDER
 
 
+PRICE_FIELDS = [
+    "input_per_1m",
+    "cached_input_per_1m",
+    "output_per_1m",
+    "reasoning_output_per_1m",
+]
+
+
 def load_jsonl(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
@@ -295,15 +303,38 @@ def holm_correct_pairwise(correctness_pairwise: dict[str, dict[str, object]], *,
     }
 
 
-def load_pricing(path: str | Path | None) -> dict[str, float]:
+def load_pricing(path: str | Path | None) -> dict[str, object]:
     if not path:
         return {}
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    return {str(key): float(value) for key, value in data.items()}
+    if not isinstance(data, dict):
+        raise SystemExit("pricing file must be a JSON object")
+    return {str(key): value for key, value in data.items()}
 
 
-def estimate_row_cost(row: dict[str, object], pricing: dict[str, float]) -> float | None:
-    if not pricing:
+def pricing_rates(pricing: dict[str, object]) -> tuple[dict[str, float], list[str], list[str]]:
+    rates: dict[str, float] = {}
+    missing: list[str] = []
+    invalid: list[str] = []
+    for field in PRICE_FIELDS:
+        if field not in pricing:
+            missing.append(field)
+            continue
+        try:
+            value = float(pricing[field])
+        except (TypeError, ValueError):
+            invalid.append(field)
+            continue
+        if value < 0:
+            invalid.append(field)
+            continue
+        rates[field] = value
+    return rates, missing, invalid
+
+
+def estimate_row_cost(row: dict[str, object], pricing: dict[str, object]) -> float | None:
+    rates, missing, invalid = pricing_rates(pricing)
+    if not pricing or missing or invalid:
         return None
     uncached_input = numeric(row, "exact_uncached_input_tokens")
     cached_input = numeric(row, "exact_cached_input_tokens") or 0.0
@@ -312,32 +343,58 @@ def estimate_row_cost(row: dict[str, object], pricing: dict[str, float]) -> floa
     if uncached_input is None:
         return None
     return (
-        uncached_input * pricing.get("input_per_1m", 0.0)
-        + cached_input * pricing.get("cached_input_per_1m", 0.0)
-        + output * pricing.get("output_per_1m", 0.0)
-        + reasoning * pricing.get("reasoning_output_per_1m", 0.0)
+        uncached_input * rates["input_per_1m"]
+        + cached_input * rates["cached_input_per_1m"]
+        + output * rates["output_per_1m"]
+        + reasoning * rates["reasoning_output_per_1m"]
     ) / 1_000_000.0
 
 
-def summarize_costs(rows: list[dict[str, object]], pricing: dict[str, float]) -> dict[str, object]:
+def summarize_costs(rows: list[dict[str, object]], pricing: dict[str, object]) -> dict[str, object]:
     if not pricing:
         return {"status": "not_configured"}
-    by_arm: dict[str, list[float]] = defaultdict(list)
+    rates, missing, invalid = pricing_rates(pricing)
+    model_id = str(pricing.get("model_id") or pricing.get("model") or "")
+    if missing or invalid:
+        return {
+            "status": "invalid_pricing",
+            "pricing_model_id": model_id,
+            "missing_price_fields": missing,
+            "invalid_price_fields": invalid,
+            "required_price_fields": PRICE_FIELDS,
+        }
+    by_arm: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in rows:
         cost = estimate_row_cost(row, pricing)
         if cost is not None:
-            by_arm[str(row.get("profile", ""))].append(cost)
+            by_arm[str(row.get("profile", ""))].append(
+                {
+                    "cost": cost,
+                    "passed": row_passes(row),
+                }
+            )
     return {
         "status": "estimated" if by_arm else "missing_exact_token_inputs",
-        "pricing_per_1m_tokens": pricing,
+        "pricing_model_id": model_id,
+        "pricing_per_1m_tokens": rates,
         "by_arm": {
-            arm: {
-                "run_count": len(values),
-                "total_estimated_cost": round(sum(values), 6),
-                "median_estimated_cost": round(statistics.median(values), 6),
-            }
+            arm: cost_summary(values)
             for arm, values in sorted(by_arm.items())
         },
+    }
+
+
+def cost_summary(values: list[dict[str, object]]) -> dict[str, object]:
+    costs = [float(value["cost"]) for value in values]
+    successful = [value for value in values if value.get("passed") is True]
+    total = sum(costs)
+    return {
+        "run_count": len(values),
+        "successful_task_count": len(successful),
+        "total_estimated_cost": round(total, 6),
+        "median_estimated_cost": round(statistics.median(costs), 6),
+        "estimated_cost_per_run": round(total / len(values), 6) if values else None,
+        "estimated_cost_per_successful_task": round(total / len(successful), 6) if successful else None,
     }
 
 
@@ -345,7 +402,7 @@ def analyze(
     root: str | Path,
     *,
     metric: str,
-    pricing: dict[str, float] | None = None,
+    pricing: dict[str, object] | None = None,
     correctness_noninferiority_margin: float = 0.05,
 ) -> dict[str, object]:
     base = Path(root).expanduser().resolve()
