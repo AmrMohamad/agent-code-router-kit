@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -27,8 +29,13 @@ from scripts.lib.agent_session import (
     utc_now,
 )
 from scripts.lib.dynamic_task_prompts import materialize_task_for_symbol, select_code_symbol_target
+from scripts.lib.environment_capture import capture_tool_versions, git_tree_hash, lockfile_hash, text_sha256
+from scripts.lib.experiment_design import assign_sequence, load_study_plan, sequence_metadata
+from scripts.lib.hermetic_agent_environment import materialize_hermetic_agent_environment
 from scripts.lib.route_isolation import materialize_route_isolation
 from scripts.lib.serena_readiness import run_serena_source_symbol_readiness, write_serena_readiness
+from scripts.lib.task_oracles import load_task_oracles, verify_transcript_file
+from scripts.lib.treatment_config import FACTORIAL_ARM_ORDER, factors_for_profile, hmac_sha256_hex, validate_factorial_arm_set
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +47,48 @@ SERENA_PROCESS_STATE_WARNING_CODES = {
     "multiple_json_lsp_processes",
 }
 HIGH_FANOUT_RAW_OUTPUT_CEILING_BYTES = 50000
+DEFAULT_STUDY_MODEL_ID = "not_pinned"
+DEFAULT_REASONING_EFFORT = "default"
+
+
+def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
+    if not study_plan:
+        return
+    args.order_design = study_plan.order_design
+    args.isolated_agent_home = True
+    args.isolated_serena_session = True
+    args.capture_versions = True
+    args.require_snapshots = study_plan.require_clean_snapshots
+    args.parallelism = study_plan.parallelism
+    arms = [arm.strip() for arm in args.arms.split(",") if arm.strip()]
+    validate_factorial_arm_set(arms)
+    if args.repeats < study_plan.minimum_repeats:
+        raise SystemExit(f"study plan requires --repeats >= {study_plan.minimum_repeats}")
+    if study_plan.parallelism != 1 or args.parallelism != 1:
+        raise SystemExit("study plan requires --parallelism 1")
+    if study_plan.require_clean_snapshots and not args.snapshot_repos:
+        raise SystemExit("study plan requires --snapshot-repos")
+    if args.allow_dirty:
+        raise SystemExit("study plan does not allow --allow-dirty")
+    if study_plan.require_external_oracles and not args.task_oracles:
+        args.task_oracles = study_plan.task_oracles_path
+    if not args.dry_run and args.model_id == DEFAULT_STUDY_MODEL_ID:
+        raise SystemExit("live study mode requires --model-id with the exact pinned model identifier")
+
+
+def exact_uncached_input_tokens(metrics: dict[str, object]) -> int | None:
+    input_tokens = metrics.get("exact_input_tokens")
+    cached_tokens = metrics.get("exact_cached_input_tokens")
+    if isinstance(input_tokens, int) and isinstance(cached_tokens, int):
+        return max(0, input_tokens - cached_tokens)
+    return None
+
+
+def private_hmac(value: str, *, key_env: str) -> str:
+    key = str(os.environ.get(key_env, ""))
+    if not key:
+        return ""
+    return hmac_sha256_hex(value, key=key)
 
 
 def profile_path(profile_id: str) -> Path:
@@ -429,6 +478,18 @@ def parse_repo_map(value: str | None, *, default_repo: str | Path) -> dict[str, 
     return mapping
 
 
+def restrict_repo_map_to_tasks(repo_map: dict[str, str], tasks: list[object]) -> dict[str, str]:
+    needed = {str(getattr(task, "repo", "") or "") for task in tasks}
+    restricted: dict[str, str] = {}
+    for repo_id in needed:
+        if repo_id in repo_map:
+            restricted[repo_id] = repo_map[repo_id]
+    needs_default_fallback = "" in needed or any(repo_id and repo_id not in repo_map for repo_id in needed)
+    if needs_default_fallback and "" in repo_map:
+        restricted[""] = repo_map[""]
+    return restricted
+
+
 def repo_for_task(repo_map: dict[str, str], task_repo: str) -> str:
     return repo_map.get(task_repo) or repo_map[""]
 
@@ -563,6 +624,8 @@ def run_cell_key(row: dict[str, object]) -> tuple[str, str, str, str, str]:
 def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
     if args.seed is None:
         args.seed = random.SystemRandom().randrange(1, 2**32)
+    study_plan = load_study_plan(args.study_plan) if args.study_plan else None
+    apply_study_controls(args, study_plan=study_plan)
     out_root = resolve_output_path(args.out)
     resume_root = resolve_output_path(args.resume_from) if args.resume_from else None
     if resume_root and resume_root == out_root:
@@ -577,8 +640,13 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
     agent_ids = [item.strip() for item in (args.agents or args.agent).split(",") if item.strip()]
     agent_profiles = {agent_id: load_agent_profile(agent_path(agent_id)) for agent_id in agent_ids}
     arms = [arm.strip() for arm in args.arms.split(",") if arm.strip()]
+    if args.order_design == "balanced-latin-square":
+        validate_factorial_arm_set(arms)
     tasks = select_tasks(load_tasks(args.tasks), arms=arms, task_limit=args.task_limit)
+    task_oracles = load_task_oracles(args.task_oracles)
     repo_map = parse_repo_map(args.repo_map, default_repo=args.repo)
+    if args.require_snapshots:
+        repo_map = restrict_repo_map_to_tasks(repo_map, tasks)
     if not args.dry_run:
         missing_repos = missing_live_repo_mappings(tasks, repo_map)
         if missing_repos:
@@ -595,9 +663,21 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                     f"agent {agent_profile.agent_id} has no installed command candidate: {', '.join(candidates)}"
                 )
     source_repo_states = {repo_id or "default": git_metadata(path) for repo_id, path in repo_map.items()}
+    if args.require_snapshots:
+        dirty_sources = [repo_id for repo_id, state in source_repo_states.items() if state["dirty"]]
+        if dirty_sources:
+            raise SystemExit(
+                "study/snapshot runs require clean source repositories before snapshotting; dirty repos: "
+                + ",".join(dirty_sources)
+            )
     repo_snapshots: dict[str, dict[str, object]] = {}
     if args.snapshot_repos:
         repo_map, repo_snapshots = snapshot_repo_map(repo_map, out_root=out_root)
+        for repo_id, snapshot in repo_snapshots.items():
+            snapshot_path = str(snapshot.get("snapshot_path", ""))
+            if snapshot_path:
+                snapshot["snapshot_tree_hash"] = git_tree_hash(snapshot_path)
+                snapshot["lockfile_hash"] = lockfile_hash(snapshot_path)
     repo_states = {repo_id or "default": git_metadata(path) for repo_id, path in repo_map.items()}
     if not args.dry_run and not args.allow_dirty:
         dirty_repos = [repo_id for repo_id, state in repo_states.items() if state["dirty"]]
@@ -619,6 +699,22 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
     existing_cells = {run_cell_key(row) for row in carried_rows}
     manifest = {
         "created_at": utc_now(),
+        "study_plan": str(Path(args.study_plan).expanduser().resolve()) if args.study_plan else "",
+        "study_id": study_plan.study_id if study_plan else "",
+        "study_design_type": study_plan.design_type if study_plan else "",
+        "order_design": args.order_design,
+        "parallelism": args.parallelism,
+        "isolated_agent_home": args.isolated_agent_home,
+        "isolated_serena_session": args.isolated_serena_session,
+        "prewarm_semantic_layer": args.prewarm_semantic_layer,
+        "capture_versions": args.capture_versions,
+        "require_snapshots": args.require_snapshots,
+        "model_id": args.model_id,
+        "reasoning_effort": args.reasoning_effort,
+        "tool_versions": capture_tool_versions(cwd=ROOT) if args.capture_versions else {},
+        "task_oracles": str(Path(args.task_oracles).expanduser().resolve()) if args.task_oracles else "",
+        "hmac_key_env": args.hmac_key_env,
+        "private_hmac_configured": bool(os.environ.get(args.hmac_key_env, "")),
         "agent": args.agent if not args.agents else None,
         "agents": list(agent_profiles),
         "repo": str(Path(args.repo).resolve()),
@@ -635,7 +731,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "task_count": len(tasks),
         "repeats": args.repeats,
         "fresh_session_per_run": True,
-        "order_randomized": not args.no_randomize_order,
+        "order_randomized": args.order_design == "random" and not args.no_randomize_order,
         "seed": args.seed,
         "resumed_from": str(resume_root) if resume_root else "",
         "carried_forward_runs": len(carried_rows),
@@ -651,28 +747,70 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "require_clean_serena_process_state": args.require_clean_serena_process_state,
         "dynamic_code_prompts": not args.static_code_prompts,
     }
-    run_specs = []
+    if study_plan:
+        for task in tasks:
+            missing_profiles = [arm for arm in FACTORIAL_ARM_ORDER if arm not in task.route_profiles]
+            if missing_profiles:
+                raise SystemExit(
+                    f"study task {task.task_id} does not include all A/B/C/D arms; missing={','.join(missing_profiles)}"
+                )
+    run_specs: list[dict[str, object]] = []
     skipped_existing_specs = 0
     for repeat_index in range(args.repeats):
         for agent_id, agent_profile in agent_profiles.items():
             for task in tasks:
-                for profile_id, profile in route_profiles.items():
+                profile_order = list(route_profiles)
+                sequence_meta_by_profile: dict[str, dict[str, object]] = {}
+                if args.order_design == "balanced-latin-square":
+                    profile_order = assign_sequence(task.task_id, repeat_index, arms=arms)
+                    sequence_meta_by_profile = {
+                        profile_id: sequence_metadata(profile_order, position=index, block_index=repeat_index)
+                        for index, profile_id in enumerate(profile_order)
+                    }
+                for profile_id in profile_order:
+                    profile = route_profiles[profile_id]
                     if profile_id not in task.route_profiles:
                         continue
                     cell = (agent_id, profile_id, task.task_id, task.repo, str(repeat_index))
                     if cell in existing_cells:
                         skipped_existing_specs += 1
                         continue
-                    run_specs.append((repeat_index, agent_id, agent_profile, task, profile_id, profile))
+                    run_specs.append(
+                        {
+                            "repeat_index": repeat_index,
+                            "agent_id": agent_id,
+                            "agent_profile": agent_profile,
+                            "task": task,
+                            "profile_id": profile_id,
+                            "profile": profile,
+                            "sequence": sequence_meta_by_profile.get(
+                                profile_id,
+                                {
+                                    "block_id": f"repeat-{repeat_index + 1:03d}",
+                                    "sequence_id": "",
+                                    "sequence_position": None,
+                                    "previous_arm": "",
+                                    "order_design": "random" if not args.no_randomize_order else "input",
+                                },
+                            ),
+                        }
+                    )
     manifest["existing_cells_available"] = len(existing_cells)
     manifest["skipped_existing_cells"] = skipped_existing_specs
     manifest["planned_new_runs"] = len(run_specs)
     to_json_file(out_root / "run-manifest.json", manifest)
     for row in carried_rows:
         append_jsonl(runs_path, import_carried_row_artifacts(row, out_root=out_root, repo_map=repo_map))
-    if not args.no_randomize_order:
+    if args.order_design == "random" and not args.no_randomize_order:
         random.Random(args.seed).shuffle(run_specs)
-    for repeat_index, agent_id, agent_profile, task, profile_id, profile in run_specs:
+    for spec in run_specs:
+        repeat_index = int(spec["repeat_index"])
+        agent_id = str(spec["agent_id"])
+        agent_profile = spec["agent_profile"]
+        task = spec["task"]
+        profile_id = str(spec["profile_id"])
+        profile = spec["profile"]
+        sequence = dict(spec["sequence"])
         run_id = new_run_id("rarb")
         run_dir = out_root / run_id
         sentinel = f"BENCHMARK_DONE_{run_id}"
@@ -698,12 +836,14 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 run_task = materialize_task_for_symbol(task, target)
                 to_json_file(run_dir / "dynamic-task-target.json", dynamic_target)
         serena_readiness: dict[str, object] | None = None
+        semantic_setup_seconds = 0.0
         if (
             not args.dry_run
             and not args.skip_serena_readiness
             and route_uses_serena(effective_profile)
             and task_needs_serena_source_readiness(run_task)
         ):
+            semantic_setup_started = time.monotonic()
             readiness = run_serena_source_symbol_readiness(
                 repo=task_repo_path,
                 prompt=run_task.prompt,
@@ -711,6 +851,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 source_file=str(dynamic_target["source_file"]) if dynamic_target else None,
                 timeout_seconds=args.serena_readiness_timeout,
             )
+            semantic_setup_seconds = time.monotonic() - semantic_setup_started
             write_serena_readiness(run_dir / "serena-readiness.json", readiness)
             serena_readiness = asdict(readiness)
             if args.require_clean_serena_process_state:
@@ -725,13 +866,29 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             serena_readiness=serena_readiness,
         )
         (run_dir / "task-packet.md").write_text(prompt, encoding="utf-8")
+        response_contract_path = ROOT / "benchmarks" / "real-agent-routing" / "contracts" / "response-contract.md"
+        response_contract_hash = text_sha256(response_contract_path.read_text(encoding="utf-8"))
+        hermetic_environment = None
+        if args.isolated_agent_home:
+            hermetic_environment = materialize_hermetic_agent_environment(
+                agent_profile=agent_profile,
+                route_profile=effective_profile,
+                run_dir=run_dir,
+                repo_path=task_repo_path,
+                model_id=args.model_id,
+                reasoning_effort=args.reasoning_effort,
+                sandbox=args.sandbox,
+                timeout_seconds=min(args.timeout, task.timeout_seconds),
+                response_contract=response_contract_hash,
+            )
         isolation = materialize_route_isolation(
             agent_profile=agent_profile,
-            route_profile=profile,
+            route_profile=effective_profile,
             run_dir=run_dir,
             workspace_cwd=task_repo_path,
             probe_cursor_mcp=not args.dry_run,
             terminal_mode=terminal_mode,
+            hermetic_environment=hermetic_environment,
         )
         bridge = TerminalAgentBridge(
             agent_profile,
@@ -783,25 +940,54 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         )
         row = {
             "run_id": run_id,
+            "study_id": study_plan.study_id if study_plan else "",
+            "protocol_commit": git_metadata(ROOT).get("commit", ""),
+            "block_id": sequence.get("block_id", ""),
+            "sequence_id": sequence.get("sequence_id", ""),
+            "sequence_position": sequence.get("sequence_position"),
+            "previous_arm": sequence.get("previous_arm", ""),
+            "order_design": sequence.get("order_design", args.order_design),
             "repeat_index": repeat_index,
             "agent": agent_profile.agent_id,
             "profile": profile_id,
+            "semantic_access_enabled": factors_for_profile(profile_id).semantic_access_enabled,
+            "routing_discipline_enabled": factors_for_profile(profile_id).routing_discipline_enabled,
             "task_id": task.task_id,
             "task_family": task.task_family,
             "prompt": run_task.prompt,
+            "task_prompt_sha256": text_sha256(run_task.prompt),
+            "task_prompt_hmac": private_hmac(run_task.prompt, key_env=args.hmac_key_env),
             "expected_proof_layer": run_task.expected_proof_layer,
             "expected_success_signal": run_task.expected_success_signal,
             "dynamic_target_symbol": dynamic_target.get("symbol") if dynamic_target else "",
+            "dynamic_target_symbol_hmac": private_hmac(str(dynamic_target.get("symbol")) if dynamic_target else "", key_env=args.hmac_key_env),
             "dynamic_target_source_file": dynamic_target.get("source_file") if dynamic_target else "",
             "dynamic_target_line": dynamic_target.get("line") if dynamic_target else None,
             "dynamic_target_language": dynamic_target.get("language") if dynamic_target else "",
             "dynamic_target_declaration_kind": dynamic_target.get("declaration_kind") if dynamic_target else "",
             "repo": task.repo,
             "repo_path": task_repo_path,
+            "source_state_hmac": private_hmac(
+                json.dumps(repo_states.get(task.repo or "default", repo_states.get("default", {})), sort_keys=True),
+                key_env=args.hmac_key_env,
+            ),
+            "snapshot_tree_hash": repo_snapshots.get(task.repo or "default", repo_snapshots.get("default", {})).get("snapshot_tree_hash", ""),
+            "lockfile_hash": repo_snapshots.get(task.repo or "default", repo_snapshots.get("default", {})).get("lockfile_hash", ""),
+            "task_manifest_hash": text_sha256(Path(args.tasks).expanduser().resolve().read_text(encoding="utf-8")),
+            "route_profile_hash": hermetic_environment.effective_config.get("route_profile_hash") if hermetic_environment else "",
+            "agent_config_hash": hermetic_environment.effective_config_sha256 if hermetic_environment else "",
+            "model_id": args.model_id,
+            "reasoning_effort": args.reasoning_effort,
             "run_dir": str(run_dir),
             "completion_reason": bridge_result.completion_reason,
             "failure_reason": metrics.get("failure_reason", ""),
             "wall_seconds": metrics.get("wall_seconds", 0),
+            "semantic_setup_seconds": round(semantic_setup_seconds, 3),
+            "task_execution_seconds": metrics.get("task_execution_seconds", metrics.get("wall_seconds", 0)),
+            "end_to_end_seconds": metrics.get(
+                "end_to_end_seconds",
+                round(float(metrics.get("wall_seconds", 0) or 0) + semantic_setup_seconds, 3),
+            ),
             "correctness_status": judge["correctness_status"],
             "policy_adherence": judge["policy_adherence"],
             "policy_violations": judge["violations"],
@@ -812,6 +998,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "exact_output_tokens": metrics.get("exact_output_tokens"),
             "exact_total_tokens": metrics.get("exact_total_tokens"),
             "exact_cached_input_tokens": metrics.get("exact_cached_input_tokens"),
+            "exact_uncached_input_tokens": exact_uncached_input_tokens(metrics),
             "exact_uncached_total_tokens": metrics.get("exact_uncached_total_tokens"),
             "exact_cache_creation_input_tokens": metrics.get("exact_cache_creation_input_tokens"),
             "exact_cache_read_input_tokens": metrics.get("exact_cache_read_input_tokens"),
@@ -848,6 +1035,22 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "runtime_tool_count": metrics.get("runtime_tool_count", 0),
             "ast_grep_count": metrics.get("ast_grep_count", 0),
         }
+        oracle_result = verify_transcript_file(
+            task_id=task.task_id,
+            oracle=task_oracles.get(task.task_id) or task_oracles.get(f"family:{task.task_family}"),
+            transcript_path=bridge_result.transcript_path,
+            run_row=row,
+        )
+        oracle_payload = asdict(oracle_result)
+        to_json_file(run_dir / "oracle.json", oracle_payload)
+        row.update(
+            {
+                "oracle_id": oracle_result.oracle_id,
+                "oracle_type": oracle_result.oracle_type,
+                "oracle_status": oracle_result.status,
+                "oracle_reason": oracle_result.reason,
+            }
+        )
         append_jsonl(runs_path, row)
         monitor_event(
             monitor_path,
@@ -881,6 +1084,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tasks", default=str(DEFAULT_TASKS))
     parser.add_argument("--arms", default="A-search-only,D-full-router")
     parser.add_argument("--repeats", type=int, default=1)
+    parser.add_argument("--study-plan", help="Path to a preregistered real-agent study plan.")
+    parser.add_argument("--task-oracles", help="Path to external task oracle definitions for study correctness checks.")
+    parser.add_argument(
+        "--order-design",
+        default="random",
+        choices=["random", "input", "balanced-latin-square"],
+        help="Run-order design. Study mode uses balanced-latin-square.",
+    )
+    parser.add_argument("--parallelism", type=int, default=1, help="Execution parallelism. Confirmatory study mode requires 1.")
+    parser.add_argument("--model-id", default=DEFAULT_STUDY_MODEL_ID, help="Exact pinned model identifier recorded for study runs.")
+    parser.add_argument("--reasoning-effort", default=DEFAULT_REASONING_EFFORT, help="Fixed reasoning effort label/config value.")
+    parser.add_argument("--sandbox", default="read-only", choices=["read-only", "workspace-write", "danger-full-access"])
+    parser.add_argument("--isolated-agent-home", action="store_true", help="Use a fresh controlled agent home/config for every run.")
+    parser.add_argument("--isolated-serena-session", action="store_true", help="Require per-run project-scoped Serena session config for semantic arms.")
+    parser.add_argument("--prewarm-semantic-layer", action="store_true", help="Separate semantic readiness/setup from task execution timing.")
+    parser.add_argument("--capture-versions", action="store_true", help="Capture controller/tool versions in the manifest.")
+    parser.add_argument("--require-snapshots", action="store_true", help="Require clean source repos and detached worktree snapshots.")
+    parser.add_argument("--hmac-key-env", default="RARB_PRIVATE_HMAC_KEY", help="Environment variable that contains the private HMAC key for private fingerprints.")
     parser.add_argument("--task-limit", type=int)
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--out", default=str(DEFAULT_OUT))
@@ -928,10 +1149,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.repeats < 1:
         raise SystemExit("--repeats must be >= 1")
+    if args.parallelism != 1:
+        raise SystemExit("parallel execution is not implemented; use --parallelism 1")
     if args.serena_readiness_timeout < 1:
         raise SystemExit("--serena-readiness-timeout must be >= 1")
     if args.dry_run == args.live:
         raise SystemExit("choose exactly one of --dry-run or --live")
+    if args.no_randomize_order and args.order_design == "random":
+        args.order_design = "input"
     if args.clean_out:
         clean_output_dir(resolve_output_path(args.out))
     result = run_benchmark(args)

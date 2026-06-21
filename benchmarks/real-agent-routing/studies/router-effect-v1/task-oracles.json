@@ -1,0 +1,40 @@
+{
+  "oracles": [
+    {
+      "oracle_id": "generic-known-symbol",
+      "task_family": "known_symbol_definition",
+      "required_terms": ["declaration", "symbol"],
+      "requires_policy_pass": true,
+      "type": "text_checks"
+    },
+    {
+      "oracle_id": "generic-high-fanout",
+      "task_family": "high_fanout_symbol",
+      "required_terms": ["evidence"],
+      "requires_policy_pass": true,
+      "type": "text_checks"
+    },
+    {
+      "oracle_id": "generic-literal-resource",
+      "task_family": "literal_resource",
+      "required_terms": ["file"],
+      "requires_policy_pass": true,
+      "type": "text_checks"
+    },
+    {
+      "oracle_id": "generic-structural-pattern",
+      "task_family": "structural_pattern",
+      "required_terms": ["match"],
+      "requires_policy_pass": true,
+      "type": "text_checks"
+    },
+    {
+      "oracle_id": "generic-build-runtime-boundary",
+      "task_family": "build_runtime_boundary",
+      "required_terms": ["proof"],
+      "forbidden_terms": ["build passed", "tests passed", "runtime verified"],
+      "requires_policy_pass": true,
+      "type": "text_checks"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Real Agent Routing Benchmark
 
-RARB measures real AI-agent token/context consumption under routing policies. It runs the same Android tasks through subject agent adapters and compares search-only behavior against the full router system.
+RARB measures real AI-agent token/context consumption under routing policies. It runs the same preregistered tasks through subject agent adapters and compares controlled routing profiles across semantic-access and routing-discipline factors.
 
 This package is dry-run safe by default. Dry-run writes task packets, transcripts, telemetry, normalized metrics, judge results, and reports without launching a real agent.
 
@@ -53,6 +53,55 @@ python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --out results/real-agent-routing/dry-run
 ```
 
+## Router Effect V1 Confirmatory Study
+
+The `router-effect-v1` protocol is the stricter scientific path beyond the
+current A/D smoke bundle. It treats A/B/C/D as a `2x2` factorial design:
+
+| Arm | Semantic access | Routing discipline |
+|---|---:|---:|
+| `A-search-only` | off | off |
+| `B-search-summary` | off | on |
+| `C-lsp-naive` | on | off |
+| `D-full-router` | on | on |
+
+Study mode requires clean detached snapshots, a fresh controlled Codex home per
+run, isolated semantic-session configuration for semantic arms, captured tool
+versions, external task oracles, and balanced Latin-square ordering. It writes
+per-run `effective-agent-config.json`, `effective-agent-config.sha256`,
+`treatment-diff.json`, and `oracle.json` artifacts.
+
+Dry-run the study controls before any live execution:
+
+```bash
+python3 scripts/benchmarks/run_real_agent_benchmark.py \
+  --dry-run \
+  --agent codex \
+  --repo /path/to/clean/ios-reference \
+  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference,portable_reference=/path/to/clean/portable-reference \
+  --tasks benchmarks/real-agent-routing/studies/router-effect-v1/pilot-tasks.tsv \
+  --task-oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
+  --study-plan benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml \
+  --arms A-search-only,B-search-summary,C-lsp-naive,D-full-router \
+  --repeats 4 \
+  --snapshot-repos \
+  --model-id '<exact-model-id>' \
+  --reasoning-effort '<fixed-effort>' \
+  --out results/real-agent-routing/router-effect-v1-dry-run
+```
+
+Audit a completed study output with:
+
+```bash
+python3 scripts/benchmarks/audit_real_agent_study.py \
+  --root results/real-agent-routing/router-effect-v1-dry-run \
+  --out results/real-agent-routing/router-effect-v1-dry-run/study-audit.json
+```
+
+The study protocol is intentionally public-safe: repository labels are generic,
+and public evidence must omit private names, paths, prompts, symbols, snippets,
+and transcripts.
+
 ## Outputs
 
 Each run directory contains:
@@ -67,6 +116,10 @@ judge.json
 agent_final_answer.md
 dynamic-task-target.json      # source-symbol tasks only
 serena-readiness.json         # live semantic-router source-symbol cells only
+effective-agent-config.json   # study/hermetic mode only
+effective-agent-config.sha256 # study/hermetic mode only
+treatment-diff.json           # study/hermetic mode only
+oracle.json                   # study/oracle mode only
 visible-terminal-transcript.txt # codex-tui mode only
 codex-tui-process-cleanup.json # codex-tui mode only
 ```

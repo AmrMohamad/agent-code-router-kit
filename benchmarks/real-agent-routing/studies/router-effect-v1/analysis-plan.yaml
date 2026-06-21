@@ -1,0 +1,14 @@
+primary_correctness: external_oracle_pass
+primary_context_metric: exact_uncached_input_tokens
+intention_to_treat: true
+pass_pass_sensitivity: true
+minimum_meaningful_uncached_input_reduction: 0.15
+correctness_noninferiority_margin: 0.05
+alpha: 0.05
+power: 0.80
+confidence_interval: 0.95
+cluster_unit: task_id
+continuous_effect: paired_log_ratio
+correctness_effect: paired_binary_mcnemar_or_bootstrap
+factorial_effects: semantic_access,routing_discipline,interaction
+multiple_comparison_correction: holm

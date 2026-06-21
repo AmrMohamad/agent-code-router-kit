@@ -186,6 +186,71 @@ clean detached git worktrees under the benchmark output directory, runs agents
 against those snapshots, and records both source and snapshot repo states in the
 manifest.
 
+## Router Effect V1 Study Mode
+
+Use `router-effect-v1` when the goal is a controlled Codex study rather than a
+smoke run. The study treats A/B/C/D as a hermetic `2x2` design:
+
+- semantic access off/on;
+- routing and summary discipline off/on.
+
+The runner enforces the study controls when `--study-plan` is present:
+
+- A/B/C/D arm coverage;
+- at least four repeats;
+- balanced Latin-square order;
+- clean detached snapshots;
+- fresh controlled Codex home per run;
+- isolated semantic-session configuration for C/D;
+- captured tool versions;
+- external task oracle artifacts;
+- model and reasoning-effort metadata.
+
+Example dry-run control check:
+
+```bash
+python3 scripts/benchmarks/run_real_agent_benchmark.py \
+  --dry-run \
+  --agent codex \
+  --repo /path/to/clean/ios-reference \
+  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference,portable_reference=/path/to/clean/portable-reference \
+  --tasks benchmarks/real-agent-routing/studies/router-effect-v1/pilot-tasks.tsv \
+  --task-oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
+  --study-plan benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml \
+  --arms A-search-only,B-search-summary,C-lsp-naive,D-full-router \
+  --repeats 4 \
+  --snapshot-repos \
+  --model-id '<exact-model-id>' \
+  --reasoning-effort '<fixed-effort>' \
+  --out results/real-agent-routing/router-effect-v1-dry-run
+```
+
+Audit the resulting package:
+
+```bash
+python3 scripts/benchmarks/audit_real_agent_study.py \
+  --root results/real-agent-routing/router-effect-v1-dry-run \
+  --out results/real-agent-routing/router-effect-v1-dry-run/study-audit.json
+```
+
+Analyze token/context effects:
+
+```bash
+python3 scripts/benchmarks/analyze_real_agent_study.py \
+  --root results/real-agent-routing/router-effect-v1-dry-run \
+  --metric exact_uncached_input_tokens \
+  --out results/real-agent-routing/router-effect-v1-dry-run/study-analysis.json
+```
+
+Build a public bundle only after verifying that private paths, prompts, source
+snippets, symbols, and transcripts are excluded:
+
+```bash
+python3 scripts/benchmarks/build_public_study_evidence.py \
+  --root results/real-agent-routing/router-effect-v1-dry-run \
+  --out benchmarks/real-agent-routing/evidence/router-effect-v1-sanitized
+```
+
 Gate any real benchmark claim with the readiness audit. For execution-readiness
 claims where controlled failures are expected data, use
 `--allow-controlled-failures` and omit `--require-all-pass`. For pass/pass

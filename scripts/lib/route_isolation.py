@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from scripts.lib.agent_session import AgentProfile, RouteProfile, to_json_file
+from scripts.lib.hermetic_agent_environment import HermeticAgentEnvironment
 
 
 SEARCH_ONLY_TOOL_NAMES = {
@@ -47,6 +48,15 @@ def _append_codex_exec_option(args: list[str], *items: str) -> None:
         if item not in args:
             args.insert(insert_at, item)
             insert_at += 1
+
+
+def _append_codex_exec_pair(args: list[str], option: str, value: str) -> None:
+    insert_at = args.index("-") if "-" in args else len(args)
+    for index in range(len(args) - 1):
+        if args[index] == option and args[index + 1] == value:
+            return
+    args.insert(insert_at, option)
+    args.insert(insert_at + 1, value)
 
 
 def _write_empty_mcp_config(run_dir: Path) -> Path:
@@ -96,6 +106,7 @@ def materialize_route_isolation(
     workspace_cwd: str | Path | None = None,
     probe_cursor_mcp: bool = False,
     terminal_mode: str | None = None,
+    hermetic_environment: HermeticAgentEnvironment | None = None,
 ) -> RouteIsolation:
     """Build the effective live invocation for a route arm.
 
@@ -128,7 +139,29 @@ def materialize_route_isolation(
         }
     )
 
-    if blocks_semantic:
+    if hermetic_environment is not None:
+        env.update(hermetic_environment.env)
+        weak_controls.extend(hermetic_environment.weak_controls)
+        config_files.extend(
+            [
+                str(out / "effective-agent-config.json"),
+                str(out / "effective-agent-config.sha256"),
+                str(out / "treatment-diff.json"),
+            ]
+        )
+        observations["effective_agent_config_sha256"] = hermetic_environment.effective_config_sha256
+        observations["semantic_access_enabled"] = hermetic_environment.semantic_access_enabled
+        observations["routing_discipline_enabled"] = hermetic_environment.routing_discipline_enabled
+        if agent_profile.agent_id == "codex" and terminal_mode == "codex-tui":
+            weak_controls.append("codex_tui_visible_mode_does_not_apply_hermetic_exec_config")
+        elif agent_profile.agent_id == "codex":
+            hard_controls.extend(hermetic_environment.hard_controls)
+            _append_codex_exec_option(args, "--ignore-user-config", "--ignore-rules", "--disable", "plugins")
+            for override in hermetic_environment.codex_config_overrides:
+                _append_codex_exec_pair(args, "-c", override)
+        else:
+            weak_controls.append("hermetic_agent_home_not_supported_for_agent")
+    elif blocks_semantic:
         env["RARB_SEMANTIC_TOOLS_DISABLED"] = "1"
         if agent_profile.agent_id == "codex" and terminal_mode == "codex-tui":
             weak_controls.append("codex_tui_visible_mode_does_not_apply_exec_hard_isolation")

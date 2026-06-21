@@ -119,6 +119,7 @@ For the complete setup guide and real-agent dry-run commands, see
 | Xcode proof layer | [`docs/swift-ios/xcode-plugin-proof-layer.md`](docs/swift-ios/xcode-plugin-proof-layer.md) |
 | Android/Kotlin operations | [`docs/android/android-benchmark-operations.md`](docs/android/android-benchmark-operations.md) |
 | Real-agent benchmark operations | [`docs/benchmarks/real-agent-routing-operations.md`](docs/benchmarks/real-agent-routing-operations.md) |
+| Router-effect confirmatory study | [`benchmarks/real-agent-routing/studies/router-effect-v1/`](benchmarks/real-agent-routing/studies/router-effect-v1/protocol.md) |
 | Real-agent interpretation | [`docs/benchmarks/interpreting-real-agent-results.md`](docs/benchmarks/interpreting-real-agent-results.md) |
 | Token measurement strategy | [`docs/benchmarks/token-measurement-strategy.md`](docs/benchmarks/token-measurement-strategy.md) |
 | Anonymized smoke evidence | [`benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized/`](benchmarks/real-agent-routing/evidence/codex-ad-smoke-anonymized/README.md) |
