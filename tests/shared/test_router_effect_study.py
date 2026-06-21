@@ -744,6 +744,30 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("treatment_diff_artifact", {issue["code"] for issue in missing_treatment_diff["issues"]})
             treatment_diffs_path.write_text(original_treatment_diffs, encoding="utf-8")
 
+            original_runs_text = runs_path.read_text(encoding="utf-8")
+            row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
+            first_route_path = Path(row_lines[0]["run_dir"]) / "route-isolation.json"
+            first_route = json.loads(first_route_path.read_text(encoding="utf-8"))
+            first_route_original = json.loads(json.dumps(first_route))
+            first_route["args"] = [arg for arg in first_route["args"] if arg != "--ignore-rules"]
+            first_route_path.write_text(json.dumps(first_route, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            missing_flag_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("route_isolation_invocation", {issue["code"] for issue in missing_flag_audit["issues"]})
+            first_route_path.write_text(json.dumps(first_route_original, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            semantic_row = next(row for row in row_lines if row["semantic_access_enabled"])
+            semantic_route_path = Path(semantic_row["run_dir"]) / "route-isolation.json"
+            semantic_route = json.loads(semantic_route_path.read_text(encoding="utf-8"))
+            semantic_route_original = json.loads(json.dumps(semantic_route))
+            semantic_route["args"] = [
+                "mcp_servers={}" if isinstance(arg, str) and arg.startswith("mcp_servers=") else arg
+                for arg in semantic_route["args"]
+            ]
+            semantic_route_path.write_text(json.dumps(semantic_route, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            missing_semantic_mcp = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("route_isolation_semantic_mcp", {issue["code"] for issue in missing_semantic_mcp["issues"]})
+            semantic_route_path.write_text(json.dumps(semantic_route_original, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             pricing = {
                 "model_id": "codex-test-model",
                 "input_per_1m": 2.0,
@@ -813,7 +837,6 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_package_hash_match", bad_plan_codes)
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-            original_runs_text = runs_path.read_text(encoding="utf-8")
             row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
             semantic_index = next(index for index, row in enumerate(row_lines) if row["semantic_access_enabled"])
             row_lines[semantic_index]["serena_readiness_status"] = "fail"

@@ -62,6 +62,20 @@ def config_for_row(row: dict[str, object]) -> dict[str, object] | None:
     return load_json(path)
 
 
+def route_isolation_for_row(row: dict[str, object]) -> dict[str, object] | None:
+    path = Path(str(row.get("run_dir", ""))) / "route-isolation.json"
+    if not path.exists():
+        return None
+    return load_json(path)
+
+
+def launch_plan_for_row(row: dict[str, object]) -> dict[str, object] | None:
+    path = Path(str(row.get("run_dir", ""))) / "launch-plan.json"
+    if not path.exists():
+        return None
+    return load_json(path)
+
+
 def semantic_session_for_row(row: dict[str, object]) -> dict[str, object] | None:
     artifact = str(row.get("semantic_session_artifact") or "semantic-session.json")
     path = Path(str(row.get("run_dir", ""))) / artifact
@@ -78,6 +92,36 @@ def process_state_is_zero(value: object, *, keys: tuple[str, ...] = SERENA_PROCE
         if isinstance(count, bool) or not isinstance(count, int) or count != 0:
             return False
     return True
+
+
+def has_arg_pair(args: list[str], option: str, value: str) -> bool:
+    for index in range(len(args) - 1):
+        if args[index] == option and args[index + 1] == value:
+            return True
+    return f"{option}={value}" in args
+
+
+def codex_config_overrides(args: list[str]) -> list[str]:
+    values: list[str] = []
+    for index, arg in enumerate(args):
+        if arg == "-c" and index + 1 < len(args):
+            values.append(args[index + 1])
+        elif arg.startswith("-c="):
+            values.append(arg.removeprefix("-c="))
+    return values
+
+
+def has_codex_config_override(args: list[str], prefix: str, required_substrings: tuple[str, ...] = ()) -> bool:
+    for value in codex_config_overrides(args):
+        if not value.startswith(prefix):
+            continue
+        if all(part in value for part in required_substrings):
+            return True
+    return False
+
+
+def has_disable_plugins(args: list[str]) -> bool:
+    return has_arg_pair(args, "--disable", "plugins")
 
 
 def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
@@ -618,6 +662,55 @@ def audit(
         required_hard = {"codex_fresh_home", "codex_auth_preserved", "codex_ignore_user_config", "codex_ignore_rules", "codex_plugins_disabled", "codex_controlled_mcp_servers"}
         if not isinstance(hard_controls, list) or not required_hard.issubset({str(item) for item in hard_controls}):
             add_issue(issues, "fail", "hard_route_controls", f"run {row.get('run_id')} lacks required hermetic Codex hard controls")
+        route_isolation = route_isolation_for_row(row)
+        launch_plan = launch_plan_for_row(row)
+        if route_isolation is None:
+            add_issue(issues, "fail", "route_isolation_artifact", f"run {row.get('run_id')} has no route-isolation.json")
+        else:
+            isolation_args = route_isolation.get("args")
+            isolation_env = route_isolation.get("env")
+            isolation_hard = route_isolation.get("hard_controls")
+            isolation_weak = route_isolation.get("weak_controls")
+            if not isinstance(isolation_args, list) or not all(isinstance(item, str) for item in isolation_args):
+                add_issue(issues, "fail", "route_isolation_invocation", f"run {row.get('run_id')} route isolation lacks argv")
+                isolation_args = []
+            if not isinstance(isolation_env, dict):
+                add_issue(issues, "fail", "route_isolation_invocation", f"run {row.get('run_id')} route isolation lacks env")
+                isolation_env = {}
+            if isolation_hard != row.get("route_hard_controls") or isolation_weak != row.get("route_weak_controls"):
+                add_issue(issues, "fail", "route_isolation_controls", f"run {row.get('run_id')} row controls differ from route-isolation artifact")
+            if route_isolation.get("mode") != row.get("route_isolation_mode"):
+                add_issue(issues, "fail", "route_isolation_mode", f"run {row.get('run_id')} row mode differs from route-isolation artifact")
+            if route_isolation.get("agent_id") != row.get("agent") or route_isolation.get("profile_id") != profile:
+                add_issue(issues, "fail", "route_isolation_identity", f"run {row.get('run_id')} route-isolation identity differs from row")
+            if row.get("agent") == "codex":
+                if "--ignore-user-config" not in isolation_args or "--ignore-rules" not in isolation_args or not has_disable_plugins(isolation_args):
+                    add_issue(issues, "fail", "route_isolation_invocation", f"run {row.get('run_id')} Codex argv lacks hermetic config/rules/plugin controls")
+                model_id = str(row.get("model_id", ""))
+                reasoning_effort = str(row.get("reasoning_effort", ""))
+                if model_id and not has_codex_config_override(isolation_args, f"model={json.dumps(model_id)}"):
+                    add_issue(issues, "fail", "route_isolation_model", f"run {row.get('run_id')} Codex argv does not pin model")
+                if reasoning_effort and not has_codex_config_override(isolation_args, f"model_reasoning_effort={json.dumps(reasoning_effort)}"):
+                    add_issue(issues, "fail", "route_isolation_reasoning", f"run {row.get('run_id')} Codex argv does not pin reasoning effort")
+                if factors.semantic_access_enabled:
+                    if not has_codex_config_override(isolation_args, "mcp_servers=", ("serena", "start-mcp-server", "stdio")):
+                        add_issue(issues, "fail", "route_isolation_semantic_mcp", f"run {row.get('run_id')} semantic arm lacks controlled Serena MCP override")
+                elif not has_codex_config_override(isolation_args, "mcp_servers={}"):
+                    add_issue(issues, "fail", "route_isolation_empty_mcp", f"run {row.get('run_id')} nonsemantic arm lacks empty MCP override")
+                if isolation_env.get("RARB_HERMETIC_AGENT_HOME") != "1":
+                    add_issue(issues, "fail", "route_isolation_env", f"run {row.get('run_id')} route isolation lacks hermetic home env marker")
+                if isolation_env.get("RARB_SEMANTIC_ACCESS_ENABLED") != ("1" if factors.semantic_access_enabled else "0"):
+                    add_issue(issues, "fail", "route_isolation_env", f"run {row.get('run_id')} semantic env marker differs from treatment factor")
+                if isolation_env.get("RARB_ROUTING_DISCIPLINE_ENABLED") != ("1" if factors.routing_discipline_enabled else "0"):
+                    add_issue(issues, "fail", "route_isolation_env", f"run {row.get('run_id')} routing env marker differs from treatment factor")
+        if launch_plan is None:
+            add_issue(issues, "fail", "launch_plan_artifact", f"run {row.get('run_id')} has no launch-plan.json")
+        elif route_isolation is not None:
+            command = launch_plan.get("command")
+            if not isinstance(command, list) or command != [route_isolation.get("command"), *(route_isolation.get("args") or [])]:
+                add_issue(issues, "fail", "launch_plan_invocation", f"run {row.get('run_id')} launch plan command differs from route isolation")
+            if launch_plan.get("env") != route_isolation.get("env"):
+                add_issue(issues, "fail", "launch_plan_env", f"run {row.get('run_id')} launch plan env differs from route isolation")
         if not row.get("agent_config_hash"):
             add_issue(issues, "fail", "agent_config_hash", f"run {row.get('run_id')} has no agent config hash")
         else:
