@@ -33,6 +33,12 @@ SYNTHETIC_TOOL_VERSIONS = {
     "codex": "codex-test 1.0",
     "serena": "serena-test 1.0",
     "sourcekit-lsp": "sourcekit-lsp-test 1.0",
+    "typescript-language-server": "typescript-language-server-test 1.0",
+    "node": "node-test 1.0",
+    "npm": "npm-test 1.0",
+    "pnpm": "pnpm-test 1.0",
+    "yarn": "yarn-test 1.0",
+    "tsc": "tsc-test 1.0",
     "kotlin-language-server": "kotlin-language-server-test 1.0",
     "vscode-json-languageserver": "json-language-server-test 1.0",
     "rg": "ripgrep-test 1.0",
@@ -139,6 +145,7 @@ def write_temp_study_plan(root: Path, *, confirmatory_tasks: Path, pilot_tasks: 
                 "require_prewarm_semantic_layer: true",
                 "require_clean_serena_process_state: true",
                 "require_capture_versions: true",
+                "require_web_tool_versions: true",
                 "require_explicit_reasoning_effort: true",
                 "require_external_oracles: true",
                 f"protocol_path: {protocol}",
@@ -232,6 +239,12 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                     "codex_version": SYNTHETIC_TOOL_VERSIONS["codex"],
                     "serena_version": SYNTHETIC_TOOL_VERSIONS["serena"],
                     "sourcekit_lsp_version": SYNTHETIC_TOOL_VERSIONS["sourcekit-lsp"],
+                    "typescript_language_server_version": SYNTHETIC_TOOL_VERSIONS["typescript-language-server"],
+                    "node_version": SYNTHETIC_TOOL_VERSIONS["node"],
+                    "npm_version": SYNTHETIC_TOOL_VERSIONS["npm"],
+                    "pnpm_version": SYNTHETIC_TOOL_VERSIONS["pnpm"],
+                    "yarn_version": SYNTHETIC_TOOL_VERSIONS["yarn"],
+                    "tsc_version": SYNTHETIC_TOOL_VERSIONS["tsc"],
                     "kotlin_language_server_version": SYNTHETIC_TOOL_VERSIONS["kotlin-language-server"],
                     "json_language_server_version": SYNTHETIC_TOOL_VERSIONS["vscode-json-languageserver"],
                     "rg_version": SYNTHETIC_TOOL_VERSIONS["rg"],
@@ -247,6 +260,7 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
             semantic_payload = json.loads(semantic_path.read_text(encoding="utf-8"))
             semantic_payload["language_server_versions"] = {
                 "sourcekit-lsp": SYNTHETIC_TOOL_VERSIONS["sourcekit-lsp"],
+                "typescript-language-server": SYNTHETIC_TOOL_VERSIONS["typescript-language-server"],
                 "kotlin-language-server": SYNTHETIC_TOOL_VERSIONS["kotlin-language-server"],
                 "vscode-json-languageserver": SYNTHETIC_TOOL_VERSIONS["vscode-json-languageserver"],
             }
@@ -524,6 +538,8 @@ class RouterEffectStudyTests(unittest.TestCase):
                 self.assertEqual(row["controller_commit"], manifest["controller_commit"])
                 self.assertEqual(row["controller_tree_hash"], manifest["controller_tree_hash"])
                 self.assertIn("codex_version", row)
+                self.assertIn("node_version", row)
+                self.assertIn("typescript_language_server_version", row)
                 self.assertRegex(row["source_commit"], r"^[0-9a-f]{40,64}$")
                 self.assertEqual(row["source_commit"], row["snapshot_commit"])
                 self.assertEqual(row["source_tree_hash"], row["snapshot_tree_hash"])
@@ -934,6 +950,27 @@ class RouterEffectStudyTests(unittest.TestCase):
             manifest_path.write_text(json.dumps(missing_tool_version_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             missing_tool_version = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("version_capture", {issue["code"] for issue in missing_tool_version["issues"]})
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            original_rows_text = (out / "runs.jsonl").read_text(encoding="utf-8")
+            web_rows = [json.loads(line) for line in original_rows_text.splitlines()]
+            for row in web_rows:
+                row["repo"] = "web_reference"
+                row["typescript_language_server_version"] = "not_available:FileNotFoundError"
+            (out / "runs.jsonl").write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in web_rows),
+                encoding="utf-8",
+            )
+            missing_web_tool_manifest = dict(manifest)
+            missing_web_tools = dict(manifest["tool_versions"])
+            missing_web_tools["typescript-language-server"] = "not_available:FileNotFoundError"
+            missing_web_tool_manifest["tool_versions"] = missing_web_tools
+            manifest_path.write_text(json.dumps(missing_web_tool_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            missing_web_tool = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            missing_web_tool_codes = {issue["code"] for issue in missing_web_tool["issues"]}
+            self.assertIn("version_capture", missing_web_tool_codes)
+            self.assertIn("web_tool_version", missing_web_tool_codes)
+            (out / "runs.jsonl").write_text(original_rows_text, encoding="utf-8")
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             dirty_controller_manifest = dict(manifest)
@@ -1554,6 +1591,12 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("serena_process_state_after", public_rows[0])
             self.assertIn("codex_version", public_rows[0])
             self.assertIn("sourcekit_lsp_version", public_rows[0])
+            self.assertIn("typescript_language_server_version", public_rows[0])
+            self.assertIn("node_version", public_rows[0])
+            self.assertIn("npm_version", public_rows[0])
+            self.assertIn("pnpm_version", public_rows[0])
+            self.assertIn("yarn_version", public_rows[0])
+            self.assertIn("tsc_version", public_rows[0])
             self.assertIn("rg_version", public_rows[0])
             self.assertIn("fd_version", public_rows[0])
             self.assertIn("ast_grep_version", public_rows[0])

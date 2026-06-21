@@ -189,6 +189,7 @@ def semantic_session_artifact(
 ) -> dict[str, object]:
     language_versions = {
         "sourcekit-lsp": tool_versions.get("sourcekit-lsp", ""),
+        "typescript-language-server": tool_versions.get("typescript-language-server", ""),
         "kotlin-language-server": tool_versions.get("kotlin-language-server", ""),
         "vscode-json-languageserver": tool_versions.get("vscode-json-languageserver", ""),
     }
@@ -1489,6 +1490,12 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 "codex_version": tool_versions.get("codex", ""),
                 "serena_version": tool_versions.get("serena", ""),
                 "sourcekit_lsp_version": tool_versions.get("sourcekit-lsp", ""),
+                "typescript_language_server_version": tool_versions.get("typescript-language-server", ""),
+                "node_version": tool_versions.get("node", ""),
+                "npm_version": tool_versions.get("npm", ""),
+                "pnpm_version": tool_versions.get("pnpm", ""),
+                "yarn_version": tool_versions.get("yarn", ""),
+                "tsc_version": tool_versions.get("tsc", ""),
                 "kotlin_language_server_version": tool_versions.get("kotlin-language-server", ""),
                 "json_language_server_version": tool_versions.get("vscode-json-languageserver", ""),
                 "rg_version": tool_versions.get("rg", ""),

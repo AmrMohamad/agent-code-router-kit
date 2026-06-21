@@ -11,7 +11,9 @@ Replication with other agents belongs in a separate protocol or study id.
 
 For a pinned Codex model and fixed tool versions, on preregistered tasks from
 clean repository snapshots, semantic access and routing discipline may change
-context use and correctness relative to controlled baselines.
+context use and correctness relative to controlled baselines. Because the study
+contains both Swift/iOS and web/frontend tasks, publishable runs must record the
+native semantic stack and the frontend runtime/semantic stack.
 
 ## Factorial Arms
 
@@ -111,7 +113,9 @@ Secondary outcomes:
 Every live row must include exact input, cached input, uncached input, output,
 total, uncached total, reasoning-output tokens, and a positive usage-event
 count. The audit rejects rows whose uncached and total fields are internally
-inconsistent.
+inconsistent. Web/frontend rows must also include usable Node, TypeScript
+language-server, and package-manager version metadata so frontend semantic
+access is not treated as an unpinned environment detail.
 
 Cost is a secondary outcome only, but confirmatory reports must still include an
 estimated-cost block from explicit pricing for the pinned model: uncached input,

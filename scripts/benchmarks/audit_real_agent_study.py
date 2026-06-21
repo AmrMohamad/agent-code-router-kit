@@ -32,6 +32,12 @@ TOOL_VERSION_FIELDS = [
     "codex_version",
     "serena_version",
     "sourcekit_lsp_version",
+    "typescript_language_server_version",
+    "node_version",
+    "npm_version",
+    "pnpm_version",
+    "yarn_version",
+    "tsc_version",
     "kotlin_language_server_version",
     "json_language_server_version",
     "rg_version",
@@ -56,6 +62,7 @@ CONFIRMATORY_REQUIRED_TOOL_VERSIONS = {
 
 LANGUAGE_SERVER_VERSION_FIELDS = {
     "sourcekit-lsp": "sourcekit_lsp_version",
+    "typescript-language-server": "typescript_language_server_version",
     "kotlin-language-server": "kotlin_language_server_version",
     "vscode-json-languageserver": "json_language_server_version",
 }
@@ -336,6 +343,21 @@ def usable_tool_version(value: object) -> bool:
     return bool(text) and not text.startswith("not_available") and not text.startswith("returncode:")
 
 
+def web_rows_present(rows: list[dict[str, object]]) -> bool:
+    return any("web" in str(row.get("repo", "")).lower() for row in rows)
+
+
+def web_tool_version_issues(tool_versions: dict[str, object]) -> list[str]:
+    missing: list[str] = []
+    if not usable_tool_version(tool_versions.get("node")):
+        missing.append("node")
+    if not usable_tool_version(tool_versions.get("typescript-language-server")):
+        missing.append("typescript-language-server")
+    if not any(usable_tool_version(tool_versions.get(name)) for name in ("npm", "pnpm", "yarn")):
+        missing.append("npm|pnpm|yarn")
+    return missing
+
+
 def current_response_contract_hash() -> str:
     if not RESPONSE_CONTRACT_PATH.is_file():
         return ""
@@ -531,6 +553,11 @@ def _study_plan_requires_block_snapshots(path: Path) -> bool:
     return plan.get("require_block_snapshots") is True
 
 
+def _study_plan_requires_web_tool_versions(path: Path) -> bool:
+    plan = load_simple_yaml(path)
+    return plan.get("require_web_tool_versions") is True
+
+
 def audit_confirmatory_matrix_completion(
     *,
     manifest: dict[str, object],
@@ -587,6 +614,8 @@ def audit_confirmatory_matrix_completion(
         return
     expected_repos = _study_plan_repository_labels(study_plan_path)
     observed_task_repos = {repo for repo, _task_id in expected_tasks}
+    if any("web" in repo.lower() for repo in observed_task_repos) and not _study_plan_requires_web_tool_versions(study_plan_path):
+        add_issue(issues, "fail", "confirmatory_web_tool_versions", "web study plan must preregister frontend tool-version capture")
     if expected_repos:
         unexpected_repos = sorted(observed_task_repos - expected_repos)
         if unexpected_repos:
@@ -870,6 +899,14 @@ def audit(
                     "version_capture",
                     f"confirmatory study lacks usable {tool_name} version metadata",
                 )
+        if web_rows_present(rows):
+            for tool_name in web_tool_version_issues(tool_versions):
+                add_issue(
+                    issues,
+                    "fail",
+                    "version_capture",
+                    f"confirmatory web study lacks usable {tool_name} version metadata",
+                )
     if manifest.get("model_id") in {"", "not_pinned", None}:
         add_issue(issues, "fail", "model_id", "study requires an exact pinned model id")
     if manifest.get("reasoning_effort") in {"", "default", None}:
@@ -1120,6 +1157,21 @@ def audit(
                 for _tool_name, field in CONFIRMATORY_REQUIRED_TOOL_VERSIONS.items():
                     if not usable_tool_version(row.get(field)):
                         add_issue(issues, "fail", field, f"live study run {row.get('run_id')} lacks usable {field}")
+                if "web" in str(row.get("repo", "")).lower():
+                    web_row_versions = {
+                        "node": row.get("node_version"),
+                        "typescript-language-server": row.get("typescript_language_server_version"),
+                        "npm": row.get("npm_version"),
+                        "pnpm": row.get("pnpm_version"),
+                        "yarn": row.get("yarn_version"),
+                    }
+                    for tool_name in web_tool_version_issues(web_row_versions):
+                        add_issue(
+                            issues,
+                            "fail",
+                            "web_tool_version",
+                            f"live web study run {row.get('run_id')} lacks usable {tool_name} version metadata",
+                        )
             if row.get("token_source") != "exact":
                 add_issue(issues, "fail", "exact_token_source", f"live study run {row.get('run_id')} is not exact-token sourced")
             exact_values = {field: exact_token_value(row, field) for field in EXACT_TOKEN_FIELDS}

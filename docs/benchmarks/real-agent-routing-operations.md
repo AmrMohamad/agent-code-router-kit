@@ -49,11 +49,16 @@ Dry-run mode validates the harness without launching a real agent:
 python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --dry-run \
   --agent codex \
-  --repo "$PWD" \
-  --tasks benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv \
-  --arms A-search-only,D-full-router \
-  --task-limit 3 \
-  --repeats 1 \
+  --repo /path/to/clean/ios-reference \
+  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference \
+  --tasks benchmarks/real-agent-routing/studies/router-effect-v1/pilot-tasks.tsv \
+  --task-oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
+  --study-plan benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml \
+  --arms A-search-only,B-search-summary,C-lsp-naive,D-full-router \
+  --repeats 4 \
+  --snapshot-repos \
+  --model-id '<exact-model-id>' \
+  --reasoning-effort '<fixed-effort>' \
   --out /tmp/agent-code-router-kit-rarb
 ```
 
@@ -93,14 +98,17 @@ Live mode is explicit:
 ```bash
 python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --live \
-  --agents codex,claude-code,cursor-agent \
-  --repo /path/to/clean/android-repo \
-  --repo-map sample_b2b_android=/path/to/clean/android-repo \
-  --tasks benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv \
-  --arms A-search-only,D-full-router \
-  --task-limit 1 \
-  --repeats 1 \
+  --agent codex \
+  --repo /path/to/clean/ios-reference \
+  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference \
+  --tasks benchmarks/real-agent-routing/studies/router-effect-v1/pilot-tasks.tsv \
+  --task-oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
+  --study-plan benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml \
+  --arms A-search-only,B-search-summary,C-lsp-naive,D-full-router \
+  --repeats 4 \
   --snapshot-repos \
+  --model-id '<exact-model-id>' \
+  --reasoning-effort '<fixed-effort>' \
   --out results/real-agent-routing/live-pilot
 ```
 
@@ -319,10 +327,12 @@ metric, `exact_uncached_input_tokens`.
 The confirmatory audit recomputes both artifacts from the current `runs.jsonl`;
 stale, hand-edited, or mismatched `study-analysis.json` and `study-power.json`
 files fail even when their schema is otherwise valid.
-Captured Codex, Serena, language-server, and OS versions must also be stable
-within each four-arm block. Row-level language-server fields must match the
-per-run `semantic-session.json` artifact, so stale semantic-session metadata
-cannot silently support a fixed-tooling claim.
+Captured Codex, Serena, language-server, frontend runtime, package-manager, and
+OS versions must also be stable within each four-arm block. Row-level
+language-server fields must match the per-run `semantic-session.json` artifact,
+so stale semantic-session metadata cannot silently support a fixed-tooling claim.
+For web/frontend rows, the confirmatory audit requires usable Node,
+TypeScript-language-server, and at least one package-manager version.
 Live confirmatory semantic-access rows must also show passed Serena readiness
 in both `runs.jsonl` and `semantic-session.json`, and include the
 `serena-readiness.json` artifact created before task execution. The manifest
@@ -461,21 +471,30 @@ when intentionally overriding the recorded task manifest.
 
 The benchmark package is sanitized and public-safe. It captures routing conclusions without private project names, raw private output, credentials, or organization-specific paths.
 
-Swift/iOS fixture results demonstrate that broad raw search can flood context, while grouped file/count summaries keep high-fanout work bounded. Android/Kotlin results demonstrate the same routing principle under Android-specific constraints: Gradle project model, generated sources, Android Studio indexing, emulator/runtime proof, and Serena/Kotlin LSP process lifecycle must stay separate proof layers.
+The current `router-effect-v1` study fixtures are scoped to Swift/iOS and
+web/frontend repositories. They demonstrate the routing principle under native
+app and frontend constraints: broad raw search can flood context, grouped
+file/count summaries keep high-fanout work bounded, semantic identity belongs to
+SourceKit-LSP or Serena-backed symbol tools when applicable, and build/runtime
+truth remains a separate proof layer.
 
 Core routing rule:
 
 ```text
 Known Swift symbol       -> SourceKit-LSP / Serena first
-Known Kotlin/Java symbol -> Serena / Kotlin or Java LSP first, after readiness smoke
+Known web symbol         -> Serena or language-aware symbol tools first
 High-fanout symbol       -> grouped summaries/counts first
 Literal/resource         -> rg/fd first
 GraphQL/generated        -> GraphQL/discovery/build mapping first, then semantic symbol proof if concrete
 Structural pattern       -> ast-grep first
-Build/runtime truth      -> Xcode, Android Studio, Gradle, emulator/device, CI, or plugin proof
+Build/runtime truth      -> Xcode, browser/runtime, CI, or plugin proof
 ```
 
-Android operational gates are intentionally conservative. A passing build/install/launch smoke proves only build/runtime smoke, not business-flow correctness. Empty Serena references are treated as a named semantic disagreement when Android Studio usages returns real locations; the policy then records which layer is trusted for that pattern instead of silently accepting either result.
+The study gates are intentionally conservative. A passing build, launch, or
+browser/runtime smoke proves only that proof layer, not business-flow
+correctness. Empty semantic references are treated as named disagreements when a
+different proof layer returns real locations; the policy records which layer is
+trusted for that pattern instead of silently accepting either result.
 
 ## Proof Boundaries
 
@@ -484,7 +503,7 @@ This toolkit does not claim that:
 - LSP proves runtime behavior;
 - `rg` proves all real symbol references;
 - `ast-grep` proves types;
-- Xcode/Android Studio/Gradle/build output replaces semantic navigation;
+- Xcode, browser/runtime, CI, or build output replaces semantic navigation;
 - generated files, XIB/storyboard, localization, and resource behavior are fully semantic;
 - future agent behavior will always follow the policy without instruction.
 
