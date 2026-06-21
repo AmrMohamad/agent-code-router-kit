@@ -374,6 +374,111 @@ def audit_confirmatory_oracle_plan(*, manifest: dict[str, object], issues: list[
         )
 
 
+def _study_plan_arms_and_repeats(path: Path) -> tuple[list[str], int]:
+    plan = load_simple_yaml(path)
+    arms = [item.strip() for item in str(plan.get("arms", ",".join(FACTORIAL_ARM_ORDER))).split(",") if item.strip()]
+    minimum_repeats = int(plan.get("minimum_repeats", 4))
+    return arms, minimum_repeats
+
+
+def audit_confirmatory_matrix_completion(
+    *,
+    manifest: dict[str, object],
+    rows: list[dict[str, object]],
+    issues: list[dict[str, object]],
+) -> None:
+    package = manifest.get("study_package")
+    if not isinstance(package, dict):
+        return
+    task_manifest_path = Path(str(package.get("task_manifest_path", "")))
+    study_plan_path = Path(str(package.get("study_plan_path", "")))
+    if not task_manifest_path.exists() or not study_plan_path.exists():
+        add_issue(issues, "fail", "confirmatory_matrix_files", "confirmatory matrix audit requires readable study plan and task manifest")
+        return
+    try:
+        expected_arms, minimum_repeats = _study_plan_arms_and_repeats(study_plan_path)
+    except (TypeError, ValueError, OSError) as exc:
+        add_issue(issues, "fail", "confirmatory_matrix_plan", f"could not load study plan arms/repeats: {exc}")
+        return
+    if expected_arms != FACTORIAL_ARM_ORDER:
+        add_issue(issues, "fail", "confirmatory_matrix_arms", "confirmatory matrix requires the preregistered A/B/C/D arm order")
+    declared_repeats = manifest.get("repeats")
+    if isinstance(declared_repeats, bool) or not isinstance(declared_repeats, int):
+        add_issue(issues, "fail", "confirmatory_repeats", "manifest must record an integer repeat count")
+        repeat_count = minimum_repeats
+    else:
+        if declared_repeats < minimum_repeats:
+            add_issue(issues, "fail", "confirmatory_repeats", "manifest repeat count is below the preregistered minimum")
+        repeat_count = max(declared_repeats, minimum_repeats)
+    agents_value = manifest.get("agents")
+    if isinstance(agents_value, list) and agents_value and all(isinstance(item, str) and item for item in agents_value):
+        expected_agents = sorted(set(str(item) for item in agents_value))
+    elif isinstance(manifest.get("agent"), str) and manifest.get("agent"):
+        expected_agents = [str(manifest.get("agent"))]
+    else:
+        add_issue(issues, "fail", "confirmatory_matrix_agents", "manifest must record the expected study agent(s)")
+        return
+    expected_tasks = sorted({(str(task.repo), str(task.task_id)) for task in load_tasks(task_manifest_path)})
+    if not expected_tasks:
+        add_issue(issues, "fail", "confirmatory_matrix_tasks", "frozen confirmatory task manifest has no tasks")
+        return
+
+    observed_counts: Counter[tuple[str, str, str, str, int]] = Counter()
+    unexpected_cells: list[tuple[str, str, str, str, object]] = []
+    expected_task_set = set(expected_tasks)
+    expected_arm_set = set(expected_arms)
+    expected_agent_set = set(expected_agents)
+    for row in rows:
+        repeat = row.get("repeat_index")
+        agent = str(row.get("agent", ""))
+        repo = str(row.get("repo", ""))
+        task_id = str(row.get("task_id", ""))
+        profile = str(row.get("profile", ""))
+        if (
+            agent not in expected_agent_set
+            or (repo, task_id) not in expected_task_set
+            or profile not in expected_arm_set
+            or isinstance(repeat, bool)
+            or not isinstance(repeat, int)
+            or repeat < 0
+            or repeat >= repeat_count
+        ):
+            unexpected_cells.append((agent, repo, task_id, profile, repeat))
+            continue
+        observed_counts[(agent, repo, task_id, profile, repeat)] += 1
+
+    missing: list[tuple[str, str, str, str, int]] = []
+    duplicates: list[tuple[str, str, str, str, int, int]] = []
+    for agent in expected_agents:
+        for repo, task_id in expected_tasks:
+            for profile in expected_arms:
+                for repeat in range(repeat_count):
+                    key = (agent, repo, task_id, profile, repeat)
+                    count = observed_counts[key]
+                    if count == 0:
+                        missing.append(key)
+                    elif count > 1:
+                        duplicates.append((*key, count))
+
+    expected_cell_count = len(expected_agents) * len(expected_tasks) * len(expected_arms) * repeat_count
+    if len(rows) != expected_cell_count:
+        add_issue(
+            issues,
+            "fail",
+            "confirmatory_matrix_cell_count",
+            f"confirmatory matrix expected {expected_cell_count} rows; observed {len(rows)}",
+        )
+    if missing:
+        examples = ["%s/%s/%s/%s/%s" % item for item in missing[:8]]
+        add_issue(issues, "fail", "confirmatory_matrix_missing", "missing preregistered cells: " + ",".join(examples))
+    if duplicates:
+        examples = ["%s/%s/%s/%s/%s(count=%s)" % item for item in duplicates[:8]]
+        add_issue(issues, "fail", "confirmatory_matrix_duplicate", "duplicate preregistered cells: " + ",".join(examples))
+    if unexpected_cells:
+        examples = ["%s/%s/%s/%s/%s" % item for item in unexpected_cells[:8]]
+        add_issue(issues, "fail", "confirmatory_matrix_unexpected", "unexpected non-preregistered cells: " + ",".join(examples))
+
+
 def _plan_bool(plan: dict[str, object], key: str) -> bool | None:
     value = plan.get(key)
     if isinstance(value, bool):
@@ -589,6 +694,7 @@ def audit(
     if confirmatory:
         audit_confirmatory_study_package(manifest=manifest, rows=rows, issues=issues)
         audit_confirmatory_oracle_plan(manifest=manifest, issues=issues)
+        audit_confirmatory_matrix_completion(manifest=manifest, rows=rows, issues=issues)
         audit_confirmatory_analysis_plan(manifest=manifest, issues=issues)
         audit_confirmatory_controller_provenance(manifest=manifest, rows=rows, issues=issues)
         audit_confirmatory_rerun_policy(manifest=manifest, issues=issues)

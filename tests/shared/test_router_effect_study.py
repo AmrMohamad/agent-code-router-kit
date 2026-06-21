@@ -726,6 +726,20 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_power_consistency", {issue["code"] for issue in stale_power_audit["issues"]})
             (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            original_runs_text = runs_path.read_text(encoding="utf-8")
+            row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
+            runs_path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in row_lines[:-1]), encoding="utf-8")
+            missing_matrix = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            missing_matrix_codes = {issue["code"] for issue in missing_matrix["issues"]}
+            self.assertIn("confirmatory_matrix_cell_count", missing_matrix_codes)
+            self.assertIn("confirmatory_matrix_missing", missing_matrix_codes)
+            runs_path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in [*row_lines, row_lines[0]]), encoding="utf-8")
+            duplicate_matrix = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            duplicate_matrix_codes = {issue["code"] for issue in duplicate_matrix["issues"]}
+            self.assertIn("confirmatory_matrix_cell_count", duplicate_matrix_codes)
+            self.assertIn("confirmatory_matrix_duplicate", duplicate_matrix_codes)
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
             treatment_diffs_path = out / "treatment-diffs.jsonl"
             original_treatment_diffs = treatment_diffs_path.read_text(encoding="utf-8")
             treatment_diff_rows = [json.loads(line) for line in original_treatment_diffs.splitlines()]
@@ -744,7 +758,6 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("treatment_diff_artifact", {issue["code"] for issue in missing_treatment_diff["issues"]})
             treatment_diffs_path.write_text(original_treatment_diffs, encoding="utf-8")
 
-            original_runs_text = runs_path.read_text(encoding="utf-8")
             row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
             first_route_path = Path(row_lines[0]["run_dir"]) / "route-isolation.json"
             first_route = json.loads(first_route_path.read_text(encoding="utf-8"))
