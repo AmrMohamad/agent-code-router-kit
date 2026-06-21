@@ -1072,6 +1072,21 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 dynamic_target = target.to_dict()
                 run_task = materialize_task_for_symbol(task, target)
                 to_json_file(run_dir / "dynamic-task-target.json", dynamic_target)
+        response_contract_path = ROOT / "benchmarks" / "real-agent-routing" / "contracts" / "response-contract.md"
+        response_contract_hash = text_sha256(response_contract_path.read_text(encoding="utf-8"))
+        hermetic_environment = None
+        if args.isolated_agent_home:
+            hermetic_environment = materialize_hermetic_agent_environment(
+                agent_profile=agent_profile,
+                route_profile=effective_profile,
+                run_dir=run_dir,
+                repo_path=task_repo_path,
+                model_id=args.model_id,
+                reasoning_effort=args.reasoning_effort,
+                sandbox=args.sandbox,
+                timeout_seconds=min(args.timeout, task.timeout_seconds),
+                response_contract=response_contract_hash,
+            )
         serena_readiness: dict[str, object] | None = None
         semantic_setup_seconds = 0.0
         if (
@@ -1087,6 +1102,8 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 source_symbol=str(dynamic_target["symbol"]) if dynamic_target else None,
                 source_file=str(dynamic_target["source_file"]) if dynamic_target else None,
                 timeout_seconds=args.serena_readiness_timeout,
+                env=hermetic_environment.semantic_env if hermetic_environment else None,
+                semantic_session_home=hermetic_environment.semantic_session_home if hermetic_environment else None,
             )
             semantic_setup_seconds = time.monotonic() - semantic_setup_started
             write_serena_readiness(run_dir / "serena-readiness.json", readiness)
@@ -1108,21 +1125,6 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             serena_readiness=serena_readiness,
         )
         (run_dir / "task-packet.md").write_text(prompt, encoding="utf-8")
-        response_contract_path = ROOT / "benchmarks" / "real-agent-routing" / "contracts" / "response-contract.md"
-        response_contract_hash = text_sha256(response_contract_path.read_text(encoding="utf-8"))
-        hermetic_environment = None
-        if args.isolated_agent_home:
-            hermetic_environment = materialize_hermetic_agent_environment(
-                agent_profile=agent_profile,
-                route_profile=effective_profile,
-                run_dir=run_dir,
-                repo_path=task_repo_path,
-                model_id=args.model_id,
-                reasoning_effort=args.reasoning_effort,
-                sandbox=args.sandbox,
-                timeout_seconds=min(args.timeout, task.timeout_seconds),
-                response_contract=response_contract_hash,
-            )
         isolation = materialize_route_isolation(
             agent_profile=agent_profile,
             route_profile=effective_profile,

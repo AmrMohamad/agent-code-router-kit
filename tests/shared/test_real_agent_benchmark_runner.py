@@ -41,6 +41,13 @@ def make_git_repo(path: Path) -> None:
     subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
+def fake_codex_home(path: Path) -> Path:
+    home = path / "fake-codex-home"
+    home.mkdir()
+    (home / "auth.json").write_text('{"mode":"test"}\n', encoding="utf-8")
+    return home
+
+
 def write_one_task(path: Path) -> None:
     path.write_text(
         "task_id\ttask_family\trepo\tprompt\troute_profiles\tedit_allowed\tbuild_allowed\texpected_proof_layer\texpected_success_signal\tforbidden_claims\ttimeout_seconds\n"
@@ -588,22 +595,26 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
             source.write_text("package com.example\n\nclass RandomRealViewModel\n", encoding="utf-8")
             tasks = Path(tmp) / "tasks.tsv"
             write_full_router_task(tasks)
-            readiness = SerenaReadiness(
-                status="fail",
-                ready=False,
-                created_at="2026-06-01T00:00:00Z",
-                repo=str(repo),
-                symbol="SampleFeatureViewModel",
-                source_file="",
-                command=["serena", "project", "index-file"],
-                returncode=1,
-                stdout_tail="",
-                stderr_tail="language server manager is not initialized",
-                process_state=SerenaProcessState(serena_mcp=3, kotlin_lsp=2, json_lsp=0),
-                warnings=["multiple_serena_mcp_processes", "multiple_kotlin_lsp_processes"],
-                reason="language_server_manager_not_initialized",
-                next_action="restart stale Serena sessions",
-            )
+            def readiness_side_effect(**kwargs):
+                return SerenaReadiness(
+                    status="fail",
+                    ready=False,
+                    created_at="2026-06-01T00:00:00Z",
+                    repo=str(repo),
+                    symbol="SampleFeatureViewModel",
+                    source_file="",
+                    command=["serena", "project", "index-file"],
+                    returncode=1,
+                    stdout_tail="",
+                    stderr_tail="language server manager is not initialized",
+                    process_state=SerenaProcessState(serena_mcp=3, kotlin_lsp=2, json_lsp=0),
+                    warnings=["multiple_serena_mcp_processes", "multiple_kotlin_lsp_processes"],
+                    reason="language_server_manager_not_initialized",
+                    next_action="restart stale Serena sessions",
+                    semantic_session_home=str(Path(kwargs["semantic_session_home"]).resolve()),
+                    isolated_env_keys=sorted(kwargs["env"]),
+                )
+
             isolation = RouteIsolation(
                 agent_id="codex",
                 profile_id="D-full-router",
@@ -618,10 +629,11 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
             )
 
             with (
+                mock.patch.dict("os.environ", {"CODEX_HOME": str(fake_codex_home(Path(tmp)))}),
                 mock.patch("scripts.benchmarks.run_real_agent_benchmark.shutil.which", return_value="/usr/bin/codex"),
                 mock.patch(
                     "scripts.benchmarks.run_real_agent_benchmark.run_serena_source_symbol_readiness",
-                    return_value=readiness,
+                    side_effect=readiness_side_effect,
                 ) as readiness_mock,
                 mock.patch("scripts.benchmarks.run_real_agent_benchmark.materialize_route_isolation", return_value=isolation),
                 mock.patch("scripts.benchmarks.run_real_agent_benchmark.TerminalAgentBridge", FakeBridge),
@@ -643,6 +655,7 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
                         "--task-limit",
                         "1",
                         "--allow-dirty",
+                        "--isolated-agent-home",
                         "--out",
                         str(Path(tmp) / "out"),
                     ]
@@ -651,6 +664,12 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
             self.assertEqual(code, 0)
             readiness_mock.assert_called_once()
             self.assertEqual(readiness_mock.call_args.kwargs["source_symbol"], "RandomRealViewModel")
+            readiness_env = readiness_mock.call_args.kwargs["env"]
+            self.assertIsInstance(readiness_env, dict)
+            for key in ("RARB_SERENA_SESSION_HOME", "SERENA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"):
+                self.assertIn(key, readiness_env)
+            readiness_session_home = readiness_mock.call_args.kwargs["semantic_session_home"]
+            self.assertTrue(Path(readiness_session_home).resolve().is_relative_to((Path(tmp) / "out").resolve()))
             out = Path(tmp) / "out"
             row = json.loads((out / "runs.jsonl").read_text(encoding="utf-8").splitlines()[0])
             run_dir = Path(row["run_dir"])
@@ -660,7 +679,9 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
             self.assertFalse(row["serena_readiness_ready"])
             self.assertEqual(row["serena_readiness_reason"], "language_server_manager_not_initialized")
             self.assertIn("multiple_serena_mcp_processes", row["serena_readiness_warnings"])
-            self.assertTrue((run_dir / "serena-readiness.json").exists())
+            readiness_payload = json.loads((run_dir / "serena-readiness.json").read_text(encoding="utf-8"))
+            self.assertEqual(readiness_payload["semantic_session_home"], str(Path(readiness_session_home).resolve()))
+            self.assertEqual(readiness_payload["isolated_env_keys"], sorted(readiness_env))
             self.assertTrue((run_dir / "dynamic-task-target.json").exists())
             self.assertIn("Ready: false", (run_dir / "task-packet.md").read_text(encoding="utf-8"))
             self.assertIn("Find RandomRealViewModel", (run_dir / "task-packet.md").read_text(encoding="utf-8"))

@@ -41,6 +41,7 @@ class HermeticAgentEnvironment:
     reasoning_effort: str
     sandbox: str
     codex_config_overrides: list[str]
+    semantic_env: dict[str, str]
     env: dict[str, str]
     effective_config: dict[str, object]
     effective_config_sha256: str
@@ -49,8 +50,18 @@ class HermeticAgentEnvironment:
     weak_controls: list[str]
 
 
-def serena_mcp_config(*, repo_path: str | Path, semantic_home: str | Path) -> dict[str, object]:
+def serena_session_env(*, semantic_home: str | Path) -> dict[str, str]:
     semantic_root = Path(semantic_home).resolve()
+    return {
+        "RARB_SERENA_SESSION_HOME": str(semantic_root),
+        "SERENA_HOME": str(semantic_root / "home"),
+        "XDG_CONFIG_HOME": str(semantic_root / "xdg-config"),
+        "XDG_CACHE_HOME": str(semantic_root / "xdg-cache"),
+        "XDG_DATA_HOME": str(semantic_root / "xdg-data"),
+    }
+
+
+def serena_mcp_config(*, repo_path: str | Path, semantic_home: str | Path) -> dict[str, object]:
     return {
         "command": "serena",
         "args": [
@@ -67,13 +78,7 @@ def serena_mcp_config(*, repo_path: str | Path, semantic_home: str | Path) -> di
             "--enable-gui-log-window",
             "false",
         ],
-        "env": {
-            "RARB_SERENA_SESSION_HOME": str(semantic_root),
-            "SERENA_HOME": str(semantic_root / "home"),
-            "XDG_CONFIG_HOME": str(semantic_root / "xdg-config"),
-            "XDG_CACHE_HOME": str(semantic_root / "xdg-cache"),
-            "XDG_DATA_HOME": str(semantic_root / "xdg-data"),
-        },
+        "env": serena_session_env(semantic_home=semantic_home),
         "startup_timeout_sec": 30,
         "tool_timeout_sec": 120,
     }
@@ -115,6 +120,7 @@ def materialize_hermetic_agent_environment(
     auth_files_copied = copy_codex_auth_files(codex_home=codex_home) if agent_profile.agent_id == "codex" else []
     runtime_mcp_servers: dict[str, object] = {}
     normalized_mcp_servers: dict[str, object] = {}
+    semantic_env = serena_session_env(semantic_home=semantic_home) if factors.semantic_access_enabled else {}
     if factors.semantic_access_enabled:
         runtime_mcp_servers["serena"] = serena_mcp_config(repo_path=repo_path, semantic_home=semantic_home)
         normalized_mcp_servers["serena"] = {
@@ -192,6 +198,7 @@ def materialize_hermetic_agent_environment(
         reasoning_effort=reasoning_effort,
         sandbox=sandbox,
         codex_config_overrides=config_overrides,
+        semantic_env=semantic_env,
         env={
             "CODEX_HOME": str(codex_home.resolve()),
             "RARB_HERMETIC_AGENT_HOME": "1",

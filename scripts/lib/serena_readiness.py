@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import signal
 import subprocess
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from scripts.lib.agent_session import to_json_file, utc_now
@@ -72,6 +73,8 @@ class SerenaReadiness:
     warnings: list[str]
     reason: str
     next_action: str
+    semantic_session_home: str = ""
+    isolated_env_keys: list[str] = field(default_factory=list)
 
 
 def count_processes(pattern: str) -> int:
@@ -510,10 +513,16 @@ def run_serena_source_symbol_readiness(
     source_symbol: str | None = None,
     source_file: str | None = None,
     timeout_seconds: int = 90,
+    env: dict[str, str] | None = None,
+    semantic_session_home: str | Path | None = None,
 ) -> SerenaReadiness:
     repo_path = Path(repo).expanduser().resolve()
     process_state = serena_process_state()
     warnings = serena_process_state_warnings(process_state)
+    readiness_env = dict(env or {})
+    readiness_env_keys = sorted(readiness_env)
+    readiness_command_env = {**os.environ, **readiness_env} if readiness_env else None
+    semantic_home_text = str(Path(semantic_session_home).expanduser().resolve()) if semantic_session_home else ""
 
     symbol = source_symbol or extract_source_symbol(prompt)
     if not shutil.which("serena"):
@@ -532,6 +541,8 @@ def run_serena_source_symbol_readiness(
             warnings=warnings,
             reason="serena_not_found",
             next_action="install Serena or fix PATH before full-router semantic runs",
+            semantic_session_home=semantic_home_text,
+            isolated_env_keys=readiness_env_keys,
         )
     selected_file = source_file or ""
     if not selected_file:
@@ -553,6 +564,8 @@ def run_serena_source_symbol_readiness(
             warnings=warnings,
             reason="source_symbol_or_file_not_resolved",
             next_action="provide a known source symbol/file in a supported source file for Serena readiness smoke",
+            semantic_session_home=semantic_home_text,
+            isolated_env_keys=readiness_env_keys,
         )
     command = ["serena", "project", "index-file", selected_file, str(repo_path), "--verbose"]
     try:
@@ -564,6 +577,7 @@ def run_serena_source_symbol_readiness(
             stderr=subprocess.PIPE,
             timeout=timeout_seconds,
             check=False,
+            env=readiness_command_env,
         )
         status, ready, reason, next_action = classify_index_output(
             symbol=symbol,
@@ -587,6 +601,8 @@ def run_serena_source_symbol_readiness(
             warnings=warnings,
             reason=reason,
             next_action=next_action,
+            semantic_session_home=semantic_home_text,
+            isolated_env_keys=readiness_env_keys,
         )
     except subprocess.TimeoutExpired as exc:
         return SerenaReadiness(
@@ -603,7 +619,9 @@ def run_serena_source_symbol_readiness(
             process_state=process_state,
             warnings=warnings,
             reason="timeout",
-            next_action="increase readiness timeout or inspect Kotlin LSP startup logs",
+            next_action="increase readiness timeout or inspect project language-server startup logs",
+            semantic_session_home=semantic_home_text,
+            isolated_env_keys=readiness_env_keys,
         )
 
 

@@ -963,6 +963,15 @@ def audit(
                     readiness_path = Path(str(row.get("run_dir", ""))) / "serena-readiness.json"
                     if not readiness_path.exists():
                         add_issue(issues, "fail", "semantic_readiness_artifact", f"run {row.get('run_id')} has no serena-readiness.json")
+                    else:
+                        readiness_payload = load_json(readiness_path)
+                        readiness_env_keys = {str(item) for item in readiness_payload.get("isolated_env_keys", []) or []}
+                        if readiness_payload.get("status") != "pass" or readiness_payload.get("ready") is not True:
+                            add_issue(issues, "fail", "semantic_readiness_artifact", f"run {row.get('run_id')} readiness artifact did not pass")
+                        if str(readiness_payload.get("semantic_session_home", "")) != semantic_home:
+                            add_issue(issues, "fail", "semantic_readiness_isolation", f"run {row.get('run_id')} readiness used a different semantic session home")
+                        if required_env_keys - readiness_env_keys:
+                            add_issue(issues, "fail", "semantic_readiness_isolation", f"run {row.get('run_id')} readiness lacks isolated semantic env keys")
             else:
                 if semantic_session.get("mode") != "disabled" or semantic_session.get("mcp_server_configured") is not False:
                     add_issue(issues, "fail", "semantic_session_disabled", f"run {row.get('run_id')} search-only semantic session is not disabled")

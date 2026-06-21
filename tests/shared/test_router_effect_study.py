@@ -152,6 +152,8 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
             )
             if row["semantic_access_enabled"]:
                 run_dir = Path(row["run_dir"])
+                semantic_path = run_dir / "semantic-session.json"
+                semantic_payload = json.loads(semantic_path.read_text(encoding="utf-8"))
                 readiness = {
                     "status": "pass",
                     "ready": True,
@@ -159,13 +161,13 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                     "symbol": "StudySymbol",
                     "source_file": "Sources/StudySymbol.swift",
                     "warnings": [],
+                    "semantic_session_home": semantic_payload["semantic_session_home"],
+                    "isolated_env_keys": sorted(semantic_payload["mcp_env_keys"]),
                 }
                 (run_dir / "serena-readiness.json").write_text(
                     json.dumps(readiness, indent=2, sort_keys=True) + "\n",
                     encoding="utf-8",
                 )
-                semantic_path = run_dir / "semantic-session.json"
-                semantic_payload = json.loads(semantic_path.read_text(encoding="utf-8"))
                 semantic_payload["readiness_status"] = "pass"
                 semantic_payload["readiness_ready"] = True
                 semantic_payload["lifecycle_owner"] = "codex_subprocess_stdio"
@@ -872,6 +874,20 @@ class RouterEffectStudyTests(unittest.TestCase):
             semantic_path.write_text(json.dumps(original_semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             readiness_path.write_text(readiness_text, encoding="utf-8")
             runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            readiness_payload = json.loads(readiness_text)
+            readiness_payload["semantic_session_home"] = str(Path(row_lines[semantic_index]["run_dir"]) / "wrong-serena-session")
+            readiness_path.write_text(json.dumps(readiness_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            readiness_home_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("semantic_readiness_isolation", {issue["code"] for issue in readiness_home_audit["issues"]})
+            readiness_path.write_text(readiness_text, encoding="utf-8")
+
+            readiness_payload = json.loads(readiness_text)
+            readiness_payload["isolated_env_keys"] = ["SERENA_HOME"]
+            readiness_path.write_text(json.dumps(readiness_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            readiness_env_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("semantic_readiness_isolation", {issue["code"] for issue in readiness_env_audit["issues"]})
+            readiness_path.write_text(readiness_text, encoding="utf-8")
 
             row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
             semantic_index = next(index for index, row in enumerate(row_lines) if row["semantic_access_enabled"])
