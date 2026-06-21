@@ -181,10 +181,12 @@ benchmark failures. They are valid live outcomes for execution coverage and
 failure-rate reporting, but they are not correctness passes and cannot support
 route-savings claims.
 
-Use `--snapshot-repos` when source repos have unrelated local edits. It creates
-clean detached git worktrees under the benchmark output directory, runs agents
-against those snapshots, and records both source and snapshot repo states in the
-manifest.
+Use `--snapshot-repos` when source repos have unrelated local edits. Outside
+study mode this creates clean detached git worktrees under the benchmark output
+directory, runs agents against those repository snapshots, and records both
+source and snapshot repo states in the manifest. With `router-effect-v1`, the
+study plan upgrades this to block-scoped snapshots: every `(agent, task,
+repository, repeat)` block gets one detached worktree shared by its four arms.
 
 ## Router Effect V1 Study Mode
 
@@ -199,7 +201,7 @@ The runner enforces the study controls when `--study-plan` is present:
 - A/B/C/D arm coverage;
 - at least four repeats;
 - balanced Latin-square order;
-- clean detached snapshots;
+- clean detached snapshots, block-scoped by task/repository/repeat;
 - fresh controlled Codex home per run;
 - isolated semantic-session configuration for C/D;
 - per-run `semantic-session.json` artifacts proving semantic access is either
@@ -229,7 +231,7 @@ python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --dry-run \
   --agent codex \
   --repo /path/to/clean/ios-reference \
-  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference,portable_reference=/path/to/clean/portable-reference \
+  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference \
   --tasks benchmarks/real-agent-routing/studies/router-effect-v1/pilot-tasks.tsv \
   --task-oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
   --study-plan benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml \
