@@ -358,6 +358,20 @@ def manifest_repo_state(manifest: dict[str, object], key: str, field: str) -> di
     return value if isinstance(value, dict) else {}
 
 
+def manifest_snapshot_state(manifest: dict[str, object], row: dict[str, object]) -> dict[str, object]:
+    payload = manifest.get("repo_snapshots")
+    if not isinstance(payload, dict):
+        return {}
+    snapshot_key = str(row.get("snapshot_key", ""))
+    if snapshot_key:
+        value = payload.get(snapshot_key)
+        if isinstance(value, dict):
+            return value
+    repo_key = str(row.get("repo", "")) or "default"
+    value = payload.get(repo_key) or payload.get("default")
+    return value if isinstance(value, dict) else {}
+
+
 def path_is_under(path: str, parent: str) -> bool:
     try:
         Path(path).resolve().relative_to(Path(parent).resolve())
@@ -512,6 +526,11 @@ def _study_plan_agents(path: Path) -> list[str]:
     return sorted({item.strip() for item in str(raw).split(",") if item.strip()})
 
 
+def _study_plan_requires_block_snapshots(path: Path) -> bool:
+    plan = load_simple_yaml(path)
+    return plan.get("require_block_snapshots") is True
+
+
 def audit_confirmatory_matrix_completion(
     *,
     manifest: dict[str, object],
@@ -533,6 +552,8 @@ def audit_confirmatory_matrix_completion(
         return
     if expected_arms != FACTORIAL_ARM_ORDER:
         add_issue(issues, "fail", "confirmatory_matrix_arms", "confirmatory matrix requires the preregistered A/B/C/D arm order")
+    if not _study_plan_requires_block_snapshots(study_plan_path):
+        add_issue(issues, "fail", "confirmatory_block_snapshots", "study plan must preregister block-scoped repository snapshots")
     declared_repeats = manifest.get("repeats")
     if isinstance(declared_repeats, bool) or not isinstance(declared_repeats, int):
         add_issue(issues, "fail", "confirmatory_repeats", "manifest must record an integer repeat count")
@@ -823,6 +844,8 @@ def audit(
         add_issue(issues, "fail", "parallelism", "study requires sequential execution")
     if manifest.get("snapshot_repos") is not True or manifest.get("require_snapshots") is not True:
         add_issue(issues, "fail", "snapshots", "study requires detached repository snapshots")
+    if confirmatory and manifest.get("snapshot_scope") != "block":
+        add_issue(issues, "fail", "snapshot_scope", "confirmatory study requires one detached repository snapshot per task/repeat block")
     if manifest.get("isolated_agent_home") is not True:
         add_issue(issues, "fail", "isolated_agent_home", "study requires fresh controlled agent home per run")
     if manifest.get("isolated_serena_session") is not True:
@@ -915,6 +938,7 @@ def audit(
     positions_by_task_arm: Counter[tuple[str, str, str, str, int]] = Counter()
     semantic_session_ids: Counter[str] = Counter()
     cells_by_block: dict[tuple[str, str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
+    snapshot_blocks_by_key: dict[str, set[tuple[str, str, str, int]]] = defaultdict(set)
     live = manifest.get("live") is True
     for row in rows:
         profile = str(row.get("profile", ""))
@@ -1052,7 +1076,14 @@ def audit(
             add_issue(issues, "fail", "source_snapshot_lockfile_match", f"run {row.get('run_id')} source and snapshot lockfile hashes differ")
         repo_key = str(row.get("repo", "")) or "default"
         source_state = manifest_repo_state(manifest, repo_key, "source_repo_states")
-        snapshot_state = manifest_repo_state(manifest, repo_key, "repo_snapshots")
+        snapshot_state = manifest_snapshot_state(manifest, row)
+        if confirmatory:
+            if row.get("snapshot_scope") != "block":
+                add_issue(issues, "fail", "row_snapshot_scope", f"run {row.get('run_id')} does not declare block-scoped snapshot use")
+            if not str(row.get("snapshot_key", "")).startswith("block:"):
+                add_issue(issues, "fail", "snapshot_key", f"run {row.get('run_id')} has no block snapshot key")
+            if not is_hmac_fingerprint(row.get("snapshot_key_hmac")):
+                add_issue(issues, "fail", "snapshot_key_hmac", f"run {row.get('run_id')} has no valid snapshot key HMAC")
         if source_state:
             if source_state.get("dirty") is not False:
                 add_issue(issues, "fail", "source_repo_clean", f"run {row.get('run_id')} source repository state is not clean")
@@ -1063,6 +1094,17 @@ def audit(
             if row.get("source_lockfile_hash") != source_state.get("lockfile_hash"):
                 add_issue(issues, "fail", "row_source_lockfile_match", f"run {row.get('run_id')} source lockfile hash does not match manifest")
         if snapshot_state:
+            if confirmatory:
+                if snapshot_state.get("snapshot_scope") != "block":
+                    add_issue(issues, "fail", "manifest_snapshot_scope", f"run {row.get('run_id')} manifest snapshot is not block-scoped")
+                if snapshot_state.get("snapshot_key") != row.get("snapshot_key"):
+                    add_issue(issues, "fail", "row_snapshot_key_match", f"run {row.get('run_id')} snapshot key does not match manifest snapshot")
+                if snapshot_state.get("task_id") != row.get("task_id"):
+                    add_issue(issues, "fail", "row_snapshot_task_match", f"run {row.get('run_id')} snapshot task does not match row task")
+                if snapshot_state.get("agent") != row.get("agent"):
+                    add_issue(issues, "fail", "row_snapshot_agent_match", f"run {row.get('run_id')} snapshot agent does not match row agent")
+                if snapshot_state.get("repeat_index") != row.get("repeat_index"):
+                    add_issue(issues, "fail", "row_snapshot_repeat_match", f"run {row.get('run_id')} snapshot repeat does not match row repeat")
             if snapshot_state.get("snapshot_dirty") is not False:
                 add_issue(issues, "fail", "snapshot_repo_clean", f"run {row.get('run_id')} snapshot repository state is not clean")
             if row.get("snapshot_commit") != snapshot_state.get("snapshot_commit"):
@@ -1071,6 +1113,8 @@ def audit(
                 add_issue(issues, "fail", "row_snapshot_tree_match", f"run {row.get('run_id')} snapshot tree hash does not match manifest")
             if row.get("lockfile_hash") != snapshot_state.get("lockfile_hash"):
                 add_issue(issues, "fail", "row_snapshot_lockfile_match", f"run {row.get('run_id')} snapshot lockfile hash does not match manifest")
+        elif confirmatory:
+            add_issue(issues, "fail", "manifest_snapshot_missing", f"run {row.get('run_id')} has no matching manifest snapshot")
         if live:
             if confirmatory:
                 for _tool_name, field in CONFIRMATORY_REQUIRED_TOOL_VERSIONS.items():
@@ -1344,6 +1388,15 @@ def audit(
         snapshot_hmacs = {str(row.get("snapshot_state_hmac", "")) for row in profile_rows.values()}
         if len(snapshot_hmacs) != 1:
             add_issue(issues, "fail", "block_snapshot_state_match", f"{key} snapshot state HMAC differs across arms")
+        snapshot_keys = {str(row.get("snapshot_key", "")) for row in profile_rows.values()}
+        if confirmatory:
+            if len(snapshot_keys) != 1 or not next(iter(snapshot_keys), "").startswith("block:"):
+                add_issue(issues, "fail", "block_snapshot_key_match", f"{key} block snapshot key differs across arms")
+            else:
+                snapshot_blocks_by_key[next(iter(snapshot_keys))].add(key)
+            snapshot_key_hmacs = {str(row.get("snapshot_key_hmac", "")) for row in profile_rows.values()}
+            if len(snapshot_key_hmacs) != 1 or not is_hmac_fingerprint(next(iter(snapshot_key_hmacs), "")):
+                add_issue(issues, "fail", "block_snapshot_key_hmac_match", f"{key} block snapshot key HMAC differs across arms")
         tree_hashes = {str(row.get("snapshot_tree_hash", "")) for row in profile_rows.values()}
         if len(tree_hashes) != 1:
             add_issue(issues, "fail", "block_snapshot_tree_match", f"{key} snapshot tree hash differs across arms")
@@ -1368,6 +1421,16 @@ def audit(
                     "fail",
                     "treatment_diff",
                     f"{key} {left} vs {right} has disallowed config fields: {','.join(diff['disallowed_fields'])}",
+                )
+
+    if confirmatory:
+        for snapshot_key, block_keys in snapshot_blocks_by_key.items():
+            if len(block_keys) > 1:
+                add_issue(
+                    issues,
+                    "fail",
+                    "snapshot_key_reused",
+                    f"snapshot key {snapshot_key} is reused across {len(block_keys)} task/repeat blocks",
                 )
 
     if confirmatory:

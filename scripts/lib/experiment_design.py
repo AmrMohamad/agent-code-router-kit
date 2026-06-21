@@ -23,6 +23,7 @@ class StudyPlan:
     minimum_repeats: int
     parallelism: int
     require_clean_snapshots: bool
+    require_block_snapshots: bool
     require_fresh_agent_home: bool
     require_isolated_serena: bool
     require_prewarm_semantic_layer: bool
@@ -69,6 +70,7 @@ def load_study_plan(path: str | Path) -> StudyPlan:
         minimum_repeats=int(data.get("minimum_repeats", 4)),
         parallelism=int(data.get("parallelism", 1)),
         require_clean_snapshots=bool(data.get("require_clean_snapshots", True)),
+        require_block_snapshots=bool(data.get("require_block_snapshots", True)),
         require_fresh_agent_home=bool(data.get("require_fresh_agent_home", True)),
         require_isolated_serena=bool(data.get("require_isolated_serena", True)),
         require_prewarm_semantic_layer=bool(data.get("require_prewarm_semantic_layer", True)),

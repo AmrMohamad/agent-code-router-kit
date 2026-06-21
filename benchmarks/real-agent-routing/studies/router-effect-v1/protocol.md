@@ -46,11 +46,15 @@ each sequence position.
 ## Repository Policy
 
 Confirmatory runs require clean detached snapshots and a clean controller
-checkout. The manifest and run rows must record the controller commit and tree
-hash used to execute the study. Live semantic-access cells must also enforce
-clean Serena process-state readiness before task execution. Public evidence may
-publish only opaque repository labels and keyed private fingerprints. Private
-paths, project names, symbols, prompts, and snippets must not be committed.
+checkout. Snapshots are block-scoped: each `(agent, task, repository, repeat)`
+block receives one detached worktree, and the four arms in that block must share
+that same immutable snapshot. Snapshot keys are local/private; public evidence
+may expose only keyed HMACs and the declared snapshot scope. The manifest and run
+rows must record the controller commit and tree hash used to execute the study.
+Live semantic-access cells must also enforce clean Serena process-state
+readiness before task execution. Public evidence may publish only opaque
+repository labels and keyed private fingerprints. Private paths, project names,
+symbols, prompts, and snippets must not be committed.
 
 The confirmatory package is frozen by hashing the study plan, this protocol,
 the analysis plan, the task oracle file, the pilot task manifest, and the

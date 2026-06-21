@@ -133,6 +133,7 @@ def write_temp_study_plan(root: Path, *, confirmatory_tasks: Path, pilot_tasks: 
                 "minimum_repeats: 4",
                 "parallelism: 1",
                 "require_clean_snapshots: true",
+                "require_block_snapshots: true",
                 "require_fresh_agent_home: true",
                 "require_isolated_serena: true",
                 "require_prewarm_semantic_layer: true",
@@ -527,6 +528,9 @@ class RouterEffectStudyTests(unittest.TestCase):
                 self.assertEqual(row["source_commit"], row["snapshot_commit"])
                 self.assertEqual(row["source_tree_hash"], row["snapshot_tree_hash"])
                 self.assertEqual(row["source_lockfile_hash"], row["lockfile_hash"])
+                self.assertEqual(row["snapshot_scope"], "block")
+                self.assertTrue(str(row["snapshot_key"]).startswith("block:"))
+                self.assertRegex(row["snapshot_key_hmac"], r"^[0-9a-f]{24}$")
                 self.assertRegex(row["snapshot_state_hmac"], r"^[0-9a-f]{24}$")
                 self.assertEqual(row["route_profile_hash"], manifest["route_profile_hashes"][row["profile"]])
                 self.assertEqual(row["model_id"], manifest["model_id"])
@@ -566,6 +570,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                     self.assertEqual(row["semantic_session_id_hmac"], "")
                     self.assertEqual(row["semantic_lifecycle_owner"], "none")
             self.assertTrue(manifest["snapshot_repos"])
+            self.assertEqual(manifest["snapshot_scope"], "block")
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertTrue(manifest["require_clean_serena_process_state"])
             self.assertTrue(manifest["require_explicit_reasoning_effort"])
@@ -585,7 +590,19 @@ class RouterEffectStudyTests(unittest.TestCase):
             for source_state in manifest["source_repo_states"].values():
                 self.assertFalse(source_state["dirty"])
                 self.assertRegex(source_state["tree_hash"], r"^[0-9a-f]{40,64}$")
-            for snapshot_state in manifest["repo_snapshots"].values():
+            self.assertEqual(len(manifest["repo_snapshots"]), 4)
+            self.assertEqual({row["snapshot_key"] for row in rows}, set(manifest["repo_snapshots"]))
+            for repeat_index in range(4):
+                self.assertEqual(
+                    len({row["snapshot_key"] for row in rows if row["repeat_index"] == repeat_index}),
+                    1,
+                )
+            for snapshot_key, snapshot_state in manifest["repo_snapshots"].items():
+                self.assertTrue(snapshot_key.startswith("block:"))
+                self.assertEqual(snapshot_state["snapshot_scope"], "block")
+                self.assertEqual(snapshot_state["snapshot_key"], snapshot_key)
+                self.assertEqual(snapshot_state["repo_id"], "ios_reference")
+                self.assertEqual(snapshot_state["task_id"], "study_task")
                 self.assertFalse(snapshot_state["snapshot_dirty"])
                 self.assertEqual(snapshot_state["source_commit"], snapshot_state["snapshot_commit"])
                 self.assertEqual(snapshot_state["source_tree_hash"], snapshot_state["snapshot_tree_hash"])
@@ -658,6 +675,12 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("confirmatory_live", confirmatory_dry_run_codes)
             self.assertNotIn("confirmatory_task_manifest", confirmatory_dry_run_codes)
             self.assertNotIn("confirmatory_task_oracles", confirmatory_dry_run_codes)
+            repo_scoped_manifest = dict(manifest)
+            repo_scoped_manifest["snapshot_scope"] = "repo"
+            (out / "run-manifest.json").write_text(json.dumps(repo_scoped_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            repo_scoped_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("snapshot_scope", {issue["code"] for issue in repo_scoped_audit["issues"]})
+            (out / "run-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             manifest["live"] = True
             (out / "run-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -1539,6 +1562,8 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertRegex(public_rows[0]["protocol_commit"], r"^[0-9a-f]{40,64}$")
             self.assertEqual(public_rows[0]["controller_commit"], public_rows[0]["protocol_commit"])
             self.assertRegex(public_rows[0]["controller_tree_hash"], r"^[0-9a-f]{40,64}$")
+            self.assertEqual(public_rows[0]["snapshot_scope"], "block")
+            self.assertRegex(public_rows[0]["snapshot_key_hmac"], r"^[0-9a-f]{24}$")
             self.assertIn("snapshot_state_hmac", public_rows[0])
             semantic_public_row = next(row for row in public_rows if row["semantic_access_enabled"])
             self.assertRegex(semantic_public_row["semantic_session_id_hmac"], r"^[0-9a-f]{24}$")
@@ -1551,8 +1576,10 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertNotIn("dynamic_target_source_file", public_rows[0])
             self.assertNotIn("source_commit", public_rows[0])
             self.assertNotIn("snapshot_commit", public_rows[0])
+            self.assertNotIn("snapshot_key", public_rows[0])
             manifest = json.loads((public / "manifest.sanitized.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["agents"], ["codex"])
+            self.assertEqual(manifest["snapshot_scope"], "block")
             self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_task_oracle_and_manifest_hashes_omitted"])

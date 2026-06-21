@@ -76,6 +76,8 @@ def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
     args.capture_versions = True
     args.require_explicit_reasoning_effort = study_plan.require_explicit_reasoning_effort
     args.require_snapshots = study_plan.require_clean_snapshots
+    if study_plan.require_block_snapshots:
+        args.snapshot_scope = "block"
     args.parallelism = study_plan.parallelism
     selected_agents = [item.strip() for item in (args.agents or args.agent).split(",") if item.strip()]
     if sorted(selected_agents) != sorted(study_plan.agents):
@@ -642,12 +644,69 @@ def _safe_repo_id(repo_id: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in value)[:80]
 
 
+def repo_snapshot_key(repo_id: str) -> str:
+    return f"repo:{repo_id or 'default'}"
+
+
+def block_snapshot_key(*, agent_id: str, repo_id: str, task_id: str, repeat_index: int) -> str:
+    return f"block:{agent_id}:{repo_id or 'default'}:{task_id}:repeat-{repeat_index + 1:03d}"
+
+
+def snapshot_dir_name(snapshot_key: str) -> str:
+    return f"{_safe_repo_id(snapshot_key)}-{text_sha256(snapshot_key)[:12]}"
+
+
+def materialize_snapshot(
+    *,
+    repo_id: str,
+    repo_path_value: str,
+    snapshot_root: Path,
+    snapshot_key: str,
+    snapshot_scope: str,
+    metadata: dict[str, object] | None = None,
+) -> tuple[str, dict[str, object]]:
+    repo_path = Path(repo_path_value).expanduser().resolve()
+    git_root_text = _git(repo_path, "rev-parse", "--show-toplevel", check=True).stdout.strip()
+    commit = _git(repo_path, "rev-parse", "HEAD", check=True).stdout.strip()
+    git_root = Path(git_root_text).resolve()
+    try:
+        relative = repo_path.relative_to(git_root)
+    except ValueError:
+        relative = Path()
+    snapshot_path = snapshot_root / snapshot_dir_name(snapshot_key)
+    suffix = 1
+    while snapshot_path.exists():
+        suffix += 1
+        snapshot_path = snapshot_root / f"{snapshot_dir_name(snapshot_key)}-{suffix}"
+    _git(git_root, "worktree", "add", "--detach", str(snapshot_path), commit, check=True)
+    effective_path = (snapshot_path / relative).resolve()
+    snapshot_state = git_metadata(effective_path)
+    payload: dict[str, object] = {
+        "snapshot_scope": snapshot_scope,
+        "snapshot_key": snapshot_key,
+        "repo_id": repo_id or "default",
+        "source_path": str(repo_path),
+        "source_git_root": str(git_root),
+        "source_commit": commit,
+        "source_tree_hash": _git(git_root, "rev-parse", f"{commit}^{{tree}}", check=True).stdout.strip(),
+        "snapshot_path": str(effective_path),
+        "snapshot_git_root": str(snapshot_path.resolve()),
+        "snapshot_commit": snapshot_state.get("commit", ""),
+        "snapshot_dirty": snapshot_state.get("dirty", True),
+        "snapshot_tree_hash": git_tree_hash(effective_path),
+        "lockfile_hash": lockfile_hash(effective_path),
+    }
+    if metadata:
+        payload.update(metadata)
+    return str(effective_path), payload
+
+
 def snapshot_repo_map(repo_map: dict[str, str], *, out_root: Path) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
     snapshot_root = out_root / "_repo-snapshots"
     if snapshot_root.exists():
         shutil.rmtree(snapshot_root)
     snapshot_root.mkdir(parents=True, exist_ok=True)
-    source_cache: dict[tuple[str, str], Path] = {}
+    source_cache: dict[tuple[str, str], tuple[str, dict[str, object]]] = {}
     snapshots: dict[str, dict[str, object]] = {}
     mapped: dict[str, str] = {}
     for repo_id, repo_path_value in repo_map.items():
@@ -661,25 +720,66 @@ def snapshot_repo_map(repo_map: dict[str, str], *, out_root: Path) -> tuple[dict
             relative = Path()
         cache_key = (str(git_root), commit)
         if cache_key not in source_cache:
-            snapshot_path = snapshot_root / _safe_repo_id(repo_id)
-            suffix = 1
-            while snapshot_path.exists():
-                suffix += 1
-                snapshot_path = snapshot_root / f"{_safe_repo_id(repo_id)}-{suffix}"
-            _git(git_root, "worktree", "add", "--detach", str(snapshot_path), commit, check=True)
-            source_cache[cache_key] = snapshot_path.resolve()
-        snapshot_base = source_cache[cache_key]
-        effective_path = (snapshot_base / relative).resolve()
+            _effective_path, snapshot_payload = materialize_snapshot(
+                repo_id=repo_id,
+                repo_path_value=repo_path_value,
+                snapshot_root=snapshot_root,
+                snapshot_key=repo_snapshot_key(repo_id),
+                snapshot_scope="repo",
+            )
+            source_cache[cache_key] = (str(snapshot_payload["snapshot_git_root"]), snapshot_payload)
+        snapshot_base_path, snapshot_payload = source_cache[cache_key]
+        effective_path = (Path(snapshot_base_path).resolve() / relative).resolve()
         mapped[repo_id] = str(effective_path)
-        snapshots[repo_id or "default"] = {
-            "source_path": str(repo_path),
-            "source_git_root": str(git_root),
-            "source_commit": commit,
-            "source_tree_hash": _git(git_root, "rev-parse", f"{commit}^{{tree}}", check=True).stdout.strip(),
-            "snapshot_path": str(effective_path),
-            "snapshot_git_root": str(snapshot_base),
-        }
+        payload = dict(snapshot_payload)
+        payload["snapshot_path"] = str(effective_path)
+        snapshots[repo_id or "default"] = payload
     return mapped, snapshots
+
+
+def materialize_block_snapshots(
+    run_specs: list[dict[str, object]],
+    *,
+    repo_map: dict[str, str],
+    out_root: Path,
+) -> dict[str, dict[str, object]]:
+    snapshot_root = out_root / "_repo-snapshots"
+    if snapshot_root.exists():
+        shutil.rmtree(snapshot_root)
+    snapshot_root.mkdir(parents=True, exist_ok=True)
+    snapshots: dict[str, dict[str, object]] = {}
+    for spec in run_specs:
+        task = spec["task"]
+        repeat_index = int(spec["repeat_index"])
+        agent_id = str(spec["agent_id"])
+        repo_id = str(getattr(task, "repo", "") or "default")
+        task_id = str(getattr(task, "task_id", ""))
+        snapshot_key = block_snapshot_key(
+            agent_id=agent_id,
+            repo_id=repo_id,
+            task_id=task_id,
+            repeat_index=repeat_index,
+        )
+        if snapshot_key not in snapshots:
+            effective_path, payload = materialize_snapshot(
+                repo_id=repo_id,
+                repo_path_value=repo_for_task(repo_map, str(getattr(task, "repo", ""))),
+                snapshot_root=snapshot_root,
+                snapshot_key=snapshot_key,
+                snapshot_scope="block",
+                metadata={
+                    "agent": agent_id,
+                    "task_id": task_id,
+                    "repeat_index": repeat_index,
+                    "block_id": dict(spec.get("sequence") or {}).get("block_id", ""),
+                },
+            )
+            payload["snapshot_path"] = effective_path
+            snapshots[snapshot_key] = payload
+        spec["snapshot_scope"] = "block"
+        spec["snapshot_key"] = snapshot_key
+        spec["task_repo_path"] = snapshots[snapshot_key]["snapshot_path"]
+    return snapshots
 
 
 def parse_repo_map(value: str | None, *, default_repo: str | Path) -> dict[str, str]:
@@ -903,7 +1003,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 + ",".join(dirty_sources)
             )
     repo_snapshots: dict[str, dict[str, object]] = {}
-    if args.snapshot_repos:
+    if args.snapshot_repos and args.snapshot_scope == "repo":
         repo_map, repo_snapshots = snapshot_repo_map(repo_map, out_root=out_root)
         for repo_id, snapshot in repo_snapshots.items():
             snapshot_path = str(snapshot.get("snapshot_path", ""))
@@ -952,6 +1052,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "capture_versions": args.capture_versions,
         "require_explicit_reasoning_effort": bool(getattr(args, "require_explicit_reasoning_effort", False)),
         "require_snapshots": args.require_snapshots,
+        "snapshot_scope": args.snapshot_scope if args.snapshot_repos else "none",
         "model_id": args.model_id,
         "reasoning_effort": args.reasoning_effort,
         "tool_versions": tool_versions,
@@ -1045,6 +1146,19 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                             ),
                         }
                     )
+    if args.snapshot_repos and args.snapshot_scope == "block":
+        repo_snapshots = materialize_block_snapshots(run_specs, repo_map=repo_map, out_root=out_root)
+    for spec in run_specs:
+        task = spec["task"]
+        if "task_repo_path" not in spec:
+            spec["task_repo_path"] = repo_for_task(repo_map, str(getattr(task, "repo", "")))
+        if "snapshot_scope" not in spec:
+            spec["snapshot_scope"] = args.snapshot_scope if args.snapshot_repos else "none"
+        if "snapshot_key" not in spec:
+            repo_key = str(getattr(task, "repo", "") or "default")
+            spec["snapshot_key"] = repo_snapshot_key(repo_key) if args.snapshot_repos else ""
+    manifest["repo_snapshots"] = repo_snapshots
+    manifest["snapshot_scope"] = args.snapshot_scope if args.snapshot_repos else "none"
     manifest["existing_cells_available"] = len(existing_cells)
     manifest["skipped_existing_cells"] = skipped_existing_specs
     manifest["planned_new_runs"] = len(run_specs)
@@ -1064,7 +1178,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         run_id = new_run_id("rarb")
         run_dir = out_root / run_id
         sentinel = f"BENCHMARK_DONE_{run_id}"
-        task_repo_path = repo_for_task(repo_map, task.repo)
+        task_repo_path = str(spec.get("task_repo_path") or repo_for_task(repo_map, task.repo))
+        snapshot_scope = str(spec.get("snapshot_scope") or ("none" if not args.snapshot_repos else args.snapshot_scope))
+        snapshot_key = str(spec.get("snapshot_key") or "")
         effective_profile = effective_route_profile(profile, task=task)
         terminal_mode = args.terminal_mode or agent_profile.terminal_mode
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -1216,7 +1332,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         )
         repo_key = task.repo or "default"
         source_state = source_repo_states.get(repo_key, source_repo_states.get("default", {}))
-        snapshot_state = repo_snapshots.get(repo_key, repo_snapshots.get("default", {}))
+        snapshot_state = repo_snapshots.get(snapshot_key, repo_snapshots.get(repo_key, repo_snapshots.get("default", {})))
         row = {
             "run_id": run_id,
             "study_id": study_plan.study_id if study_plan else "",
@@ -1252,12 +1368,15 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "dynamic_target_declaration_kind": dynamic_target.get("declaration_kind") if dynamic_target else "",
             "repo": task.repo,
             "repo_path": task_repo_path,
+            "snapshot_scope": snapshot_scope,
+            "snapshot_key": snapshot_key,
+            "snapshot_key_hmac": private_hmac(snapshot_key, key_env=args.hmac_key_env) if snapshot_key else "",
             "source_state_hmac": private_hmac(
                 json.dumps(source_state, sort_keys=True),
                 key_env=args.hmac_key_env,
             ),
             "snapshot_state_hmac": private_hmac(
-                json.dumps(repo_states.get(repo_key, repo_states.get("default", {})), sort_keys=True),
+                json.dumps(snapshot_state, sort_keys=True),
                 key_env=args.hmac_key_env,
             ),
             "source_commit": source_state.get("commit", ""),
@@ -1449,6 +1568,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live", action="store_true", help="Run a live subject agent; requires adapter support.")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow live runs when the target repo is dirty.")
     parser.add_argument("--snapshot-repos", action="store_true", help="Run against clean detached git worktree snapshots under the output directory.")
+    parser.add_argument(
+        "--snapshot-scope",
+        choices=["repo", "block"],
+        default="repo",
+        help="Snapshot granularity. Study mode requires one detached worktree per task/repeat block.",
+    )
     parser.add_argument("--seed", type=int, help="Random seed for run order and sampled code prompts. Defaults to a generated seed recorded in the manifest.")
     parser.add_argument("--no-randomize-order", action="store_true")
     parser.add_argument("--monitor", action="store_true", help="Print one progress line per run and write monitor.jsonl.")

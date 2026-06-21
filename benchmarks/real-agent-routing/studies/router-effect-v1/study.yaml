@@ -7,6 +7,7 @@ order_design: balanced-latin-square
 minimum_repeats: 4
 parallelism: 1
 require_clean_snapshots: true
+require_block_snapshots: true
 require_fresh_agent_home: true
 require_isolated_serena: true
 require_prewarm_semantic_layer: true
