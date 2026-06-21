@@ -3,6 +3,7 @@ design_type: 2x2_factorial
 agents: codex
 arms: A-search-only,B-search-summary,C-lsp-naive,D-full-router
 repository_labels: ios_reference,web_reference
+task_families: known_symbol_definition,high_fanout_symbol,literal_resource,structural_pattern,build_runtime_boundary
 order_design: balanced-latin-square
 minimum_repeats: 4
 parallelism: 1

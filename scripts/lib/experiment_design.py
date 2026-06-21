@@ -35,6 +35,7 @@ class StudyPlan:
     agents: list[str]
     arms: list[str]
     repository_labels: list[str]
+    task_families: list[str]
     protocol_path: str
     analysis_plan_path: str
     pilot_tasks_path: str
@@ -74,6 +75,9 @@ def load_study_plan(path: str | Path) -> StudyPlan:
     repository_labels = _csv_list(data.get("repository_labels"))
     if not repository_labels:
         raise ValueError("study plan must declare repository_labels")
+    task_families = _csv_list(data.get("task_families"))
+    if not task_families:
+        raise ValueError("study plan must declare task_families")
     return StudyPlan(
         study_id=str(data.get("study_id", source.stem)),
         design_type=str(data.get("design_type", "2x2_factorial")),
@@ -93,6 +97,7 @@ def load_study_plan(path: str | Path) -> StudyPlan:
         agents=agents,
         arms=arms,
         repository_labels=repository_labels,
+        task_families=task_families,
         protocol_path=str((source.parent / str(data.get("protocol_path", "protocol.md"))).resolve()),
         analysis_plan_path=str((source.parent / str(data.get("analysis_plan_path", "analysis-plan.yaml"))).resolve()),
         pilot_tasks_path=str((source.parent / str(data.get("pilot_tasks_path", "pilot-tasks.tsv"))).resolve()),

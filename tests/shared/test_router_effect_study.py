@@ -135,6 +135,7 @@ def write_temp_study_plan(root: Path, *, confirmatory_tasks: Path, pilot_tasks: 
                 "agents: codex",
                 "arms: A-search-only,B-search-summary,C-lsp-naive,D-full-router",
                 "repository_labels: ios_reference",
+                "task_families: known_symbol_definition",
                 "order_design: balanced-latin-square",
                 "minimum_repeats: 4",
                 "parallelism: 1",
@@ -301,10 +302,21 @@ class RouterEffectStudyTests(unittest.TestCase):
         self.assertTrue(study_plan.require_explicit_reasoning_effort)
         self.assertEqual(study_plan.agents, ["codex"])
         self.assertEqual(study_plan.repository_labels, ["ios_reference", "web_reference"])
+        self.assertEqual(
+            study_plan.task_families,
+            [
+                "known_symbol_definition",
+                "high_fanout_symbol",
+                "literal_resource",
+                "structural_pattern",
+                "build_runtime_boundary",
+            ],
+        )
         self.assertEqual(Path(study_plan.pilot_tasks_path), study_dir / "pilot-tasks.tsv")
         self.assertEqual(Path(study_plan.confirmatory_tasks_path), study_dir / "confirmatory-tasks.tsv")
         task_ids_by_split: dict[str, set[str]] = {}
         task_keys_by_split: dict[str, set[tuple[str, str]]] = {}
+        expected_families = set(study_plan.task_families)
         for name, expected_count in {
             "pilot-tasks.tsv": 6,
             "confirmatory-tasks.tsv": 15,
@@ -313,8 +325,10 @@ class RouterEffectStudyTests(unittest.TestCase):
                 tasks = load_tasks(study_dir / name)
                 self.assertEqual(len(tasks), expected_count)
                 self.assertLessEqual({task.repo for task in tasks}, allowed)
+                self.assertLessEqual({task.task_family for task in tasks}, expected_families)
                 task_ids_by_split[name] = {task.task_id for task in tasks}
                 task_keys_by_split[name] = {(task.repo, task.task_id) for task in tasks}
+        self.assertEqual({task.task_family for task in load_tasks(study_dir / "confirmatory-tasks.tsv")}, expected_families)
         self.assertFalse(task_ids_by_split["pilot-tasks.tsv"] & task_ids_by_split["confirmatory-tasks.tsv"])
         self.assertFalse(task_keys_by_split["pilot-tasks.tsv"] & task_keys_by_split["confirmatory-tasks.tsv"])
 
@@ -603,6 +617,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(manifest["snapshot_repos"])
             self.assertEqual(manifest["snapshot_scope"], "block")
             self.assertEqual(manifest["repository_labels"], ["ios_reference"])
+            self.assertEqual(manifest["task_families"], ["known_symbol_definition"])
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertTrue(manifest["require_clean_serena_process_state"])
             self.assertTrue(manifest["require_explicit_reasoning_effort"])
@@ -1473,6 +1488,23 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("confirmatory_repository_labels", {issue["code"] for issue in wrong_repo_labels["issues"]})
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            wrong_task_families_manifest = dict(manifest)
+            wrong_task_families_manifest["task_families"] = ["structural_pattern"]
+            manifest_path.write_text(json.dumps(wrong_task_families_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            wrong_task_families = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("confirmatory_task_families", {issue["code"] for issue in wrong_task_families["issues"]})
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            wrong_row_family_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            wrong_row_family_rows[0]["task_family"] = "structural_pattern"
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in wrong_row_family_rows),
+                encoding="utf-8",
+            )
+            wrong_row_family = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("confirmatory_task_family_match", {issue["code"] for issue in wrong_row_family["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
             bad_analysis_plan = root / "bad-analysis-plan.yaml"
             good_analysis_plan_text = (
                 ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/analysis-plan.yaml"
@@ -1796,6 +1828,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             manifest = json.loads((public / "manifest.sanitized.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["agents"], ["codex"])
             self.assertEqual(manifest["repository_labels"], ["ios_reference"])
+            self.assertEqual(manifest["task_families"], ["known_symbol_definition"])
             self.assertEqual(manifest["snapshot_scope"], "block")
             self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])

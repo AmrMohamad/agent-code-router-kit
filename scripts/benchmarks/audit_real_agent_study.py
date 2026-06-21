@@ -562,6 +562,14 @@ def _study_plan_repository_labels(path: Path) -> set[str]:
     return {item.strip() for item in str(raw).split(",") if item.strip()}
 
 
+def _study_plan_task_families(path: Path) -> set[str]:
+    plan = load_simple_yaml(path)
+    raw = plan.get("task_families", "")
+    if isinstance(raw, list):
+        return {str(item).strip() for item in raw if str(item).strip()}
+    return {item.strip() for item in str(raw).split(",") if item.strip()}
+
+
 def _study_plan_agents(path: Path) -> list[str]:
     plan = load_simple_yaml(path)
     raw = plan.get("agents", "codex")
@@ -630,11 +638,19 @@ def audit_confirmatory_matrix_completion(
             "confirmatory_matrix_agents",
             "manifest study agents do not match the preregistered study plan: " + ",".join(expected_agents),
         )
-    expected_tasks = sorted({(str(task.repo), str(task.task_id)) for task in load_tasks(task_manifest_path)})
+    loaded_tasks = load_tasks(task_manifest_path)
+    expected_tasks = sorted({(str(task.repo), str(task.task_id)) for task in loaded_tasks})
+    expected_task_families_by_key = {
+        (str(task.repo), str(task.task_id)): str(task.task_family)
+        for task in loaded_tasks
+    }
     if not expected_tasks:
         add_issue(issues, "fail", "confirmatory_matrix_tasks", "frozen confirmatory task manifest has no tasks")
         return
     expected_repos = _study_plan_repository_labels(study_plan_path)
+    expected_families = _study_plan_task_families(study_plan_path)
+    if not expected_families:
+        add_issue(issues, "fail", "confirmatory_task_families", "study plan must preregister task_families")
     manifest_repos_raw = manifest.get("repository_labels")
     manifest_repos = {
         str(item).strip()
@@ -670,6 +686,28 @@ def audit_confirmatory_matrix_completion(
                 "confirmatory_repository_labels",
                 "manifest source repository states are missing declared task labels: " + ",".join(missing_source_states),
             )
+    observed_task_families = set(expected_task_families_by_key.values())
+    if expected_families and observed_task_families != expected_families:
+        add_issue(
+            issues,
+            "fail",
+            "confirmatory_task_families",
+            "frozen confirmatory task manifest families do not match the preregistered study plan: "
+            + ",".join(sorted(expected_families)),
+        )
+    manifest_families_raw = manifest.get("task_families")
+    manifest_families = {
+        str(item).strip()
+        for item in manifest_families_raw
+        if str(item).strip()
+    } if isinstance(manifest_families_raw, list) else set()
+    if expected_families and manifest_families != expected_families:
+        add_issue(
+            issues,
+            "fail",
+            "confirmatory_task_families",
+            "manifest task families do not match the preregistered study plan: " + ",".join(sorted(expected_families)),
+        )
 
     observed_counts: Counter[tuple[str, str, str, str, int]] = Counter()
     unexpected_cells: list[tuple[str, str, str, str, object]] = []
@@ -693,6 +731,14 @@ def audit_confirmatory_matrix_completion(
         ):
             unexpected_cells.append((agent, repo, task_id, profile, repeat))
             continue
+        expected_family = expected_task_families_by_key.get((repo, task_id))
+        if expected_family and row.get("task_family") != expected_family:
+            add_issue(
+                issues,
+                "fail",
+                "confirmatory_task_family_match",
+                f"row {row.get('run_id')} task_family does not match frozen task manifest",
+            )
         observed_counts[(agent, repo, task_id, profile, repeat)] += 1
 
     missing: list[tuple[str, str, str, str, int]] = []

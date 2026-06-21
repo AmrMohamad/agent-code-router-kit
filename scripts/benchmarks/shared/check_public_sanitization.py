@@ -216,6 +216,7 @@ ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS = {
         "study_id",
         "study_package",
         "task_count",
+        "task_families",
         "tool_versions",
     },
     "audit.sanitized.json": {

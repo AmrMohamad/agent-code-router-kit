@@ -834,6 +834,20 @@ def study_repo_label_issues(*, tasks: list[TaskSpec], repo_map: dict[str, str], 
     return issues
 
 
+def study_task_family_issues(*, tasks: list[TaskSpec], study_plan) -> list[str]:
+    if not study_plan:
+        return []
+    expected = set(study_plan.task_families)
+    observed = {task.task_family for task in tasks}
+    issues: list[str] = []
+    extra = sorted(observed - expected)
+    if extra:
+        issues.append("undeclared task families: " + ",".join(extra))
+    if not observed:
+        issues.append("no study tasks selected")
+    return issues
+
+
 def monitor_event(path: Path, event: dict[str, object], *, enabled: bool) -> None:
     append_jsonl(path, event)
     if enabled:
@@ -998,6 +1012,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
     study_repo_issues = study_repo_label_issues(tasks=tasks, repo_map=repo_map, study_plan=study_plan)
     if study_repo_issues:
         raise SystemExit("study plan repository label check failed; " + "; ".join(study_repo_issues))
+    study_family_issues = study_task_family_issues(tasks=tasks, study_plan=study_plan)
+    if study_family_issues:
+        raise SystemExit("study plan task-family check failed; " + "; ".join(study_family_issues))
     if not args.dry_run:
         missing_repos = missing_live_repo_mappings(tasks, repo_map)
         if missing_repos:
@@ -1091,6 +1108,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "task_manifest_hash": task_manifest_hash,
         "task_ids": [task.task_id for task in tasks],
         "repository_labels": list(study_plan.repository_labels) if study_plan else [],
+        "task_families": list(study_plan.task_families) if study_plan else [],
         "source_repo_states": source_repo_states,
         "repo_snapshots": repo_snapshots,
         "repo_states": repo_states,
