@@ -304,6 +304,7 @@ ROUTER_EFFECT_STUDY_RUN_ROW_KEYS = {
     "oracle_status",
     "order_design",
     "os_version",
+    "observed_task_tools",
     "policy_adherence",
     "previous_arm",
     "profile",
@@ -312,7 +313,10 @@ ROUTER_EFFECT_STUDY_RUN_ROW_KEYS = {
     "repeat_index",
     "repo_public_id",
     "response_contract_hash",
+    "route_hard_controls",
+    "route_isolation_mode",
     "route_profile_hash",
+    "route_weak_controls",
     "routing_discipline_enabled",
     "rg_version",
     "runtime_tool_count",
@@ -345,6 +349,7 @@ ROUTER_EFFECT_STUDY_RUN_ROW_KEYS = {
     "task_public_id",
     "token_source",
     "tool_call_count",
+    "tool_evidence_source",
     "tool_output_bytes",
     "wall_seconds",
 }
@@ -685,7 +690,7 @@ def public_evidence_schema_violations(path: Path, root: Path) -> list[dict[str, 
             )
             if is_codex_smoke and is_target_label and value not in ALLOWED_TARGET_LABELS:
                 violations.append({"file": rel_text, "label": "evidence_unapproved_target_label", "where": json_path})
-            if is_codex_smoke and "observed_task_tools" in json_path and lower not in ALLOWED_OBSERVED_TOOLS:
+            if (is_codex_smoke or is_router_effect_study) and "observed_task_tools" in json_path and lower not in ALLOWED_OBSERVED_TOOLS:
                 violations.append({"file": rel_text, "label": "evidence_unapproved_observed_tool", "where": json_path})
     return violations
 

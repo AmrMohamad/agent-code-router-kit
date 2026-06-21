@@ -1514,6 +1514,11 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(public_rows[0]["repo_public_id"], "repo_001")
             self.assertIn("exact_uncached_total_tokens", public_rows[0])
             self.assertIn("exact_usage_event_count", public_rows[0])
+            self.assertIn("tool_evidence_source", public_rows[0])
+            self.assertIn("observed_task_tools", public_rows[0])
+            self.assertIn("route_isolation_mode", public_rows[0])
+            self.assertIn("route_hard_controls", public_rows[0])
+            self.assertIn("route_weak_controls", public_rows[0])
             self.assertIn("semantic_session_mode", public_rows[0])
             self.assertEqual(
                 public_rows[0]["response_contract_hash"],
