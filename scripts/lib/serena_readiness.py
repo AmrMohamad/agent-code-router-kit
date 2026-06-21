@@ -12,6 +12,7 @@ from scripts.lib.agent_session import to_json_file, utc_now
 
 
 SOURCE_SYMBOL_RE = re.compile(r"\b[A-Z][A-Za-z0-9_]{3,}\b")
+SOURCE_FILE_GLOBS = ["*.kt", "*.java", "*.swift", "*.ts", "*.tsx", "*.js", "*.jsx"]
 SERENA_MCP_PATTERN = "serena start-mcp-server"
 SOURCEKIT_LSP_PATTERN = "sourcekit-lsp"
 KOTLIN_LSP_PATTERN = "KotlinLspServerKt"
@@ -431,7 +432,22 @@ def stale_processes_from_cleanup_plan(plan: dict[str, object]) -> list[SerenaPro
 
 def extract_source_symbol(prompt: str) -> str:
     candidates = SOURCE_SYMBOL_RE.findall(prompt)
-    ignored = {"Find", "Report", "Evidence", "Serena", "Kotlin", "Java", "Android"}
+    ignored = {
+        "Find",
+        "Determine",
+        "Report",
+        "Evidence",
+        "Serena",
+        "Kotlin",
+        "Java",
+        "Android",
+        "Swift",
+        "SourceKit",
+        "TypeScript",
+        "JavaScript",
+        "React",
+        "Web",
+    }
     for candidate in candidates:
         if candidate not in ignored:
             return candidate
@@ -443,8 +459,12 @@ def candidate_source_files(repo: str | Path, symbol: str, *, limit: int = 20) ->
         return []
     repo_path = Path(repo).expanduser().resolve()
     pattern = rf"\b{re.escape(symbol)}\b"
+    command = ["rg", "--no-config", "-l"]
+    for glob in SOURCE_FILE_GLOBS:
+        command.extend(["-g", glob])
+    command.extend([pattern, "."])
     completed = subprocess.run(
-        ["rg", "-l", "-g", "*.kt", "-g", "*.java", pattern, "."],
+        command,
         cwd=repo_path,
         text=True,
         stdout=subprocess.PIPE,
@@ -454,7 +474,15 @@ def candidate_source_files(repo: str | Path, symbol: str, *, limit: int = 20) ->
     files = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
     if not files:
         return []
-    expected_basenames = {f"{symbol}.kt", f"{symbol}.java"}
+    expected_basenames = {
+        f"{symbol}.kt",
+        f"{symbol}.java",
+        f"{symbol}.swift",
+        f"{symbol}.ts",
+        f"{symbol}.tsx",
+        f"{symbol}.js",
+        f"{symbol}.jsx",
+    }
     files.sort(key=lambda value: (Path(value).name not in expected_basenames, len(Path(value).parts), value))
     return files[:limit]
 
@@ -465,9 +493,9 @@ def classify_index_output(*, symbol: str, source_file: str, returncode: int | No
         return "fail", False, "timeout", "increase Serena readiness timeout and inspect language-server logs"
     if returncode != 0:
         if "language server manager is not initialized" in combined:
-            return "fail", False, "language_server_manager_not_initialized", "restart stale Serena sessions and warm the Kotlin LSP before full-router runs"
+            return "fail", False, "language_server_manager_not_initialized", "restart stale Serena sessions and warm the project language server before full-router runs"
         if "cancelled (-32800)" in combined:
-            return "fail", False, "kotlin_lsp_initialization_cancelled", "restart stale Serena/Kotlin LSP sessions and retry source-symbol smoke"
+            return "fail", False, "language_server_initialization_cancelled", "restart stale Serena/LSP sessions and retry source-symbol smoke"
         return "fail", False, "serena_index_file_failed", "inspect serena project index-file output and project configuration"
     symbol_line = re.compile(rf"^\s*-\s+{re.escape(symbol)}\s+at line\s+\d+\s+of kind\s+\d+\s*$", re.MULTILINE)
     if source_file and symbol_line.search(stdout):
@@ -524,7 +552,7 @@ def run_serena_source_symbol_readiness(
             process_state=process_state,
             warnings=warnings,
             reason="source_symbol_or_file_not_resolved",
-            next_action="provide a known source symbol/file for Serena readiness smoke",
+            next_action="provide a known source symbol/file in a supported source file for Serena readiness smoke",
         )
     command = ["serena", "project", "index-file", selected_file, str(repo_path), "--verbose"]
     try:

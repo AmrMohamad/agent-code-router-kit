@@ -16,6 +16,7 @@ from scripts.benchmarks.run_real_agent_benchmark import (
     main,
     render_task_packet,
     route_uses_serena,
+    task_supports_dynamic_code_prompt,
     task_needs_serena_source_readiness,
 )
 from scripts.agents.generic_terminal_agent_bridge import BridgeRunResult
@@ -168,6 +169,54 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
 
         self.assertTrue(route_uses_serena(profile))
         self.assertTrue(task_needs_serena_source_readiness(task))
+
+    def test_swift_and_web_symbol_tasks_require_serena_readiness(self) -> None:
+        swift_task = TaskSpec(
+            task_id="known_swift_symbol",
+            task_family="known_swift_symbol_definition",
+            repo="sample",
+            prompt="Find CheckoutCoordinator in the Swift iOS source and report semantic identity.",
+            route_profiles=["D-full-router"],
+            edit_allowed=False,
+            build_allowed=False,
+            expected_proof_layer="semantic_identity_or_search_labeled",
+            expected_success_signal="CheckoutCoordinator definition reported",
+            forbidden_claims="Do not claim runtime behavior.",
+            timeout_seconds=900,
+        )
+        web_task = TaskSpec(
+            task_id="known_web_symbol",
+            task_family="known_typescript_symbol_definition",
+            repo="sample",
+            prompt="Find AccountPanel in the React web source and report semantic identity.",
+            route_profiles=["D-full-router"],
+            edit_allowed=False,
+            build_allowed=False,
+            expected_proof_layer="semantic_identity_or_search_labeled",
+            expected_success_signal="AccountPanel definition reported",
+            forbidden_claims="Do not claim runtime behavior.",
+            timeout_seconds=900,
+        )
+
+        self.assertTrue(task_needs_serena_source_readiness(swift_task))
+        self.assertTrue(task_needs_serena_source_readiness(web_task))
+        self.assertTrue(task_supports_dynamic_code_prompt(swift_task))
+
+        high_fanout_task = TaskSpec(
+            task_id="high_fanout_swift_symbol",
+            task_family="high_fanout_swift_symbol",
+            repo="sample",
+            prompt=IOS_HIGH_FANOUT_PROMPT,
+            route_profiles=["D-full-router"],
+            edit_allowed=False,
+            build_allowed=False,
+            expected_proof_layer="high_fanout_summary",
+            expected_success_signal="summary counts reported",
+            forbidden_claims="Do not claim runtime behavior.",
+            timeout_seconds=900,
+        )
+        self.assertTrue(task_needs_serena_source_readiness(high_fanout_task))
+        self.assertFalse(task_supports_dynamic_code_prompt(high_fanout_task))
 
     def test_search_only_profile_does_not_trigger_serena_readiness(self) -> None:
         profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/A-search-only.yaml")

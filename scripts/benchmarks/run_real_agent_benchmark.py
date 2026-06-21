@@ -342,8 +342,8 @@ Serena coordination rules:
   treat the semantic layer as temporarily unavailable and report that honestly.
 - If Ready is false, do not claim semantic proof from Serena. Report blocked or
   partial according to the response contract, and include the reason above.
-- Multiple Serena/Kotlin LSP processes are a stale-session risk. Mention them as
-  route-readiness risk instead of hiding them.
+- Multiple Serena/SourceKit/Kotlin/JSON LSP processes are a stale-session risk.
+  Mention them as route-readiness risk instead of hiding them.
 """
 
 
@@ -370,13 +370,29 @@ def task_needs_serena_source_readiness(task) -> bool:
             task.expected_proof_layer,
         ]
     ).lower()
-    if "kotlin" not in haystack and "java" not in haystack:
+    language_terms = (
+        "kotlin",
+        "java",
+        "swift",
+        "ios",
+        "sourcekit",
+        "typescript",
+        "javascript",
+        "react",
+        "web",
+    )
+    if not any(term in haystack for term in language_terms):
         return False
     return any(
         term in haystack
         for term in (
             "known_kotlin_symbol",
             "known_java_symbol",
+            "known_swift_symbol",
+            "known_typescript_symbol",
+            "known_javascript_symbol",
+            "known_symbol",
+            "high_fanout",
             "semantic_identity",
             "reference_proof",
             "semantic_disagreement",
@@ -428,12 +444,23 @@ def enforce_clean_serena_process_state(*, readiness: dict[str, object] | None, r
     raise SystemExit(
         "Serena process state is not clean for a live semantic-router cell; "
         f"warnings={','.join(warnings)}. "
-        f"Inspect {run_dir / 'serena-readiness.json'} and clean stale Serena/Kotlin LSP sessions before rerunning."
+        f"Inspect {run_dir / 'serena-readiness.json'} and clean stale Serena/SourceKit/Kotlin/JSON LSP sessions before rerunning."
     )
 
 
 def task_supports_dynamic_code_prompt(task) -> bool:
-    return task_needs_serena_source_readiness(task)
+    haystack = " ".join(
+        [
+            task.task_family,
+            task.prompt,
+            task.expected_proof_layer,
+        ]
+    ).lower()
+    if "high_fanout" in haystack or "literal" in haystack or "structural" in haystack or "runtime" in haystack:
+        return False
+    return task_needs_serena_source_readiness(task) and (
+        "known" in haystack or "definition" in haystack or "declaration" in haystack
+    )
 
 
 def dynamic_prompt_rng(*, seed: int, repeat_index: int, agent_id: str, task_id: str, repo: str) -> random.Random:

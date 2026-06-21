@@ -41,6 +41,23 @@ class SerenaReadinessTests(unittest.TestCase):
 
         self.assertEqual(files[0], "app/src/main/java/com/example/SampleFeatureViewModel.kt")
 
+    def test_candidate_source_files_supports_swift_and_web_sources(self) -> None:
+        result = subprocess.CompletedProcess(
+            args=["rg"],
+            returncode=0,
+            stdout=(
+                "Sources/App/Other.swift\n"
+                "Sources/App/CheckoutCoordinator.swift\n"
+                "src/components/CheckoutCoordinator.tsx\n"
+            ),
+            stderr="",
+        )
+        with mock.patch("scripts.lib.serena_readiness.subprocess.run", return_value=result):
+            files = candidate_source_files(Path("/repo"), "CheckoutCoordinator")
+
+        self.assertEqual(files[0], "Sources/App/CheckoutCoordinator.swift")
+        self.assertIn("src/components/CheckoutCoordinator.tsx", files)
+
     def test_classify_index_output_requires_symbol_line(self) -> None:
         status, ready, reason, next_action = classify_index_output(
             symbol="SampleCatalogViewModel",
@@ -66,7 +83,7 @@ class SerenaReadinessTests(unittest.TestCase):
 
         self.assertEqual(status, "fail")
         self.assertFalse(ready)
-        self.assertEqual(reason, "kotlin_lsp_initialization_cancelled")
+        self.assertEqual(reason, "language_server_initialization_cancelled")
         self.assertIn("restart stale Serena", next_action)
 
     def test_run_readiness_records_process_warnings_and_source_smoke(self) -> None:
