@@ -272,7 +272,8 @@ prices are explicit. Cost estimates are reported separately from context
 efficiency and are not inferred from uncached tokens alone.
 
 Estimate whether the observed pilot variance supports the planned confirmatory
-sample size:
+sample size. The power artifact reports the primary A/D comparison and every
+preregistered pairwise comparison used for decomposition:
 
 ```bash
 python3 scripts/benchmarks/estimate_study_power.py \

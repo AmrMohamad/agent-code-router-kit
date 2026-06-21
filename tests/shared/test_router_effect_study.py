@@ -529,6 +529,21 @@ class RouterEffectStudyTests(unittest.TestCase):
                 alpha=0.05,
                 power=0.80,
             )
+            self.assertEqual(power["primary_comparison"], "A-search-only_to_D-full-router")
+            self.assertEqual(set(power["pairwise_power"]), {
+                "A-search-only_to_B-search-summary",
+                "A-search-only_to_C-lsp-naive",
+                "C-lsp-naive_to_D-full-router",
+                "A-search-only_to_D-full-router",
+            })
+            self.assertTrue(power["all_preregistered_comparisons_power_target_met"])
+            self.assertAlmostEqual(power["z_alpha_two_sided"], 1.95996398)
+            self.assertAlmostEqual(power["z_power"], 0.84162123)
+            malformed_power = dict(power)
+            malformed_power.pop("pairwise_power")
+            (out / "study-power.json").write_text(json.dumps(malformed_power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            malformed = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("study_power_shape", {issue["code"] for issue in malformed["issues"]})
             (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             confirmatory = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)

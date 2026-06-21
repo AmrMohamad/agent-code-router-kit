@@ -89,6 +89,24 @@ def _power_matches_preregistered_primary(power: dict[str, object]) -> bool:
     )
 
 
+def _power_has_required_shape(power: dict[str, object]) -> bool:
+    pairwise = power.get("pairwise_power")
+    required = {
+        "A-search-only_to_B-search-summary",
+        "A-search-only_to_C-lsp-naive",
+        "C-lsp-naive_to_D-full-router",
+        "A-search-only_to_D-full-router",
+    }
+    return (
+        power.get("method") == "normal_approximation_on_paired_log_ratios"
+        and isinstance(power.get("z_alpha_two_sided"), int | float)
+        and isinstance(power.get("z_power"), int | float)
+        and isinstance(pairwise, dict)
+        and required.issubset(set(pairwise))
+        and power.get("all_preregistered_comparisons_power_target_met") is True
+    )
+
+
 def is_sha256_hex(value: object) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(char in hexdigits for char in value)
 
@@ -472,6 +490,8 @@ def audit(
                 add_issue(issues, "fail", "study_power_status", "study-power.json must have status=estimated")
             if not _power_matches_preregistered_primary(power):
                 add_issue(issues, "fail", "study_power_metric", "study-power.json must use the preregistered exact_uncached_input_tokens planning inputs")
+            if not _power_has_required_shape(power):
+                add_issue(issues, "fail", "study_power_shape", "study-power.json must include all preregistered pairwise power estimates")
             if power.get("power_target_met") is not True:
                 add_issue(issues, "fail", "study_power_target", "observed study cells do not meet the planned power target")
 
