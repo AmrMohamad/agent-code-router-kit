@@ -4,6 +4,9 @@ This study measures a Codex-specific routing intervention with a hermetic
 factorial design. It is not an LSP-only claim and it is not a cross-agent
 claim.
 
+The preregistered subject-agent set for this protocol is exactly `codex`.
+Replication with other agents belongs in a separate protocol or study id.
+
 ## Claim Boundary
 
 For a pinned Codex model and fixed tool versions, on preregistered tasks from

@@ -202,6 +202,7 @@ class RouterEffectStudyTests(unittest.TestCase):
         study_dir = ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1"
         study_plan = load_study_plan(study_dir / "study.yaml")
         self.assertTrue(study_plan.require_explicit_reasoning_effort)
+        self.assertEqual(study_plan.agents, ["codex"])
         for name, expected_count in {
             "pilot-tasks.tsv": 6,
             "confirmatory-tasks.tsv": 15,
@@ -577,6 +578,36 @@ class RouterEffectStudyTests(unittest.TestCase):
                         ]
                     )
 
+    def test_study_plan_requires_codex_subject_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {
+                "CODEX_HOME": str(fake_codex_home(root)),
+                "RARB_PRIVATE_HMAC_KEY": "test-hmac-key",
+            }
+            with patch.dict("os.environ", env):
+                with self.assertRaisesRegex(SystemExit, "subject agents"):
+                    main(
+                        [
+                            "--dry-run",
+                            "--agent",
+                            "claude-code",
+                            "--repo",
+                            str(root),
+                            "--study-plan",
+                            str(ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml"),
+                            "--arms",
+                            "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
+                            "--repeats",
+                            "4",
+                            "--snapshot-repos",
+                            "--model-id",
+                            "codex-test-model",
+                            "--reasoning-effort",
+                            "low",
+                        ]
+                    )
+
     def test_task_oracle_plan_requires_task_specific_external_checks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -746,6 +777,13 @@ class RouterEffectStudyTests(unittest.TestCase):
             manifest_path.write_text(json.dumps(dirty_controller_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             dirty_controller = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("controller_clean", {issue["code"] for issue in dirty_controller["issues"]})
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            wrong_agent_manifest = dict(manifest)
+            wrong_agent_manifest["agents"] = ["claude-code"]
+            manifest_path.write_text(json.dumps(wrong_agent_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            wrong_agent = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("confirmatory_matrix_agents", {issue["code"] for issue in wrong_agent["issues"]})
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             default_reasoning_manifest = dict(manifest)
@@ -1262,6 +1300,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertNotIn("source_commit", public_rows[0])
             self.assertNotIn("snapshot_commit", public_rows[0])
             manifest = json.loads((public / "manifest.sanitized.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["agents"], ["codex"])
             self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_task_oracle_and_manifest_hashes_omitted"])

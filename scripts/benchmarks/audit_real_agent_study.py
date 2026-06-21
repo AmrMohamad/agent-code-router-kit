@@ -414,6 +414,14 @@ def _study_plan_repository_labels(path: Path) -> set[str]:
     return {item.strip() for item in str(raw).split(",") if item.strip()}
 
 
+def _study_plan_agents(path: Path) -> list[str]:
+    plan = load_simple_yaml(path)
+    raw = plan.get("agents", "codex")
+    if isinstance(raw, list):
+        return sorted({str(item).strip() for item in raw if str(item).strip()})
+    return sorted({item.strip() for item in str(raw).split(",") if item.strip()})
+
+
 def audit_confirmatory_matrix_completion(
     *,
     manifest: dict[str, object],
@@ -443,14 +451,25 @@ def audit_confirmatory_matrix_completion(
         if declared_repeats < minimum_repeats:
             add_issue(issues, "fail", "confirmatory_repeats", "manifest repeat count is below the preregistered minimum")
         repeat_count = max(declared_repeats, minimum_repeats)
+    expected_agents = _study_plan_agents(study_plan_path)
+    if not expected_agents:
+        add_issue(issues, "fail", "confirmatory_matrix_agents", "study plan must declare expected study agent(s)")
+        return
     agents_value = manifest.get("agents")
     if isinstance(agents_value, list) and agents_value and all(isinstance(item, str) and item for item in agents_value):
-        expected_agents = sorted(set(str(item) for item in agents_value))
+        manifest_agents = sorted(set(str(item) for item in agents_value))
     elif isinstance(manifest.get("agent"), str) and manifest.get("agent"):
-        expected_agents = [str(manifest.get("agent"))]
+        manifest_agents = [str(manifest.get("agent"))]
     else:
         add_issue(issues, "fail", "confirmatory_matrix_agents", "manifest must record the expected study agent(s)")
         return
+    if manifest_agents != expected_agents:
+        add_issue(
+            issues,
+            "fail",
+            "confirmatory_matrix_agents",
+            "manifest study agents do not match the preregistered study plan: " + ",".join(expected_agents),
+        )
     expected_tasks = sorted({(str(task.repo), str(task.task_id)) for task in load_tasks(task_manifest_path)})
     if not expected_tasks:
         add_issue(issues, "fail", "confirmatory_matrix_tasks", "frozen confirmatory task manifest has no tasks")

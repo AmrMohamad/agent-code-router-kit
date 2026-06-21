@@ -30,6 +30,7 @@ class StudyPlan:
     require_capture_versions: bool
     require_explicit_reasoning_effort: bool
     require_external_oracles: bool
+    agents: list[str]
     arms: list[str]
     protocol_path: str
     analysis_plan_path: str
@@ -56,6 +57,9 @@ def load_study_plan(path: str | Path) -> StudyPlan:
     data = load_simple_yaml(source)
     arms = [item.strip() for item in str(data.get("arms", ",".join(FACTORIAL_ARM_ORDER))).split(",") if item.strip()]
     validate_factorial_arm_set(arms)
+    agents = [item.strip() for item in str(data.get("agents", "codex")).split(",") if item.strip()]
+    if not agents:
+        raise ValueError("study plan must declare at least one agent")
     return StudyPlan(
         study_id=str(data.get("study_id", source.stem)),
         design_type=str(data.get("design_type", "2x2_factorial")),
@@ -70,6 +74,7 @@ def load_study_plan(path: str | Path) -> StudyPlan:
         require_capture_versions=bool(data.get("require_capture_versions", True)),
         require_explicit_reasoning_effort=bool(data.get("require_explicit_reasoning_effort", True)),
         require_external_oracles=bool(data.get("require_external_oracles", True)),
+        agents=agents,
         arms=arms,
         protocol_path=str((source.parent / str(data.get("protocol_path", "protocol.md"))).resolve()),
         analysis_plan_path=str((source.parent / str(data.get("analysis_plan_path", "analysis-plan.yaml"))).resolve()),

@@ -203,6 +203,7 @@ def build_public_bundle(
         "study_id": manifest.get("study_id"),
         "order_design": manifest.get("order_design"),
         "parallelism": manifest.get("parallelism"),
+        "agents": manifest.get("agents", []),
         "snapshot_repos": manifest.get("snapshot_repos"),
         "isolated_agent_home": manifest.get("isolated_agent_home"),
         "isolated_serena_session": manifest.get("isolated_serena_session"),

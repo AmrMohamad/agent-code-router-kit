@@ -195,6 +195,7 @@ CODEX_SMOKE_CLAIM_ROW_KEYS = CODEX_SMOKE_SOURCE_CLAIM_ROW_KEYS | {
 }
 ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS = {
     "manifest.sanitized.json": {
+        "agents",
         "controller_commit",
         "controller_dirty",
         "controller_tree_hash",

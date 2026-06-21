@@ -1,5 +1,6 @@
 study_id: router-effect-v1
 design_type: 2x2_factorial
+agents: codex
 arms: A-search-only,B-search-summary,C-lsp-naive,D-full-router
 repository_labels: ios_reference,web_reference
 order_design: balanced-latin-square

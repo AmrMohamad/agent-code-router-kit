@@ -77,6 +77,9 @@ def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
     args.require_explicit_reasoning_effort = study_plan.require_explicit_reasoning_effort
     args.require_snapshots = study_plan.require_clean_snapshots
     args.parallelism = study_plan.parallelism
+    selected_agents = [item.strip() for item in (args.agents or args.agent).split(",") if item.strip()]
+    if sorted(selected_agents) != sorted(study_plan.agents):
+        raise SystemExit("study plan requires exact subject agents: " + ",".join(study_plan.agents))
     arms = [arm.strip() for arm in args.arms.split(",") if arm.strip()]
     validate_factorial_arm_set(arms)
     if args.repeats < study_plan.minimum_repeats:
