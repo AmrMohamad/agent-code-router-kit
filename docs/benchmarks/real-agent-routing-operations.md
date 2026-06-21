@@ -300,6 +300,12 @@ custom task manifests, custom oracle files, dry-runs, missing
 `task_manifest_hash` does not match the frozen package in `run-manifest.json`.
 The analysis and power artifacts must use the preregistered primary context
 metric, `exact_uncached_input_tokens`.
+Do not use `--rerun-failed` for confirmatory studies. Wrong answers, timeouts,
+policy violations, and controlled output-budget stops are randomized outcomes
+for the intention-to-treat analysis. The confirmatory audit fails packages that
+rerun failed agent outcomes or carry forward invalid, rerun, or
+missing-artifact cells; resume carry-forward is acceptable only for intact rows
+with self-contained artifacts.
 
 Build a public bundle only after verifying that private paths, prompts, source
 snippets, symbols, and transcripts are excluded:

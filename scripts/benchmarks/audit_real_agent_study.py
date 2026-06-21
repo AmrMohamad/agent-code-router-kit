@@ -197,6 +197,38 @@ def audit_confirmatory_oracle_plan(*, manifest: dict[str, object], issues: list[
         )
 
 
+def audit_confirmatory_rerun_policy(*, manifest: dict[str, object], issues: list[dict[str, object]]) -> None:
+    if manifest.get("rerun_failed") is True:
+        add_issue(
+            issues,
+            "fail",
+            "confirmatory_rerun_failed",
+            "confirmatory studies must not rerun failed agent outcomes",
+        )
+    count_fields = {
+        "invalid_carried_forward_runs": "confirmatory_invalid_carried_forward",
+        "rerun_carried_forward_runs": "confirmatory_rerun_carried_forward",
+        "missing_artifact_carried_forward_runs": "confirmatory_missing_artifact_carried_forward",
+    }
+    for field, code in count_fields.items():
+        try:
+            count = int(manifest.get(field, 0) or 0)
+        except (TypeError, ValueError):
+            add_issue(issues, "fail", code, f"confirmatory study has non-numeric {field}")
+            continue
+        if count != 0:
+            add_issue(issues, "fail", code, f"confirmatory study has nonzero {field}")
+    list_fields = {
+        "invalid_carried_forward_cells": "confirmatory_invalid_carried_forward",
+        "rerun_carried_forward_cells": "confirmatory_rerun_carried_forward",
+        "missing_artifact_carried_forward_cells": "confirmatory_missing_artifact_carried_forward",
+    }
+    for field, code in list_fields.items():
+        value = manifest.get(field)
+        if isinstance(value, list) and value:
+            add_issue(issues, "fail", code, f"confirmatory study has nonempty {field}")
+
+
 def audit(
     root: str | Path,
     *,
@@ -246,6 +278,7 @@ def audit(
     if confirmatory:
         audit_confirmatory_study_package(manifest=manifest, rows=rows, issues=issues)
         audit_confirmatory_oracle_plan(manifest=manifest, issues=issues)
+        audit_confirmatory_rerun_policy(manifest=manifest, issues=issues)
 
     arms = set(str(row.get("profile", "")) for row in rows)
     missing_arms = [arm for arm in FACTORIAL_ARM_ORDER if arm not in arms]

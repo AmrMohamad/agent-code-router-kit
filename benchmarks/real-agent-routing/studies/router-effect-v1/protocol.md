@@ -85,6 +85,10 @@ Secondary outcomes:
 
 Every randomized run is retained for intention-to-treat analysis. Pass/pass
 comparisons are secondary sensitivity analyses only.
+Confirmatory runs must not use rerun-failed mode; wrong answers, timeouts,
+policy violations, and output-budget stops are study outcomes, not cells to
+replace. Valid resume carry-forward is allowed only for intact prior rows with
+self-contained artifacts.
 
 Continuous outcomes use paired log ratios with task-cluster bootstrap
 confidence intervals. Confirmatory analysis reports pairwise effects, pass/pass

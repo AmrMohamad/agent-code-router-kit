@@ -546,6 +546,29 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_power_shape", {issue["code"] for issue in malformed["issues"]})
             (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            manifest_path = out / "run-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            tainted_manifest = dict(manifest)
+            tainted_manifest.update(
+                {
+                    "rerun_failed": True,
+                    "rerun_carried_forward_runs": 1,
+                    "rerun_carried_forward_cells": ["codex/A-search-only/study_task/sample/0"],
+                    "invalid_carried_forward_runs": 1,
+                    "invalid_carried_forward_cells": ["codex/B-search-summary/study_task/sample/0"],
+                    "missing_artifact_carried_forward_runs": 1,
+                    "missing_artifact_carried_forward_cells": ["codex/C-lsp-naive/study_task/sample/0"],
+                }
+            )
+            manifest_path.write_text(json.dumps(tainted_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            rerun_policy = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            rerun_policy_codes = {issue["code"] for issue in rerun_policy["issues"]}
+            self.assertIn("confirmatory_rerun_failed", rerun_policy_codes)
+            self.assertIn("confirmatory_rerun_carried_forward", rerun_policy_codes)
+            self.assertIn("confirmatory_invalid_carried_forward", rerun_policy_codes)
+            self.assertIn("confirmatory_missing_artifact_carried_forward", rerun_policy_codes)
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             confirmatory = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertEqual(confirmatory["status"], "pass", confirmatory)
 
