@@ -18,7 +18,7 @@ from scripts.benchmarks.shared.check_public_sanitization import public_evidence_
 from scripts.benchmarks.verify_task_oracles import main as verify_task_oracles_main
 from scripts.lib.agent_session import AgentProfile, load_route_profile, load_tasks
 from scripts.lib.environment_capture import file_sha256
-from scripts.lib.experiment_design import balanced_latin_square
+from scripts.lib.experiment_design import balanced_latin_square, load_study_plan
 from scripts.lib.hermetic_agent_environment import materialize_hermetic_agent_environment
 from scripts.lib.route_isolation import materialize_route_isolation
 from scripts.lib.task_oracles import load_task_oracles, validate_task_oracle_plan
@@ -199,6 +199,8 @@ class RouterEffectStudyTests(unittest.TestCase):
     def test_router_effect_v1_task_manifests_use_only_ios_and_web_labels(self) -> None:
         allowed = {"ios_reference", "web_reference"}
         study_dir = ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1"
+        study_plan = load_study_plan(study_dir / "study.yaml")
+        self.assertTrue(study_plan.require_explicit_reasoning_effort)
         for name, expected_count in {
             "pilot-tasks.tsv": 6,
             "confirmatory-tasks.tsv": 15,
@@ -426,6 +428,8 @@ class RouterEffectStudyTests(unittest.TestCase):
                 self.assertEqual(row["source_lockfile_hash"], row["lockfile_hash"])
                 self.assertRegex(row["snapshot_state_hmac"], r"^[0-9a-f]{24}$")
                 self.assertEqual(row["route_profile_hash"], manifest["route_profile_hashes"][row["profile"]])
+                self.assertEqual(row["model_id"], manifest["model_id"])
+                self.assertEqual(row["reasoning_effort"], manifest["reasoning_effort"])
                 semantic_session = json.loads((run_dir / "semantic-session.json").read_text(encoding="utf-8"))
                 self.assertTrue(row["semantic_teardown_verified"])
                 self.assertEqual(row["semantic_process_survivor_count"], 0)
@@ -461,6 +465,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(manifest["snapshot_repos"])
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertTrue(manifest["require_clean_serena_process_state"])
+            self.assertTrue(manifest["require_explicit_reasoning_effort"])
             self.assertEqual(manifest["order_design"], "balanced-latin-square")
             self.assertEqual(manifest["study_package"]["task_split"], "custom")
             self.assertEqual(manifest["study_package"]["task_oracles_source"], "custom")
@@ -542,6 +547,34 @@ class RouterEffectStudyTests(unittest.TestCase):
             )
             snapshot_audit = audit(out)
             self.assertIn("source_snapshot_commit_match", {issue["code"] for issue in snapshot_audit["issues"]})
+
+    def test_live_study_mode_requires_explicit_reasoning_effort(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {
+                "CODEX_HOME": str(fake_codex_home(root)),
+                "RARB_PRIVATE_HMAC_KEY": "test-hmac-key",
+            }
+            with patch.dict("os.environ", env):
+                with self.assertRaisesRegex(SystemExit, "reasoning-effort"):
+                    main(
+                        [
+                            "--live",
+                            "--agent",
+                            "codex",
+                            "--repo",
+                            str(root),
+                            "--study-plan",
+                            str(ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml"),
+                            "--arms",
+                            "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
+                            "--repeats",
+                            "4",
+                            "--snapshot-repos",
+                            "--model-id",
+                            "codex-test-model",
+                        ]
+                    )
 
     def test_task_oracle_plan_requires_task_specific_external_checks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -714,6 +747,15 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("controller_clean", {issue["code"] for issue in dirty_controller["issues"]})
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            default_reasoning_manifest = dict(manifest)
+            default_reasoning_manifest["reasoning_effort"] = "default"
+            manifest_path.write_text(json.dumps(default_reasoning_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            default_reasoning = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            default_reasoning_codes = {issue["code"] for issue in default_reasoning["issues"]}
+            self.assertIn("reasoning_effort", default_reasoning_codes)
+            self.assertIn("row_reasoning_effort_match", default_reasoning_codes)
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             runs_path = out / "runs.jsonl"
             original_runs_text = runs_path.read_text(encoding="utf-8")
             mismatched_rows = [json.loads(line) for line in original_runs_text.splitlines()]
@@ -724,6 +766,26 @@ class RouterEffectStudyTests(unittest.TestCase):
             )
             mismatched_controller = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("row_protocol_commit_match", {issue["code"] for issue in mismatched_controller["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            mismatched_model_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            mismatched_model_rows[0]["model_id"] = "different-test-model"
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in mismatched_model_rows),
+                encoding="utf-8",
+            )
+            mismatched_model = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("row_model_id_match", {issue["code"] for issue in mismatched_model["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            mismatched_reasoning_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            mismatched_reasoning_rows[0]["reasoning_effort"] = "medium"
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in mismatched_reasoning_rows),
+                encoding="utf-8",
+            )
+            mismatched_reasoning = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("row_reasoning_effort_match", {issue["code"] for issue in mismatched_reasoning["issues"]})
             runs_path.write_text(original_runs_text, encoding="utf-8")
 
             missing_usage_rows = [json.loads(line) for line in original_runs_text.splitlines()]
@@ -921,6 +983,13 @@ class RouterEffectStudyTests(unittest.TestCase):
             manifest_path.write_text(json.dumps(no_process_state_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             no_process_state = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("serena_process_state", {issue["code"] for issue in no_process_state["issues"]})
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            no_reasoning_policy_manifest = dict(manifest)
+            no_reasoning_policy_manifest["require_explicit_reasoning_effort"] = False
+            manifest_path.write_text(json.dumps(no_reasoning_policy_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            no_reasoning_policy = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("reasoning_effort_policy", {issue["code"] for issue in no_reasoning_policy["issues"]})
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             bad_analysis_plan = root / "bad-analysis-plan.yaml"
@@ -1167,6 +1236,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             for digest in manifest["route_profile_hashes"].values():
                 self.assertRegex(digest, r"^[0-9a-f]{64}$")
             self.assertTrue(manifest["require_clean_serena_process_state"])
+            self.assertTrue(manifest["require_explicit_reasoning_effort"])
             self.assertIn("study_plan_hmac", manifest["study_package"])
             self.assertIn("protocol_hmac", manifest["study_package"])
             self.assertIn("analysis_plan_hmac", manifest["study_package"])

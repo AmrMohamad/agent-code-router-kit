@@ -28,6 +28,7 @@ class StudyPlan:
     require_prewarm_semantic_layer: bool
     require_clean_serena_process_state: bool
     require_capture_versions: bool
+    require_explicit_reasoning_effort: bool
     require_external_oracles: bool
     arms: list[str]
     protocol_path: str
@@ -67,6 +68,7 @@ def load_study_plan(path: str | Path) -> StudyPlan:
         require_prewarm_semantic_layer=bool(data.get("require_prewarm_semantic_layer", True)),
         require_clean_serena_process_state=bool(data.get("require_clean_serena_process_state", True)),
         require_capture_versions=bool(data.get("require_capture_versions", True)),
+        require_explicit_reasoning_effort=bool(data.get("require_explicit_reasoning_effort", True)),
         require_external_oracles=bool(data.get("require_external_oracles", True)),
         arms=arms,
         protocol_path=str((source.parent / str(data.get("protocol_path", "protocol.md"))).resolve()),

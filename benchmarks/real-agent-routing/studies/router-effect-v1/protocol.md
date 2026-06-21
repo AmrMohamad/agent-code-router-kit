@@ -106,6 +106,11 @@ cached input, output, and reasoning-output rates per one million tokens. Cost
 reporting must include total cost, median cost, cost per run, and cost per
 successful task by arm.
 
+The model configuration is part of the preregistered control surface. Live
+confirmatory runs must use an exact pinned model identifier and an explicit
+non-default reasoning-effort value, and every run row must match the manifest
+values.
+
 Every randomized run is retained for intention-to-treat analysis. Pass/pass
 comparisons are secondary sensitivity analyses only.
 Confirmatory runs must not use rerun-failed mode; wrong answers, timeouts,

@@ -713,10 +713,14 @@ def audit(
         add_issue(issues, "fail", "serena_readiness_enabled", "confirmatory study requires Serena readiness checks")
     if confirmatory and manifest.get("require_clean_serena_process_state") is not True:
         add_issue(issues, "fail", "serena_process_state", "confirmatory study requires clean Serena process-state enforcement")
+    if confirmatory and manifest.get("require_explicit_reasoning_effort") is not True:
+        add_issue(issues, "fail", "reasoning_effort_policy", "confirmatory study requires explicit reasoning-effort policy enforcement")
     if manifest.get("capture_versions") is not True or not manifest.get("tool_versions"):
         add_issue(issues, "fail", "version_capture", "study requires captured tool/controller versions")
     if manifest.get("model_id") in {"", "not_pinned", None}:
         add_issue(issues, "fail", "model_id", "study requires an exact pinned model id")
+    if manifest.get("reasoning_effort") in {"", "default", None}:
+        add_issue(issues, "fail", "reasoning_effort", "study requires an explicit fixed reasoning effort")
     if manifest.get("private_hmac_configured") is not True:
         add_issue(issues, "fail", "private_hmac", "study requires private HMAC key configuration")
     route_profile_hashes = manifest.get("route_profile_hashes")
@@ -804,6 +808,10 @@ def audit(
             add_issue(issues, "fail", "semantic_factor", f"run {row.get('run_id')} has wrong semantic factor")
         if row.get("routing_discipline_enabled") != factors.routing_discipline_enabled:
             add_issue(issues, "fail", "routing_factor", f"run {row.get('run_id')} has wrong routing factor")
+        if row.get("model_id") != manifest.get("model_id"):
+            add_issue(issues, "fail", "row_model_id_match", f"run {row.get('run_id')} model id does not match manifest")
+        if row.get("reasoning_effort") != manifest.get("reasoning_effort"):
+            add_issue(issues, "fail", "row_reasoning_effort_match", f"run {row.get('run_id')} reasoning effort does not match manifest")
         weak_controls = row.get("route_weak_controls")
         if isinstance(weak_controls, list) and weak_controls:
             add_issue(issues, "fail", "weak_route_controls", f"run {row.get('run_id')} has weak route controls: {','.join(str(item) for item in weak_controls)}")

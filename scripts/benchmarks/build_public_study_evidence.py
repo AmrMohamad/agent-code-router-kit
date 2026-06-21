@@ -179,6 +179,7 @@ def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
         "isolated_agent_home": manifest.get("isolated_agent_home"),
         "isolated_serena_session": manifest.get("isolated_serena_session"),
         "require_clean_serena_process_state": manifest.get("require_clean_serena_process_state"),
+        "require_explicit_reasoning_effort": manifest.get("require_explicit_reasoning_effort"),
         "model_id": manifest.get("model_id"),
         "reasoning_effort": manifest.get("reasoning_effort"),
         "tool_versions": manifest.get("tool_versions", {}),

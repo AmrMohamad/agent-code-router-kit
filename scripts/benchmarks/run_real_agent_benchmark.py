@@ -74,6 +74,7 @@ def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
     args.prewarm_semantic_layer = study_plan.require_prewarm_semantic_layer
     args.require_clean_serena_process_state = study_plan.require_clean_serena_process_state
     args.capture_versions = True
+    args.require_explicit_reasoning_effort = study_plan.require_explicit_reasoning_effort
     args.require_snapshots = study_plan.require_clean_snapshots
     args.parallelism = study_plan.parallelism
     arms = [arm.strip() for arm in args.arms.split(",") if arm.strip()]
@@ -92,6 +93,12 @@ def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
         args.task_oracles = study_plan.task_oracles_path
     if not args.dry_run and args.model_id == DEFAULT_STUDY_MODEL_ID:
         raise SystemExit("live study mode requires --model-id with the exact pinned model identifier")
+    if (
+        study_plan.require_explicit_reasoning_effort
+        and not args.dry_run
+        and args.reasoning_effort == DEFAULT_REASONING_EFFORT
+    ):
+        raise SystemExit("live study mode requires --reasoning-effort with an explicit fixed reasoning-effort value")
     if not os.environ.get(args.hmac_key_env, ""):
         raise SystemExit(f"study mode requires ${args.hmac_key_env} for private HMAC fingerprints")
 
@@ -939,6 +946,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "isolated_serena_session": args.isolated_serena_session,
         "prewarm_semantic_layer": args.prewarm_semantic_layer,
         "capture_versions": args.capture_versions,
+        "require_explicit_reasoning_effort": bool(getattr(args, "require_explicit_reasoning_effort", False)),
         "require_snapshots": args.require_snapshots,
         "model_id": args.model_id,
         "reasoning_effort": args.reasoning_effort,

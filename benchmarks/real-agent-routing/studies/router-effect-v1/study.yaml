@@ -11,6 +11,7 @@ require_isolated_serena: true
 require_prewarm_semantic_layer: true
 require_clean_serena_process_state: true
 require_capture_versions: true
+require_explicit_reasoning_effort: true
 require_external_oracles: true
 protocol_path: protocol.md
 analysis_plan_path: analysis-plan.yaml
