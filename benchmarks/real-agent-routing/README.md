@@ -86,7 +86,7 @@ python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --dry-run \
   --agent codex \
   --repo /path/to/clean/ios-reference \
-  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference,portable_reference=/path/to/clean/portable-reference \
+  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference \
   --tasks benchmarks/real-agent-routing/studies/router-effect-v1/pilot-tasks.tsv \
   --task-oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
   --study-plan benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml \
