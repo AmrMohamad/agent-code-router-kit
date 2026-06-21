@@ -47,6 +47,10 @@ task manifest or oracle file, or whose run rows do not match the frozen task
 manifest hash. Public bundles may expose keyed HMAC fingerprints for private
 task/oracle inputs, not plain private-input hashes.
 
+Each confirmatory task requires a task-specific external oracle contract.
+Family-level fallback oracles are acceptable only for exploratory development
+work; they are insufficient for a publishable confirmatory audit.
+
 ## Task Families
 
 The confirmatory set contains five families:

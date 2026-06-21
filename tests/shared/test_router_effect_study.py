@@ -14,10 +14,12 @@ from scripts.benchmarks.analyze_real_agent_study import analyze
 from scripts.benchmarks.build_public_study_evidence import build_public_bundle
 from scripts.benchmarks.estimate_study_power import estimate
 from scripts.benchmarks.run_real_agent_benchmark import main
-from scripts.lib.agent_session import AgentProfile, load_route_profile
+from scripts.benchmarks.verify_task_oracles import main as verify_task_oracles_main
+from scripts.lib.agent_session import AgentProfile, load_route_profile, load_tasks
 from scripts.lib.experiment_design import balanced_latin_square
 from scripts.lib.hermetic_agent_environment import materialize_hermetic_agent_environment
 from scripts.lib.route_isolation import materialize_route_isolation
+from scripts.lib.task_oracles import load_task_oracles, validate_task_oracle_plan
 from scripts.lib.treatment_config import diff_effective_agent_configs
 
 
@@ -65,9 +67,12 @@ def write_permissive_oracle(path: Path) -> None:
                     {
                         "task_id": "study_task",
                         "oracle_id": "study-task-smoke",
-                        "type": "text_checks",
+                        "type": "semantic_identity",
                         "required_terms": [],
-                        "requires_policy_pass": False,
+                        "required_row_values": {
+                            "expected_proof_layer": "semantic_identity_or_search_labeled"
+                        },
+                        "requires_policy_pass": True,
                     }
                 ]
             },
@@ -298,6 +303,99 @@ class RouterEffectStudyTests(unittest.TestCase):
             failed_audit = audit(out)
             self.assertEqual(failed_audit["status"], "fail")
             self.assertIn("exact_uncached_input_tokens", {issue["code"] for issue in failed_audit["issues"]})
+
+    def test_task_oracle_plan_requires_task_specific_external_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tasks = root / "tasks.tsv"
+            oracles = root / "oracles.json"
+            weak_oracles = root / "weak-oracles.json"
+            write_study_task(tasks)
+            write_permissive_oracle(oracles)
+            weak_oracles.write_text(
+                json.dumps(
+                    {
+                        "oracles": [
+                            {
+                                "task_family": "known_symbol_definition",
+                                "oracle_id": "family-only",
+                                "type": "text_checks",
+                                "requires_policy_pass": True,
+                                "required_terms": ["declaration"],
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            strong_result = validate_task_oracle_plan(
+                tasks=load_tasks(tasks),
+                oracles=load_task_oracles(oracles),
+                require_task_specific=True,
+            )
+            self.assertEqual(strong_result["status"], "pass", strong_result)
+            weak_result = validate_task_oracle_plan(
+                tasks=load_tasks(tasks),
+                oracles=load_task_oracles(weak_oracles),
+                require_task_specific=True,
+            )
+            self.assertEqual(weak_result["status"], "fail")
+            self.assertIn("oracle_not_task_specific", {issue["code"] for issue in weak_result["issues"]})
+
+    def test_verify_task_oracles_cli_supports_plan_and_run_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tasks = root / "tasks.tsv"
+            oracles = root / "oracles.json"
+            run_dir = root / "run"
+            runs = root / "runs.jsonl"
+            out = root / "oracle-summary.json"
+            write_study_task(tasks)
+            write_permissive_oracle(oracles)
+            run_dir.mkdir()
+            (run_dir / "transcript.txt").write_text("route evidence\n", encoding="utf-8")
+            runs.write_text(
+                json.dumps(
+                    {
+                        "run_id": "run-1",
+                        "task_id": "study_task",
+                        "task_family": "known_symbol_definition",
+                        "profile": "D-full-router",
+                        "run_dir": str(run_dir),
+                        "policy_adherence": "pass",
+                        "expected_proof_layer": "semantic_identity_or_search_labeled",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                plan_code = verify_task_oracles_main(
+                    [
+                        "--tasks",
+                        str(tasks),
+                        "--oracles",
+                        str(oracles),
+                        "--require-task-specific",
+                    ]
+                )
+                run_code = verify_task_oracles_main(
+                    [
+                        "--runs",
+                        str(runs),
+                        "--oracles",
+                        str(oracles),
+                        "--out",
+                        str(out),
+                    ]
+                )
+            self.assertEqual(plan_code, 0)
+            self.assertEqual(run_code, 0)
+            summary = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(summary["oracle_pass_count"], 1)
 
     def test_confirmatory_audit_requires_analysis_power_and_can_pass_synthetic_live_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

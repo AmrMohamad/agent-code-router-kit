@@ -232,6 +232,15 @@ python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --out results/real-agent-routing/router-effect-v1-dry-run
 ```
 
+Validate oracle coverage before live execution:
+
+```bash
+python3 scripts/benchmarks/verify_task_oracles.py \
+  --tasks benchmarks/real-agent-routing/studies/router-effect-v1/confirmatory-tasks.tsv \
+  --oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
+  --require-task-specific
+```
+
 Audit the resulting package:
 
 ```bash

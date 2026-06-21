@@ -10,8 +10,8 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.lib.agent_session import append_jsonl, to_json_file
-from scripts.lib.task_oracles import load_task_oracles, verify_transcript_file
+from scripts.lib.agent_session import append_jsonl, load_tasks, to_json_file
+from scripts.lib.task_oracles import load_task_oracles, validate_task_oracle_plan, verify_transcript_file
 
 
 def load_jsonl(path: Path) -> list[dict[str, object]]:
@@ -20,14 +20,9 @@ def load_jsonl(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Verify real-agent benchmark transcripts against external task oracles.")
-    parser.add_argument("--runs", required=True, help="Path to runs.jsonl.")
-    parser.add_argument("--oracles", required=True, help="Path to task-oracles.json.")
-    parser.add_argument("--out", required=True, help="Output oracle verification JSON.")
-    parser.add_argument("--jsonl", help="Optional per-run oracle JSONL output.")
-    args = parser.parse_args(argv)
-
+def verify_run_oracles(args: argparse.Namespace) -> int:
+    if not args.out:
+        raise SystemExit("--runs mode requires --out")
     rows = load_jsonl(Path(args.runs))
     oracles = load_task_oracles(args.oracles)
     results: list[dict[str, object]] = []
@@ -70,7 +65,37 @@ def main(argv: list[str] | None = None) -> int:
         "rows": results,
     }
     to_json_file(args.out, summary)
+    print(json.dumps(summary, indent=2, sort_keys=True))
     return 0 if summary["oracle_fail_count"] == 0 and summary["oracle_not_configured_count"] == 0 else 1
+
+
+def validate_oracle_plan(args: argparse.Namespace) -> int:
+    result = validate_task_oracle_plan(
+        tasks=load_tasks(args.tasks),
+        oracles=load_task_oracles(args.oracles),
+        require_task_specific=args.require_task_specific,
+    )
+    if args.out:
+        to_json_file(args.out, result)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result["status"] == "pass" else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Verify benchmark oracles or validate task-oracle coverage.")
+    parser.add_argument("--runs", help="Path to runs.jsonl for transcript verification mode.")
+    parser.add_argument("--tasks", help="Path to tasks TSV for oracle-plan validation mode.")
+    parser.add_argument("--oracles", required=True, help="Path to task-oracles.json.")
+    parser.add_argument("--require-task-specific", action="store_true")
+    parser.add_argument("--out", help="Output JSON path.")
+    parser.add_argument("--jsonl", help="Optional per-run oracle JSONL output for --runs mode.")
+    args = parser.parse_args(argv)
+
+    if args.tasks:
+        return validate_oracle_plan(args)
+    if args.runs:
+        return verify_run_oracles(args)
+    raise SystemExit("provide either --tasks for oracle-plan validation or --runs for transcript verification")
 
 
 if __name__ == "__main__":

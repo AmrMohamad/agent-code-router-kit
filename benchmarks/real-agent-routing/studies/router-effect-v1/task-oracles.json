@@ -1,40 +1,176 @@
 {
   "oracles": [
     {
-      "oracle_id": "generic-known-symbol",
-      "task_family": "known_symbol_definition",
-      "required_terms": ["declaration", "symbol"],
-      "requires_policy_pass": true,
-      "type": "text_checks"
+      "oracle_id": "confirm-known-ios-1",
+      "task_id": "confirm_known_ios_1",
+      "type": "semantic_identity",
+      "required_terms": ["declaration"],
+      "required_row_values": {"expected_proof_layer": "semantic_identity_or_search_labeled"},
+      "requires_policy_pass": true
     },
     {
-      "oracle_id": "generic-high-fanout",
-      "task_family": "high_fanout_symbol",
+      "oracle_id": "confirm-known-web-1",
+      "task_id": "confirm_known_web_1",
+      "type": "semantic_identity",
+      "required_terms": ["declaration"],
+      "required_row_values": {"expected_proof_layer": "semantic_identity_or_search_labeled"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "confirm-known-portable-1",
+      "task_id": "confirm_known_portable_1",
+      "type": "semantic_identity",
+      "required_terms": ["declaration"],
+      "required_row_values": {"expected_proof_layer": "semantic_identity_or_search_labeled"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "confirm-high-fanout-ios-1",
+      "task_id": "confirm_high_fanout_ios_1",
+      "type": "high_fanout_reference",
       "required_terms": ["evidence"],
-      "requires_policy_pass": true,
-      "type": "text_checks"
+      "required_row_values": {"expected_proof_layer": "high_fanout_summary"},
+      "requires_policy_pass": true
     },
     {
-      "oracle_id": "generic-literal-resource",
-      "task_family": "literal_resource",
+      "oracle_id": "confirm-high-fanout-web-1",
+      "task_id": "confirm_high_fanout_web_1",
+      "type": "high_fanout_reference",
+      "required_terms": ["evidence"],
+      "required_row_values": {"expected_proof_layer": "high_fanout_summary"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "confirm-high-fanout-portable-1",
+      "task_id": "confirm_high_fanout_portable_1",
+      "type": "high_fanout_reference",
+      "required_terms": ["evidence"],
+      "required_row_values": {"expected_proof_layer": "high_fanout_summary"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "confirm-literal-ios-1",
+      "task_id": "confirm_literal_ios_1",
+      "type": "literal_resource",
       "required_terms": ["file"],
-      "requires_policy_pass": true,
-      "type": "text_checks"
+      "required_row_values": {"expected_proof_layer": "literal_discovery"},
+      "requires_policy_pass": true
     },
     {
-      "oracle_id": "generic-structural-pattern",
-      "task_family": "structural_pattern",
+      "oracle_id": "confirm-literal-web-1",
+      "task_id": "confirm_literal_web_1",
+      "type": "literal_resource",
+      "required_terms": ["file"],
+      "required_row_values": {"expected_proof_layer": "literal_discovery"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "confirm-literal-portable-1",
+      "task_id": "confirm_literal_portable_1",
+      "type": "literal_resource",
+      "required_terms": ["file"],
+      "required_row_values": {"expected_proof_layer": "literal_discovery"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "confirm-structural-ios-1",
+      "task_id": "confirm_structural_ios_1",
+      "type": "structural_pattern",
       "required_terms": ["match"],
-      "requires_policy_pass": true,
-      "type": "text_checks"
+      "required_row_values": {"expected_proof_layer": "structural_scope"},
+      "requires_policy_pass": true
     },
     {
-      "oracle_id": "generic-build-runtime-boundary",
-      "task_family": "build_runtime_boundary",
+      "oracle_id": "confirm-structural-web-1",
+      "task_id": "confirm_structural_web_1",
+      "type": "structural_pattern",
+      "required_terms": ["match"],
+      "required_row_values": {"expected_proof_layer": "structural_scope"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "confirm-structural-portable-1",
+      "task_id": "confirm_structural_portable_1",
+      "type": "structural_pattern",
+      "required_terms": ["match"],
+      "required_row_values": {"expected_proof_layer": "structural_scope"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "confirm-runtime-ios-1",
+      "task_id": "confirm_runtime_ios_1",
+      "type": "build_runtime_boundary",
       "required_terms": ["proof"],
       "forbidden_terms": ["build passed", "tests passed", "runtime verified"],
-      "requires_policy_pass": true,
-      "type": "text_checks"
+      "required_row_values": {"expected_proof_layer": "build_runtime_boundary"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "confirm-runtime-web-1",
+      "task_id": "confirm_runtime_web_1",
+      "type": "build_runtime_boundary",
+      "required_terms": ["proof"],
+      "forbidden_terms": ["build passed", "tests passed", "runtime verified"],
+      "required_row_values": {"expected_proof_layer": "build_runtime_boundary"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "confirm-runtime-portable-1",
+      "task_id": "confirm_runtime_portable_1",
+      "type": "build_runtime_boundary",
+      "required_terms": ["proof"],
+      "forbidden_terms": ["build passed", "tests passed", "runtime verified"],
+      "required_row_values": {"expected_proof_layer": "build_runtime_boundary"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "pilot-known-ios",
+      "task_id": "pilot_known_ios",
+      "type": "semantic_identity",
+      "required_terms": ["declaration"],
+      "required_row_values": {"expected_proof_layer": "semantic_identity_or_search_labeled"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "pilot-high-fanout-ios",
+      "task_id": "pilot_high_fanout_ios",
+      "type": "high_fanout_reference",
+      "required_terms": ["evidence"],
+      "required_row_values": {"expected_proof_layer": "high_fanout_summary"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "pilot-literal-web",
+      "task_id": "pilot_literal_web",
+      "type": "literal_resource",
+      "required_terms": ["file"],
+      "required_row_values": {"expected_proof_layer": "literal_discovery"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "pilot-structural-web",
+      "task_id": "pilot_structural_web",
+      "type": "structural_pattern",
+      "required_terms": ["match"],
+      "required_row_values": {"expected_proof_layer": "structural_scope"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "pilot-runtime-ios",
+      "task_id": "pilot_runtime_ios",
+      "type": "build_runtime_boundary",
+      "required_terms": ["proof"],
+      "forbidden_terms": ["build passed", "tests passed", "runtime verified"],
+      "required_row_values": {"expected_proof_layer": "build_runtime_boundary"},
+      "requires_policy_pass": true
+    },
+    {
+      "oracle_id": "pilot-known-portable",
+      "task_id": "pilot_known_portable",
+      "type": "semantic_identity",
+      "required_terms": ["declaration"],
+      "required_row_values": {"expected_proof_layer": "semantic_identity_or_search_labeled"},
+      "requires_policy_pass": true
     }
   ]
 }

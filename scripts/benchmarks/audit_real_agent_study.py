@@ -12,6 +12,8 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.lib.agent_session import to_json_file
+from scripts.lib.agent_session import load_tasks
+from scripts.lib.task_oracles import load_task_oracles, validate_task_oracle_plan
 from scripts.lib.treatment_config import (
     FACTORIAL_ARM_ORDER,
     diff_effective_agent_configs,
@@ -129,6 +131,30 @@ def audit_confirmatory_study_package(
         add_issue(issues, "fail", "task_manifest_hash_match", "row task_manifest_hash values must match the frozen study package")
 
 
+def audit_confirmatory_oracle_plan(*, manifest: dict[str, object], issues: list[dict[str, object]]) -> None:
+    package = manifest.get("study_package")
+    if not isinstance(package, dict):
+        return
+    task_manifest_path = Path(str(package.get("task_manifest_path", "")))
+    task_oracles_path = Path(str(package.get("task_oracles_path", "")))
+    if not task_manifest_path.exists() or not task_oracles_path.exists():
+        add_issue(issues, "fail", "task_oracle_plan", "confirmatory audit requires readable frozen task and oracle files")
+        return
+    result = validate_task_oracle_plan(
+        tasks=load_tasks(task_manifest_path),
+        oracles=load_task_oracles(task_oracles_path),
+        require_task_specific=True,
+    )
+    if result["status"] != "pass":
+        issue_codes = sorted({str(issue.get("code", "")) for issue in result.get("issues", []) if isinstance(issue, dict)})
+        add_issue(
+            issues,
+            "fail",
+            "task_oracle_plan",
+            "confirmatory task oracle plan failed: " + ",".join(code for code in issue_codes if code),
+        )
+
+
 def audit(
     root: str | Path,
     *,
@@ -171,6 +197,7 @@ def audit(
         add_issue(issues, "fail", "private_hmac", "study requires private HMAC key configuration")
     if confirmatory:
         audit_confirmatory_study_package(manifest=manifest, rows=rows, issues=issues)
+        audit_confirmatory_oracle_plan(manifest=manifest, issues=issues)
 
     arms = set(str(row.get("profile", "")) for row in rows)
     missing_arms = [arm for arm in FACTORIAL_ARM_ORDER if arm not in arms]

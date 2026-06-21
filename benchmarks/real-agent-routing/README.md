@@ -103,11 +103,22 @@ python3 scripts/benchmarks/audit_real_agent_study.py \
   --out results/real-agent-routing/router-effect-v1-dry-run/study-audit.json
 ```
 
+Before a live confirmatory run, validate that each frozen task has a
+task-specific oracle contract:
+
+```bash
+python3 scripts/benchmarks/verify_task_oracles.py \
+  --tasks benchmarks/real-agent-routing/studies/router-effect-v1/confirmatory-tasks.tsv \
+  --oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
+  --require-task-specific
+```
+
 The stricter `--confirmatory` audit is intentionally reserved for live runs
 using the frozen `confirmatory-tasks.tsv` and the study-plan oracle file. It
 rejects dry-runs, custom task manifests, custom oracle files, missing
 analysis/power artifacts, non-primary metric analysis, and row hashes that do
-not match the frozen package.
+not match the frozen package. It also rejects weak oracle plans that rely only
+on family-level fallbacks.
 
 The study protocol is intentionally public-safe: repository labels are generic,
 and public evidence must omit private names, paths, prompts, symbols, snippets,
