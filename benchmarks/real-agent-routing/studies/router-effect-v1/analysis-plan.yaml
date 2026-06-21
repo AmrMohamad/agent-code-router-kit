@@ -14,3 +14,4 @@ factorial_effects: semantic_access,routing_discipline,interaction
 multiple_comparison_correction: holm
 stratified_effects: task_family,repository,sequence_position
 public_repository_effects: opaque_repo_ids_only
+cost_estimation: explicit_model_pricing_required

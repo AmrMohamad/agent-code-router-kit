@@ -180,8 +180,6 @@ def _analysis_cost_has_required_shape(analysis: dict[str, object], manifest: dic
     if not isinstance(cost, dict):
         return False
     status = cost.get("status")
-    if status == "not_configured":
-        return True
     if status != "estimated":
         return False
     if cost.get("pricing_model_id") != manifest.get("model_id"):
@@ -552,6 +550,7 @@ def audit_confirmatory_analysis_plan(*, manifest: dict[str, object], issues: lis
         "correctness_effect": "paired_binary_mcnemar_or_bootstrap",
         "multiple_comparison_correction": "holm",
         "public_repository_effects": "opaque_repo_ids_only",
+        "cost_estimation": "explicit_model_pricing_required",
     }
     wrong_scalars = [
         key

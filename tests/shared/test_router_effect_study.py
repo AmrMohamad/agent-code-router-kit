@@ -767,6 +767,9 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(power["all_preregistered_comparisons_power_target_met"])
             self.assertAlmostEqual(power["z_alpha_two_sided"], 1.95996398)
             self.assertAlmostEqual(power["z_power"], 0.84162123)
+            (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            unpriced_analysis_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("study_analysis_cost", {issue["code"] for issue in unpriced_analysis_audit["issues"]})
             malformed_power = dict(power)
             malformed_power.pop("pairwise_power")
             (out / "study-power.json").write_text(json.dumps(malformed_power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -873,7 +876,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             (out / "study-analysis.json").write_text(json.dumps(malformed_cost_analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             malformed_cost = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("study_analysis_cost", {issue["code"] for issue in malformed_cost["issues"]})
-            (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            (out / "study-analysis.json").write_text(json.dumps(priced_analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             no_prewarm_manifest = dict(manifest)

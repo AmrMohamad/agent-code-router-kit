@@ -92,7 +92,7 @@ Secondary outcomes:
 - tool-output bytes
 - wall time
 - semantic setup time
-- estimated cost when pricing and model identifiers are available
+- estimated cost from explicit pinned-model pricing
 - tool calls, opened files, policy violations, timeouts, and failures
 
 Every live row must include exact input, cached input, uncached input, output,
@@ -100,10 +100,11 @@ total, uncached total, reasoning-output tokens, and a positive usage-event
 count. The audit rejects rows whose uncached and total fields are internally
 inconsistent.
 
-Cost is a secondary outcome only. A cost claim requires explicit pricing for
-the pinned model: uncached input, cached input, output, and reasoning-output
-rates per one million tokens. Cost reporting must include total cost, median
-cost, cost per run, and cost per successful task by arm.
+Cost is a secondary outcome only, but confirmatory reports must still include an
+estimated-cost block from explicit pricing for the pinned model: uncached input,
+cached input, output, and reasoning-output rates per one million tokens. Cost
+reporting must include total cost, median cost, cost per run, and cost per
+successful task by arm.
 
 Every randomized run is retained for intention-to-treat analysis. Pass/pass
 comparisons are secondary sensitivity analyses only.
