@@ -41,9 +41,11 @@ each sequence position.
 
 ## Repository Policy
 
-Confirmatory runs require clean detached snapshots. Public evidence may publish
-only opaque repository labels and keyed private fingerprints. Private paths,
-project names, symbols, prompts, and snippets must not be committed.
+Confirmatory runs require clean detached snapshots and a clean controller
+checkout. The manifest and run rows must record the controller commit and tree
+hash used to execute the study. Public evidence may publish only opaque
+repository labels and keyed private fingerprints. Private paths, project names,
+symbols, prompts, and snippets must not be committed.
 
 The confirmatory package is frozen by hashing the study plan, this protocol,
 the analysis plan, the task oracle file, and the confirmatory task manifest

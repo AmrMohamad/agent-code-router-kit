@@ -827,6 +827,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             )
     route_profiles = {arm: load_route_profile(profile_path(arm)) for arm in arms}
     tool_versions = capture_tool_versions(cwd=ROOT) if args.capture_versions else {}
+    controller_state = git_metadata(ROOT)
     carried_rows = load_existing_run_rows(resume_root) if resume_root else []
     invalid_carried_rows: list[dict[str, object]] = []
     if resume_root:
@@ -855,6 +856,11 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "model_id": args.model_id,
         "reasoning_effort": args.reasoning_effort,
         "tool_versions": tool_versions,
+        "controller_commit": controller_state.get("commit", ""),
+        "controller_tree_hash": controller_state.get("tree_hash", ""),
+        "controller_branch": controller_state.get("branch", ""),
+        "controller_dirty": controller_state.get("dirty", True),
+        "controller_status_sha256": controller_state.get("status_sha256", ""),
         "task_oracles": str(Path(args.task_oracles).expanduser().resolve()) if args.task_oracles else "",
         "hmac_key_env": args.hmac_key_env,
         "private_hmac_configured": bool(os.environ.get(args.hmac_key_env, "")),
@@ -1093,7 +1099,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         row = {
             "run_id": run_id,
             "study_id": study_plan.study_id if study_plan else "",
-            "protocol_commit": git_metadata(ROOT).get("commit", ""),
+            "protocol_commit": controller_state.get("commit", ""),
+            "controller_commit": controller_state.get("commit", ""),
+            "controller_tree_hash": controller_state.get("tree_hash", ""),
             "block_id": sequence.get("block_id", ""),
             "sequence_id": sequence.get("sequence_id", ""),
             "sequence_position": sequence.get("sequence_position"),

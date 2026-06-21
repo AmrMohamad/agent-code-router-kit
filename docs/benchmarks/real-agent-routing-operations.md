@@ -216,6 +216,7 @@ The runner enforces the study controls when `--study-plan` is present:
 - external task oracle artifacts;
 - frozen study-package provenance in `run-manifest.json`, including hashes for
   the study plan, protocol, analysis plan, oracle file, and task manifest;
+- controller commit/tree provenance from a clean benchmark-controller checkout;
 - model and reasoning-effort metadata.
 
 Example dry-run control check:
@@ -308,7 +309,8 @@ custom task manifests, custom oracle files, dry-runs, missing
 `task_manifest_hash` does not match the frozen package in `run-manifest.json`.
 It also recomputes the frozen study-package file hashes and validates the
 analysis plan's primary outcome, repository/task cluster unit, factorial
-effects, stratification fields, and power inputs before accepting the run.
+effects, stratification fields, power inputs, and controller commit/tree
+consistency before accepting the run.
 The analysis and power artifacts must use the preregistered primary context
 metric, `exact_uncached_input_tokens`.
 The confirmatory audit recomputes both artifacts from the current `runs.jsonl`;

@@ -405,6 +405,31 @@ def audit_confirmatory_analysis_plan(*, manifest: dict[str, object], issues: lis
         )
 
 
+def audit_confirmatory_controller_provenance(
+    *,
+    manifest: dict[str, object],
+    rows: list[dict[str, object]],
+    issues: list[dict[str, object]],
+) -> None:
+    controller_commit = manifest.get("controller_commit")
+    controller_tree_hash = manifest.get("controller_tree_hash")
+    if not is_git_object_id(controller_commit):
+        add_issue(issues, "fail", "controller_commit", "confirmatory study requires controller_commit in the manifest")
+    if not is_git_object_id(controller_tree_hash):
+        add_issue(issues, "fail", "controller_tree_hash", "confirmatory study requires controller_tree_hash in the manifest")
+    if manifest.get("controller_dirty") is not False:
+        add_issue(issues, "fail", "controller_clean", "confirmatory study requires a clean controller checkout")
+    row_protocol_commits = {str(row.get("protocol_commit", "")) for row in rows}
+    row_controller_commits = {str(row.get("controller_commit", "")) for row in rows}
+    row_controller_trees = {str(row.get("controller_tree_hash", "")) for row in rows}
+    if len(row_protocol_commits) != 1 or str(controller_commit) not in row_protocol_commits:
+        add_issue(issues, "fail", "row_protocol_commit_match", "row protocol_commit values must match manifest controller_commit")
+    if len(row_controller_commits) != 1 or str(controller_commit) not in row_controller_commits:
+        add_issue(issues, "fail", "row_controller_commit_match", "row controller_commit values must match the manifest")
+    if len(row_controller_trees) != 1 or str(controller_tree_hash) not in row_controller_trees:
+        add_issue(issues, "fail", "row_controller_tree_match", "row controller_tree_hash values must match the manifest")
+
+
 def audit_confirmatory_rerun_policy(*, manifest: dict[str, object], issues: list[dict[str, object]]) -> None:
     if manifest.get("rerun_failed") is True:
         add_issue(
@@ -508,6 +533,7 @@ def audit(
         audit_confirmatory_study_package(manifest=manifest, rows=rows, issues=issues)
         audit_confirmatory_oracle_plan(manifest=manifest, issues=issues)
         audit_confirmatory_analysis_plan(manifest=manifest, issues=issues)
+        audit_confirmatory_controller_provenance(manifest=manifest, rows=rows, issues=issues)
         audit_confirmatory_rerun_policy(manifest=manifest, issues=issues)
         audit_treatment_diff_artifact(base=base, rows=rows, issues=issues)
 

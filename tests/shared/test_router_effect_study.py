@@ -96,6 +96,7 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
     manifest["live"] = True
     manifest["prewarm_semantic_layer"] = True
     manifest["serena_readiness_enabled"] = True
+    manifest["controller_dirty"] = False
     package = dict(manifest.get("study_package", {}))
     package["task_split"] = "confirmatory"
     package["task_oracles_source"] = "study_plan"
@@ -114,6 +115,9 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
             row.update(
                 {
                     "token_source": "exact",
+                    "controller_commit": manifest["controller_commit"],
+                    "controller_tree_hash": manifest["controller_tree_hash"],
+                    "protocol_commit": manifest["controller_commit"],
                     "exact_input_tokens": value + 100,
                     "exact_cached_input_tokens": 100,
                     "exact_uncached_input_tokens": value,
@@ -347,10 +351,17 @@ class RouterEffectStudyTests(unittest.TestCase):
             for profile in {"A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"}:
                 positions = sorted(row["sequence_position"] for row in rows if row["profile"] == profile)
                 self.assertEqual(positions, [1, 2, 3, 4])
+            manifest = json.loads((out / "run-manifest.json").read_text(encoding="utf-8"))
+            self.assertRegex(manifest["controller_commit"], r"^[0-9a-f]{40,64}$")
+            self.assertRegex(manifest["controller_tree_hash"], r"^[0-9a-f]{40,64}$")
+            self.assertIsInstance(manifest["controller_dirty"], bool)
             for row in rows:
                 run_dir = Path(row["run_dir"])
                 self.assertTrue((run_dir / "semantic-session.json").exists())
                 self.assertEqual(row["semantic_session_artifact"], "semantic-session.json")
+                self.assertEqual(row["protocol_commit"], manifest["controller_commit"])
+                self.assertEqual(row["controller_commit"], manifest["controller_commit"])
+                self.assertEqual(row["controller_tree_hash"], manifest["controller_tree_hash"])
                 self.assertIn("codex_version", row)
                 self.assertRegex(row["source_commit"], r"^[0-9a-f]{40,64}$")
                 self.assertEqual(row["source_commit"], row["snapshot_commit"])
@@ -380,7 +391,6 @@ class RouterEffectStudyTests(unittest.TestCase):
                     self.assertEqual(semantic_session["mode"], "disabled")
                     self.assertFalse(semantic_session["mcp_server_configured"])
                     self.assertEqual(row["semantic_session_id_hmac"], "")
-            manifest = json.loads((out / "run-manifest.json").read_text(encoding="utf-8"))
             self.assertTrue(manifest["snapshot_repos"])
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertEqual(manifest["order_design"], "balanced-latin-square")
@@ -614,6 +624,27 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_analysis_metric", wrong_metric_codes)
             self.assertIn("study_power_metric", wrong_metric_codes)
 
+            manifest_path = out / "run-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            dirty_controller_manifest = dict(manifest)
+            dirty_controller_manifest["controller_dirty"] = True
+            manifest_path.write_text(json.dumps(dirty_controller_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            dirty_controller = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("controller_clean", {issue["code"] for issue in dirty_controller["issues"]})
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            runs_path = out / "runs.jsonl"
+            original_runs_text = runs_path.read_text(encoding="utf-8")
+            mismatched_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            mismatched_rows[0]["protocol_commit"] = "0" * 40
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in mismatched_rows),
+                encoding="utf-8",
+            )
+            mismatched_controller = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("row_protocol_commit_match", {issue["code"] for issue in mismatched_controller["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
             analysis = analyze(out, metric="exact_uncached_input_tokens")
             self.assertIn("pairwise_effects_by_task_family", analysis)
             self.assertIn("pairwise_effects_by_repo", analysis)
@@ -713,7 +744,6 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_analysis_cost", {issue["code"] for issue in malformed_cost["issues"]})
             (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-            manifest_path = out / "run-manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             no_prewarm_manifest = dict(manifest)
             no_prewarm_manifest["prewarm_semantic_layer"] = False
@@ -744,7 +774,6 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_package_hash_match", bad_plan_codes)
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-            runs_path = out / "runs.jsonl"
             original_runs_text = runs_path.read_text(encoding="utf-8")
             row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
             semantic_index = next(index for index, row in enumerate(row_lines) if row["semantic_access_enabled"])
@@ -874,6 +903,9 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(public_rows[0]["repo_public_id"], "repo_001")
             self.assertIn("semantic_session_mode", public_rows[0])
             self.assertIn("codex_version", public_rows[0])
+            self.assertRegex(public_rows[0]["protocol_commit"], r"^[0-9a-f]{40,64}$")
+            self.assertEqual(public_rows[0]["controller_commit"], public_rows[0]["protocol_commit"])
+            self.assertRegex(public_rows[0]["controller_tree_hash"], r"^[0-9a-f]{40,64}$")
             self.assertIn("snapshot_state_hmac", public_rows[0])
             semantic_public_row = next(row for row in public_rows if row["semantic_access_enabled"])
             self.assertRegex(semantic_public_row["semantic_session_id_hmac"], r"^[0-9a-f]{24}$")
@@ -886,6 +918,9 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_task_oracle_and_manifest_hashes_omitted"])
+            self.assertRegex(manifest["controller_commit"], r"^[0-9a-f]{40,64}$")
+            self.assertRegex(manifest["controller_tree_hash"], r"^[0-9a-f]{40,64}$")
+            self.assertIsInstance(manifest["controller_dirty"], bool)
             self.assertIn("study_plan_hmac", manifest["study_package"])
             self.assertIn("protocol_hmac", manifest["study_package"])
             self.assertIn("analysis_plan_hmac", manifest["study_package"])
