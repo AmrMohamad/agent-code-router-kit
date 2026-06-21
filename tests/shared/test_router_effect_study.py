@@ -369,6 +369,12 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_power_metric", wrong_metric_codes)
 
             analysis = analyze(out, metric="exact_uncached_input_tokens")
+            self.assertIn("pairwise_effects_by_task_family", analysis)
+            self.assertIn("pairwise_effects_by_repo", analysis)
+            self.assertIn("pairwise_effects_by_sequence_position", analysis)
+            self.assertIn("factorial_effects_by_task_family", analysis)
+            self.assertIn("factorial_effects_by_repo", analysis)
+            self.assertEqual(analysis["multiple_comparison_correction"]["method"], "holm")
             (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             power = estimate(
                 rows,
@@ -431,9 +437,12 @@ class RouterEffectStudyTests(unittest.TestCase):
                 )
 
             analysis = analyze(out, metric="model_visible_proxy_tokens")
+            self.assertIn("pairwise_effects_by_repo", analysis)
+            self.assertIn("sample", analysis["pairwise_effects_by_repo"]["A-search-only_to_D-full-router"])
             self.assertIn("factorial_effects", analysis)
             self.assertIn("correctness_pairwise", analysis)
             self.assertTrue(analysis["correctness_pairwise"]["A-search-only_to_D-full-router"]["noninferiority_passed"])
+            self.assertEqual(analysis["multiple_comparison_correction"]["method"], "holm")
             self.assertIn("cluster_bootstrap_95ci_percent", analysis["pairwise_effects"]["A-search-only_to_D-full-router"])
             (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             rows = [json.loads(line) for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -471,6 +480,13 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertNotIn("task_manifest_sha256", manifest["study_package"])
             self.assertNotIn("task_oracles_sha256", manifest["study_package"])
             self.assertNotIn("task_manifest_path", manifest["study_package"])
+            public_analysis_text = (public / "analysis.sanitized.json").read_text(encoding="utf-8")
+            self.assertNotIn('"sample":', public_analysis_text)
+            public_analysis = json.loads(public_analysis_text)
+            self.assertIn(
+                "repo_001",
+                public_analysis["pairwise_effects_by_repo"]["A-search-only_to_D-full-router"],
+            )
             self.assertIn("manifest.sanitized.json", result["artifact_hashes"])
 
     def test_study_mode_requires_private_hmac_key(self) -> None:

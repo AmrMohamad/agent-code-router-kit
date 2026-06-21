@@ -59,10 +59,13 @@ def paired_log_ratios(
             {
                 "agent": key[0],
                 "task_id": key[1],
+                "repo": profiles[left].get("repo", ""),
                 "task_family": profiles[left].get("task_family", ""),
                 "repeat_index": key[2],
                 "left_profile": left,
                 "right_profile": right,
+                "left_sequence_position": profiles[left].get("sequence_position"),
+                "right_sequence_position": profiles[right].get("sequence_position"),
                 "left": left_value,
                 "right": right_value,
                 "log_ratio": math.log(right_value / left_value),
@@ -123,6 +126,16 @@ def summarize_effect(rows: list[dict[str, object]]) -> dict[str, object]:
         "mean_log_effect_as_percent": round((math.exp(statistics.mean(logs)) - 1.0) * 100.0, 2),
         "cluster_bootstrap_95ci_percent": cluster_bootstrap_log_ci(rows),
     }
+
+
+def grouped_effects(rows: list[dict[str, object]], *, group_key: str) -> dict[str, dict[str, object]]:
+    groups: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in rows:
+        value = row.get(group_key)
+        if value in {"", None}:
+            value = "unknown"
+        groups[str(value)].append(row)
+    return {key: summarize_effect(values) for key, values in sorted(groups.items())}
 
 
 def binomial_cdf(k: int, n: int, p: float = 0.5) -> float:
@@ -197,11 +210,21 @@ def block_metric_rows(rows: list[dict[str, object]], *, metric: str, pass_all_on
             values[profile] = value
         if len(values) != len(FACTORIAL_ARM_ORDER):
             continue
-        blocks.append({"agent": key[0], "task_id": key[1], "repeat_index": key[2], "values": values})
+        exemplar = profiles[FACTORIAL_ARM_ORDER[0]]
+        blocks.append(
+            {
+                "agent": key[0],
+                "task_id": key[1],
+                "task_family": exemplar.get("task_family", ""),
+                "repo": exemplar.get("repo", ""),
+                "repeat_index": key[2],
+                "values": values,
+            }
+        )
     return blocks
 
 
-def summarize_factorial_effects(rows: list[dict[str, object]], *, metric: str, pass_all_only: bool = False) -> dict[str, object]:
+def factorial_effect_rows(rows: list[dict[str, object]], *, metric: str, pass_all_only: bool = False) -> dict[str, list[dict[str, object]]]:
     blocks = block_metric_rows(rows, metric=metric, pass_all_only=pass_all_only)
     effects: dict[str, list[dict[str, object]]] = {
         "semantic_access_main_effect": [],
@@ -222,11 +245,54 @@ def summarize_factorial_effects(rows: list[dict[str, object]], *, metric: str, p
             effects[name].append(
                 {
                     "task_id": block["task_id"],
+                    "task_family": block.get("task_family", ""),
+                    "repo": block.get("repo", ""),
                     "log_ratio": value,
                     "percent_change": (math.exp(value) - 1.0) * 100.0,
                 }
             )
+    return effects
+
+
+def summarize_factorial_effects(rows: list[dict[str, object]], *, metric: str, pass_all_only: bool = False) -> dict[str, object]:
+    effects = factorial_effect_rows(rows, metric=metric, pass_all_only=pass_all_only)
     return {name: summarize_effect(values) for name, values in effects.items()}
+
+
+def summarize_factorial_effects_by_group(
+    rows: list[dict[str, object]],
+    *,
+    metric: str,
+    group_key: str,
+    pass_all_only: bool = False,
+) -> dict[str, object]:
+    effects = factorial_effect_rows(rows, metric=metric, pass_all_only=pass_all_only)
+    return {name: grouped_effects(values, group_key=group_key) for name, values in effects.items()}
+
+
+def holm_correct_pairwise(correctness_pairwise: dict[str, dict[str, object]], *, alpha: float = 0.05) -> dict[str, object]:
+    p_values: list[tuple[str, float]] = []
+    for name, result in correctness_pairwise.items():
+        value = result.get("mcnemar_exact_p")
+        if isinstance(value, int | float):
+            p_values.append((name, float(value)))
+    ordered = sorted(p_values, key=lambda item: item[1])
+    adjusted: dict[str, dict[str, object]] = {}
+    running_max = 0.0
+    total = len(ordered)
+    for rank, (name, p_value) in enumerate(ordered, start=1):
+        adjusted_p = min(1.0, p_value * (total - rank + 1))
+        running_max = max(running_max, adjusted_p)
+        adjusted[name] = {
+            "raw_p": round(p_value, 6),
+            "holm_adjusted_p": round(running_max, 6),
+            "reject_alpha": running_max <= alpha,
+        }
+    return {
+        "method": "holm",
+        "alpha": alpha,
+        "comparisons": adjusted,
+    }
 
 
 def load_pricing(path: str | Path | None) -> dict[str, float]:
@@ -287,6 +353,9 @@ def analyze(
     correctness = Counter(str(row.get("oracle_status") or row.get("correctness_status", "")) for row in rows)
     pairwise = {}
     pass_pass_pairwise = {}
+    pairwise_by_task_family = {}
+    pairwise_by_repo = {}
+    pairwise_by_sequence_position = {}
     correctness_pairwise = {}
     for left, right in [
         ("A-search-only", "B-search-summary"),
@@ -295,10 +364,14 @@ def analyze(
         ("A-search-only", "D-full-router"),
     ]:
         effects = paired_log_ratios(rows, metric=metric, left=left, right=right)
-        pairwise[f"{left}_to_{right}"] = summarize_effect(effects)
+        comparison = f"{left}_to_{right}"
+        pairwise[comparison] = summarize_effect(effects)
+        pairwise_by_task_family[comparison] = grouped_effects(effects, group_key="task_family")
+        pairwise_by_repo[comparison] = grouped_effects(effects, group_key="repo")
+        pairwise_by_sequence_position[comparison] = grouped_effects(effects, group_key="right_sequence_position")
         pass_pass_effects = paired_log_ratios(rows, metric=metric, left=left, right=right, pass_pass_only=True)
-        pass_pass_pairwise[f"{left}_to_{right}"] = summarize_effect(pass_pass_effects)
-        correctness_pairwise[f"{left}_to_{right}"] = paired_correctness(
+        pass_pass_pairwise[comparison] = summarize_effect(pass_pass_effects)
+        correctness_pairwise[comparison] = paired_correctness(
             rows,
             left=left,
             right=right,
@@ -315,13 +388,21 @@ def analyze(
         "correctness_noninferiority_margin": correctness_noninferiority_margin,
         "intention_to_treat_run_count": len(rows),
         "pairwise_effects": pairwise,
+        "pairwise_effects_by_task_family": pairwise_by_task_family,
+        "pairwise_effects_by_repo": pairwise_by_repo,
+        "pairwise_effects_by_sequence_position": pairwise_by_sequence_position,
         "pass_pass_sensitivity_pairwise_effects": pass_pass_pairwise,
         "factorial_effects": summarize_factorial_effects(rows, metric=metric),
+        "factorial_effects_by_task_family": summarize_factorial_effects_by_group(rows, metric=metric, group_key="task_family"),
+        "factorial_effects_by_repo": summarize_factorial_effects_by_group(rows, metric=metric, group_key="repo"),
         "pass_all_sensitivity_factorial_effects": summarize_factorial_effects(rows, metric=metric, pass_all_only=True),
+        "multiple_comparison_correction": holm_correct_pairwise(correctness_pairwise),
         "cost": summarize_costs(rows, pricing or {}),
         "notes": [
             "Percent change is treatment minus baseline over baseline.",
             "Cluster bootstrap intervals resample task ids, not tool calls or token events.",
+            "Sequence-position effects group each pair by the treatment arm's Latin-square position.",
+            "Repository-stratified effects must be anonymized before public release.",
             "Estimated cost is optional and requires explicit model pricing inputs.",
         ],
     }

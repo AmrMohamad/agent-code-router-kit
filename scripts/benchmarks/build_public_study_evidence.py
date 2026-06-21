@@ -119,6 +119,29 @@ def sanitized_study_package(manifest: dict[str, object]) -> dict[str, object]:
     return {field: package[field] for field in allowed_fields if field in package}
 
 
+def sanitize_repo_grouped_effects(payload: object, *, repo_ids: dict[str, str]) -> object:
+    if not isinstance(payload, dict):
+        return payload
+    sanitized: dict[str, object] = {}
+    for comparison, groups in payload.items():
+        if not isinstance(groups, dict):
+            sanitized[str(comparison)] = groups
+            continue
+        sanitized[str(comparison)] = {
+            repo_ids.get(str(repo), "repo_unknown"): value
+            for repo, value in sorted(groups.items(), key=lambda item: str(item[0]))
+        }
+    return sanitized
+
+
+def sanitize_analysis_payload(analysis: dict[str, object], *, repo_ids: dict[str, str]) -> dict[str, object]:
+    sanitized = dict(analysis)
+    for key in ("pairwise_effects_by_repo", "factorial_effects_by_repo"):
+        if key in sanitized:
+            sanitized[key] = sanitize_repo_grouped_effects(sanitized[key], repo_ids=repo_ids)
+    return sanitized
+
+
 def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
     out.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((root / "run-manifest.json").read_text(encoding="utf-8"))
@@ -154,7 +177,8 @@ def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
     to_json_file(out / "audit.sanitized.json", sanitized_audit_summary(root))
     analysis_path = root / "study-analysis.json"
     if analysis_path.exists():
-        to_json_file(out / "analysis.sanitized.json", json.loads(analysis_path.read_text(encoding="utf-8")))
+        analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+        to_json_file(out / "analysis.sanitized.json", sanitize_analysis_payload(analysis, repo_ids=repo_ids))
     power_path = root / "study-power.json"
     if power_path.exists():
         to_json_file(out / "power.sanitized.json", json.loads(power_path.read_text(encoding="utf-8")))

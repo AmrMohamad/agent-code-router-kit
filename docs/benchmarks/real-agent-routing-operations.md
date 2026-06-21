@@ -249,6 +249,12 @@ python3 scripts/benchmarks/analyze_real_agent_study.py \
   --out results/real-agent-routing/router-effect-v1-dry-run/study-analysis.json
 ```
 
+The confirmatory analysis contains intention-to-treat pairwise effects,
+pass/pass sensitivity, factorial effects, task-family and repository strata,
+Latin-square sequence-position sensitivity, and Holm-corrected paired
+correctness comparisons. Public bundles remap repository-stratified keys to
+opaque repository ids.
+
 Pass `--pricing pricing.json` only when the model identifier and per-1M token
 prices are explicit. Cost estimates are reported separately from context
 efficiency and are not inferred from uncached tokens alone.

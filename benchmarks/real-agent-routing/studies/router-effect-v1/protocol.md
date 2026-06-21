@@ -81,3 +81,10 @@ Secondary outcomes:
 
 Every randomized run is retained for intention-to-treat analysis. Pass/pass
 comparisons are secondary sensitivity analyses only.
+
+Continuous outcomes use paired log ratios with task-cluster bootstrap
+confidence intervals. Confirmatory analysis reports pairwise effects, pass/pass
+sensitivity, factorial effects, task-family effects, repository-stratified
+effects, and Latin-square sequence-position sensitivity. Pairwise correctness
+comparisons use Holm correction. Public evidence must replace
+repository-stratified keys with opaque repository ids.

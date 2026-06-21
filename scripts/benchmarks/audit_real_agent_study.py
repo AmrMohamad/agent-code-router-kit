@@ -49,9 +49,15 @@ def semantic_session_for_row(row: dict[str, object]) -> dict[str, object] | None
 def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
     required = [
         "pairwise_effects",
+        "pairwise_effects_by_task_family",
+        "pairwise_effects_by_repo",
+        "pairwise_effects_by_sequence_position",
         "pass_pass_sensitivity_pairwise_effects",
         "factorial_effects",
+        "factorial_effects_by_task_family",
+        "factorial_effects_by_repo",
         "correctness_pairwise",
+        "multiple_comparison_correction",
         "correctness_noninferiority_margin",
     ]
     if any(key not in analysis for key in required):
@@ -62,6 +68,9 @@ def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
     for row in pairwise.values():
         if isinstance(row, dict) and row.get("pair_count", 0) and "cluster_bootstrap_95ci_percent" not in row:
             return False
+    correction = analysis.get("multiple_comparison_correction")
+    if not isinstance(correction, dict) or correction.get("method") != "holm":
+        return False
     return True
 
 
