@@ -100,8 +100,10 @@ policy violations, and output-budget stops are study outcomes, not cells to
 replace. Valid resume carry-forward is allowed only for intact prior rows with
 self-contained artifacts.
 
-Continuous outcomes use paired log ratios with task-cluster bootstrap
-confidence intervals. Confirmatory analysis reports pairwise effects, pass/pass
+Continuous outcomes use paired log ratios with repository/task-cluster bootstrap
+confidence intervals. The analysis block key is agent, task id, repository id,
+and repetition index, so reused task ids in different repositories remain
+independent cells. Confirmatory analysis reports pairwise effects, pass/pass
 sensitivity, factorial effects, task-family effects, repository-stratified
 effects, and Latin-square sequence-position sensitivity. Pairwise correctness
 comparisons use Holm correction. Public evidence must replace

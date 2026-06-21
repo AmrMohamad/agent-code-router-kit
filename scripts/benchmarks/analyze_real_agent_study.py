@@ -41,6 +41,19 @@ def row_passes(row: dict[str, object]) -> bool:
     return status == "pass"
 
 
+def analysis_cell_key(row: dict[str, object]) -> tuple[str, str, str, int]:
+    return (
+        str(row.get("agent", "")),
+        str(row.get("task_id", "")),
+        str(row.get("repo", "")),
+        int(row.get("repeat_index", 0)),
+    )
+
+
+def analysis_cluster_key(row: dict[str, object]) -> tuple[str, str]:
+    return (str(row.get("repo", "")), str(row.get("task_id", "")))
+
+
 def paired_log_ratios(
     rows: list[dict[str, object]],
     *,
@@ -49,10 +62,9 @@ def paired_log_ratios(
     right: str,
     pass_pass_only: bool = False,
 ) -> list[dict[str, object]]:
-    by_cell: dict[tuple[str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
+    by_cell: dict[tuple[str, str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
     for row in rows:
-        key = (str(row.get("agent", "")), str(row.get("task_id", "")), int(row.get("repeat_index", 0)))
-        by_cell[key][str(row.get("profile", ""))] = row
+        by_cell[analysis_cell_key(row)][str(row.get("profile", ""))] = row
     result: list[dict[str, object]] = []
     for key, profiles in by_cell.items():
         if left not in profiles or right not in profiles:
@@ -67,9 +79,9 @@ def paired_log_ratios(
             {
                 "agent": key[0],
                 "task_id": key[1],
-                "repo": profiles[left].get("repo", ""),
+                "repo": key[2],
                 "task_family": profiles[left].get("task_family", ""),
-                "repeat_index": key[2],
+                "repeat_index": key[3],
                 "left_profile": left,
                 "right_profile": right,
                 "left_sequence_position": profiles[left].get("sequence_position"),
@@ -101,9 +113,9 @@ def percentile(values: list[float], q: float) -> float:
 def cluster_bootstrap_log_ci(rows: list[dict[str, object]], *, iterations: int = 1000, seed: int = 12345) -> dict[str, float]:
     if not rows:
         return {}
-    by_task: dict[str, list[float]] = defaultdict(list)
+    by_task: dict[tuple[str, str], list[float]] = defaultdict(list)
     for row in rows:
-        by_task[str(row["task_id"])].append(float(row["log_ratio"]))
+        by_task[analysis_cluster_key(row)].append(float(row["log_ratio"]))
     tasks = sorted(by_task)
     if not tasks:
         return {}
@@ -160,10 +172,9 @@ def mcnemar_exact_p(left_only: int, right_only: int) -> float:
 
 
 def paired_correctness(rows: list[dict[str, object]], *, left: str, right: str, noninferiority_margin: float) -> dict[str, object]:
-    by_cell: dict[tuple[str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
+    by_cell: dict[tuple[str, str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
     for row in rows:
-        key = (str(row.get("agent", "")), str(row.get("task_id", "")), int(row.get("repeat_index", 0)))
-        by_cell[key][str(row.get("profile", ""))] = row
+        by_cell[analysis_cell_key(row)][str(row.get("profile", ""))] = row
     both_pass = left_only = right_only = neither_pass = 0
     for profiles in by_cell.values():
         if left not in profiles or right not in profiles:
@@ -200,10 +211,9 @@ def paired_correctness(rows: list[dict[str, object]], *, left: str, right: str, 
 
 
 def block_metric_rows(rows: list[dict[str, object]], *, metric: str, pass_all_only: bool = False) -> list[dict[str, object]]:
-    by_cell: dict[tuple[str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
+    by_cell: dict[tuple[str, str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
     for row in rows:
-        key = (str(row.get("agent", "")), str(row.get("task_id", "")), int(row.get("repeat_index", 0)))
-        by_cell[key][str(row.get("profile", ""))] = row
+        by_cell[analysis_cell_key(row)][str(row.get("profile", ""))] = row
     blocks: list[dict[str, object]] = []
     for key, profiles in by_cell.items():
         if any(profile not in profiles for profile in FACTORIAL_ARM_ORDER):
@@ -224,8 +234,8 @@ def block_metric_rows(rows: list[dict[str, object]], *, metric: str, pass_all_on
                 "agent": key[0],
                 "task_id": key[1],
                 "task_family": exemplar.get("task_family", ""),
-                "repo": exemplar.get("repo", ""),
-                "repeat_index": key[2],
+                "repo": key[2],
+                "repeat_index": key[3],
                 "values": values,
             }
         )
@@ -457,7 +467,7 @@ def analyze(
         "cost": summarize_costs(rows, pricing or {}),
         "notes": [
             "Percent change is treatment minus baseline over baseline.",
-            "Cluster bootstrap intervals resample task ids, not tool calls or token events.",
+            "Cluster bootstrap intervals resample repository/task clusters, not tool calls or token events.",
             "Sequence-position effects group each pair by the treatment arm's Latin-square position.",
             "Repository-stratified effects must be anonymized before public release.",
             "Estimated cost is optional and requires explicit model pricing inputs.",

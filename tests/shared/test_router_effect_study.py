@@ -164,6 +164,55 @@ class RouterEffectStudyTests(unittest.TestCase):
             positions = [sequence.index(arm) + 1 for sequence in square]
             self.assertEqual(sorted(positions), [1, 2, 3, 4])
 
+    def test_analysis_keeps_same_task_id_separate_across_repositories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rows = []
+            token_values = {
+                "repo_alpha": {
+                    "A-search-only": 1000,
+                    "B-search-summary": 900,
+                    "C-lsp-naive": 800,
+                    "D-full-router": 700,
+                },
+                "repo_beta": {
+                    "A-search-only": 2000,
+                    "B-search-summary": 1800,
+                    "C-lsp-naive": 1600,
+                    "D-full-router": 1400,
+                },
+            }
+            for repo, values in token_values.items():
+                for sequence_position, (profile, value) in enumerate(values.items(), start=1):
+                    rows.append(
+                        {
+                            "agent": "codex",
+                            "task_id": "shared_task_id",
+                            "repo": repo,
+                            "task_family": "known_symbol_definition",
+                            "repeat_index": 0,
+                            "profile": profile,
+                            "sequence_position": sequence_position,
+                            "oracle_status": "pass",
+                            "exact_uncached_input_tokens": value,
+                        }
+                    )
+            (root / "runs.jsonl").write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+
+            result = analyze(root, metric="exact_uncached_input_tokens")
+            comparison = "A-search-only_to_D-full-router"
+
+            self.assertEqual(result["pairwise_effects"][comparison]["pair_count"], 2)
+            self.assertEqual(result["correctness_pairwise"][comparison]["pair_count"], 2)
+            self.assertEqual(
+                set(result["pairwise_effects_by_repo"][comparison]),
+                {"repo_alpha", "repo_beta"},
+            )
+            self.assertEqual(result["factorial_effects"]["semantic_access_main_effect"]["pair_count"], 2)
+
     def test_hermetic_codex_config_diff_limits_a_to_d_to_treatment_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -268,8 +268,10 @@ python3 scripts/benchmarks/analyze_real_agent_study.py \
 The confirmatory analysis contains intention-to-treat pairwise effects,
 pass/pass sensitivity, factorial effects, task-family and repository strata,
 Latin-square sequence-position sensitivity, and Holm-corrected paired
-correctness comparisons. Public bundles remap repository-stratified keys to
-opaque repository ids.
+correctness comparisons. Pairing and factorial blocks are keyed by agent,
+task id, repository id, and repetition index so reused task ids in different
+repositories stay independent. Public bundles remap repository-stratified keys
+to opaque repository ids.
 
 Pass `--pricing pricing.json` only when the pinned model identifier and per-1M
 token prices are explicit. The pricing JSON must include `model_id`,

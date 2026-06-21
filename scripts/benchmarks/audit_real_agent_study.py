@@ -412,10 +412,16 @@ def audit(
     if missing_arms:
         add_issue(issues, "fail", "arm_coverage", f"missing arms: {','.join(missing_arms)}")
     if confirmatory:
-        tasks_by_family: dict[str, set[str]] = defaultdict(set)
+        tasks_by_family: dict[str, set[tuple[str, str]]] = defaultdict(set)
         for row in rows:
-            tasks_by_family[str(row.get("task_family", ""))].add(str(row.get("task_id", "")))
-        populated_families = {family: tasks for family, tasks in tasks_by_family.items() if family and "" not in tasks}
+            tasks_by_family[str(row.get("task_family", ""))].add(
+                (str(row.get("repo", "")), str(row.get("task_id", "")))
+            )
+        populated_families = {
+            family: tasks
+            for family, tasks in tasks_by_family.items()
+            if family and all(repo and task_id for repo, task_id in tasks)
+        }
         if len(populated_families) < min_task_families:
             add_issue(
                 issues,
@@ -433,16 +439,24 @@ def audit(
                 )
 
     positions_by_arm: Counter[tuple[str, int]] = Counter()
-    positions_by_task_arm: Counter[tuple[str, str, str, int]] = Counter()
+    positions_by_task_arm: Counter[tuple[str, str, str, str, int]] = Counter()
     semantic_session_ids: Counter[str] = Counter()
-    cells_by_block: dict[tuple[str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
+    cells_by_block: dict[tuple[str, str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
     live = manifest.get("live") is True
     for row in rows:
         profile = str(row.get("profile", ""))
         position = row.get("sequence_position")
         if isinstance(position, int):
             positions_by_arm[(profile, position)] += 1
-            positions_by_task_arm[(str(row.get("agent", "")), str(row.get("task_id", "")), profile, position)] += 1
+            positions_by_task_arm[
+                (
+                    str(row.get("agent", "")),
+                    str(row.get("task_id", "")),
+                    str(row.get("repo", "")),
+                    profile,
+                    position,
+                )
+            ] += 1
         else:
             add_issue(issues, "fail", "sequence_position", f"run {row.get('run_id')} has no sequence position")
         try:
@@ -588,7 +602,12 @@ def audit(
             add_issue(issues, "fail", "oracle_artifact", f"run {row.get('run_id')} has no oracle.json")
         if row.get("oracle_status") in {"", "not_configured", None}:
             add_issue(issues, "fail", "oracle_status", f"run {row.get('run_id')} has no configured external oracle")
-        key = (str(row.get("agent", "")), str(row.get("task_id", "")), int(row.get("repeat_index", 0)))
+        key = (
+            str(row.get("agent", "")),
+            str(row.get("task_id", "")),
+            str(row.get("repo", "")),
+            int(row.get("repeat_index", 0)),
+        )
         cells_by_block[key][profile] = row
 
     for arm in FACTORIAL_ARM_ORDER:
@@ -598,12 +617,17 @@ def audit(
     duplicate_semantic_sessions = [session_id for session_id, count in semantic_session_ids.items() if session_id and count > 1]
     if duplicate_semantic_sessions:
         add_issue(issues, "fail", "semantic_session_unique", "semantic session ids must be unique per semantic run")
-    task_ids = sorted({(str(row.get("agent", "")), str(row.get("task_id", ""))) for row in rows})
-    for agent, task_id in task_ids:
+    task_ids = sorted(
+        {
+            (str(row.get("agent", "")), str(row.get("task_id", "")), str(row.get("repo", "")))
+            for row in rows
+        }
+    )
+    for agent, task_id, repo in task_ids:
         for arm in FACTORIAL_ARM_ORDER:
-            counts = [positions_by_task_arm[(agent, task_id, arm, position)] for position in range(1, 5)]
+            counts = [positions_by_task_arm[(agent, task_id, repo, arm, position)] for position in range(1, 5)]
             if len(set(counts)) > 1:
-                add_issue(issues, "fail", "task_position_balance", f"{agent}/{task_id}/{arm} position counts are not balanced: {counts}")
+                add_issue(issues, "fail", "task_position_balance", f"{agent}/{repo}/{task_id}/{arm} position counts are not balanced: {counts}")
 
     for key, profile_rows in cells_by_block.items():
         missing = [arm for arm in FACTORIAL_ARM_ORDER if arm not in profile_rows]
