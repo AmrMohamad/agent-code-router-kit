@@ -827,6 +827,26 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("row_reasoning_effort_match", {issue["code"] for issue in mismatched_reasoning["issues"]})
             runs_path.write_text(original_runs_text, encoding="utf-8")
 
+            wrong_previous_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            wrong_previous_rows[0]["previous_arm"] = "unexpected-arm"
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in wrong_previous_rows),
+                encoding="utf-8",
+            )
+            wrong_previous = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("block_previous_arm", {issue["code"] for issue in wrong_previous["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            wrong_sequence_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            wrong_sequence_rows[0]["sequence_position"] = 4
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in wrong_sequence_rows),
+                encoding="utf-8",
+            )
+            wrong_sequence = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("block_sequence_positions", {issue["code"] for issue in wrong_sequence["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
             missing_usage_rows = [json.loads(line) for line in original_runs_text.splitlines()]
             missing_usage_rows[0]["exact_usage_event_count"] = 0
             runs_path.write_text(

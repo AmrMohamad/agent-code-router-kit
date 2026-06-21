@@ -17,6 +17,7 @@ from scripts.benchmarks.estimate_study_power import estimate as compute_study_po
 from scripts.lib.agent_session import to_json_file
 from scripts.lib.agent_session import load_simple_yaml, load_tasks
 from scripts.lib.environment_capture import file_sha256
+from scripts.lib.experiment_design import BALANCED_LATIN_SQUARE_4
 from scripts.lib.task_oracles import load_task_oracles, validate_task_oracle_plan
 from scripts.lib.treatment_diff_artifacts import build_treatment_diff_rows
 from scripts.lib.treatment_config import (
@@ -1161,6 +1162,33 @@ def audit(
         if missing:
             add_issue(issues, "fail", "block_arm_completion", f"{key} missing {','.join(missing)}")
             continue
+        expected_sequence = BALANCED_LATIN_SQUARE_4[key[3] % len(BALANCED_LATIN_SQUARE_4)]
+        expected_sequence_id = f"balanced-latin-square-{(key[3] % len(BALANCED_LATIN_SQUARE_4)) + 1}"
+        rows_by_position: dict[int, dict[str, object]] = {}
+        position_counts: Counter[int] = Counter()
+        for row in profile_rows.values():
+            if row.get("order_design") != "balanced-latin-square":
+                add_issue(issues, "fail", "block_order_design", f"{key} row {row.get('run_id')} does not declare balanced-latin-square order")
+            if row.get("sequence_id") != expected_sequence_id:
+                add_issue(issues, "fail", "block_sequence_id", f"{key} row {row.get('run_id')} has wrong sequence id")
+            position = row.get("sequence_position")
+            if isinstance(position, int) and not isinstance(position, bool):
+                rows_by_position[position] = row
+                position_counts[position] += 1
+        expected_positions = set(range(1, len(expected_sequence) + 1))
+        if set(rows_by_position) != expected_positions or any(position_counts[position] != 1 for position in expected_positions):
+            add_issue(issues, "fail", "block_sequence_positions", f"{key} does not contain exactly one row for each Latin-square position")
+        else:
+            observed_sequence = [str(rows_by_position[position].get("profile", "")) for position in range(1, len(expected_sequence) + 1)]
+            if observed_sequence != expected_sequence:
+                add_issue(issues, "fail", "block_latin_square_sequence", f"{key} sequence does not match preregistered Latin square")
+            for position, expected_profile in enumerate(expected_sequence, start=1):
+                row = rows_by_position[position]
+                expected_previous = expected_sequence[position - 2] if position > 1 else ""
+                if row.get("profile") != expected_profile:
+                    add_issue(issues, "fail", "block_latin_square_sequence", f"{key} position {position} has wrong profile")
+                if row.get("previous_arm") != expected_previous:
+                    add_issue(issues, "fail", "block_previous_arm", f"{key} position {position} has wrong previous_arm")
         configs = {profile: config_for_row(row) for profile, row in profile_rows.items()}
         for profile, config in configs.items():
             if config is None:
