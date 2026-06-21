@@ -70,7 +70,7 @@ def lockfile_hash(repo: str | Path, *, names: Iterable[str] = LOCKFILE_NAMES) ->
                 rel = str(path)
             matches.append({"path": rel, "sha256": file_sha256(path)})
     if not matches:
-        return ""
+        return "none"
     payload = json.dumps(sorted(matches, key=lambda item: item["path"]), sort_keys=True)
     return text_sha256(payload)
 
@@ -81,6 +81,15 @@ def capture_tool_versions(*, cwd: str | Path) -> dict[str, str]:
         "python": platform.python_version(),
         "codex": command_output(["codex", "--version"], cwd=cwd),
         "serena": command_output(["serena", "--version"], cwd=cwd),
+        "sourcekit-lsp": command_output(["sourcekit-lsp", "--version"], cwd=cwd),
+        "typescript-language-server": command_output(["typescript-language-server", "--version"], cwd=cwd),
+        "node": command_output(["node", "--version"], cwd=cwd),
+        "npm": command_output(["npm", "--version"], cwd=cwd),
+        "pnpm": command_output(["pnpm", "--version"], cwd=cwd),
+        "yarn": command_output(["yarn", "--version"], cwd=cwd),
+        "tsc": command_output(["tsc", "--version"], cwd=cwd),
+        "kotlin-language-server": command_output(["kotlin-language-server", "--version"], cwd=cwd),
+        "vscode-json-languageserver": command_output(["vscode-json-languageserver", "--version"], cwd=cwd),
         "rg": command_output(["rg", "--version"], cwd=cwd),
         "fd": command_output(["fd", "--version"], cwd=cwd),
         "ast-grep": command_output(["ast-grep", "--version"], cwd=cwd),

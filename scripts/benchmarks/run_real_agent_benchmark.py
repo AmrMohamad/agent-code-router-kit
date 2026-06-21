@@ -29,13 +29,24 @@ from scripts.lib.agent_session import (
     utc_now,
 )
 from scripts.lib.dynamic_task_prompts import materialize_task_for_symbol, select_code_symbol_target
-from scripts.lib.environment_capture import capture_tool_versions, git_tree_hash, lockfile_hash, text_sha256
+from scripts.lib.environment_capture import capture_tool_versions, file_sha256, git_tree_hash, lockfile_hash, text_sha256
 from scripts.lib.experiment_design import assign_sequence, load_study_plan, sequence_metadata
 from scripts.lib.hermetic_agent_environment import materialize_hermetic_agent_environment
 from scripts.lib.route_isolation import materialize_route_isolation
-from scripts.lib.serena_readiness import run_serena_source_symbol_readiness, write_serena_readiness
+from scripts.lib.serena_readiness import (
+    run_serena_source_symbol_readiness,
+    serena_process_state as capture_serena_process_state,
+    write_serena_readiness,
+)
 from scripts.lib.task_oracles import load_task_oracles, verify_transcript_file
-from scripts.lib.treatment_config import FACTORIAL_ARM_ORDER, factors_for_profile, hmac_sha256_hex, validate_factorial_arm_set
+from scripts.lib.treatment_diff_artifacts import write_treatment_diff_artifact
+from scripts.lib.treatment_config import (
+    FACTORIAL_ARM_ORDER,
+    factors_for_profile,
+    hmac_sha256_hex,
+    route_profile_hash,
+    validate_factorial_arm_set,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -43,9 +54,12 @@ DEFAULT_TASKS = ROOT / "benchmarks" / "real-agent-routing" / "tasks" / "android-
 DEFAULT_OUT = ROOT / "results" / "real-agent-routing"
 SERENA_PROCESS_STATE_WARNING_CODES = {
     "multiple_serena_mcp_processes",
+    "multiple_sourcekit_lsp_processes",
     "multiple_kotlin_lsp_processes",
     "multiple_json_lsp_processes",
 }
+SERENA_PROCESS_STATE_KEYS = ("serena_mcp", "sourcekit_lsp", "kotlin_lsp", "json_lsp")
+SERENA_LANGUAGE_SERVER_PROCESS_KEYS = ("sourcekit_lsp", "kotlin_lsp", "json_lsp")
 HIGH_FANOUT_RAW_OUTPUT_CEILING_BYTES = 50000
 DEFAULT_STUDY_MODEL_ID = "not_pinned"
 DEFAULT_REASONING_EFFORT = "default"
@@ -57,9 +71,17 @@ def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
     args.order_design = study_plan.order_design
     args.isolated_agent_home = True
     args.isolated_serena_session = True
+    args.prewarm_semantic_layer = study_plan.require_prewarm_semantic_layer
+    args.require_clean_serena_process_state = study_plan.require_clean_serena_process_state
     args.capture_versions = True
+    args.require_explicit_reasoning_effort = study_plan.require_explicit_reasoning_effort
     args.require_snapshots = study_plan.require_clean_snapshots
+    if study_plan.require_block_snapshots:
+        args.snapshot_scope = "block"
     args.parallelism = study_plan.parallelism
+    selected_agents = [item.strip() for item in (args.agents or args.agent).split(",") if item.strip()]
+    if sorted(selected_agents) != sorted(study_plan.agents):
+        raise SystemExit("study plan requires exact subject agents: " + ",".join(study_plan.agents))
     arms = [arm.strip() for arm in args.arms.split(",") if arm.strip()]
     validate_factorial_arm_set(arms)
     if args.repeats < study_plan.minimum_repeats:
@@ -68,12 +90,22 @@ def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
         raise SystemExit("study plan requires --parallelism 1")
     if study_plan.require_clean_snapshots and not args.snapshot_repos:
         raise SystemExit("study plan requires --snapshot-repos")
+    if study_plan.require_prewarm_semantic_layer and args.skip_serena_readiness:
+        raise SystemExit("study plan requires semantic readiness prewarm; remove --skip-serena-readiness")
     if args.allow_dirty:
         raise SystemExit("study plan does not allow --allow-dirty")
     if study_plan.require_external_oracles and not args.task_oracles:
         args.task_oracles = study_plan.task_oracles_path
     if not args.dry_run and args.model_id == DEFAULT_STUDY_MODEL_ID:
         raise SystemExit("live study mode requires --model-id with the exact pinned model identifier")
+    if (
+        study_plan.require_explicit_reasoning_effort
+        and not args.dry_run
+        and args.reasoning_effort == DEFAULT_REASONING_EFFORT
+    ):
+        raise SystemExit("live study mode requires --reasoning-effort with an explicit fixed reasoning-effort value")
+    if not os.environ.get(args.hmac_key_env, ""):
+        raise SystemExit(f"study mode requires ${args.hmac_key_env} for private HMAC fingerprints")
 
 
 def exact_uncached_input_tokens(metrics: dict[str, object]) -> int | None:
@@ -89,6 +121,138 @@ def private_hmac(value: str, *, key_env: str) -> str:
     if not key:
         return ""
     return hmac_sha256_hex(value, key=key)
+
+
+def file_hmac(path: str | Path, *, key_env: str) -> str:
+    source = Path(path)
+    if not source.exists():
+        return ""
+    return private_hmac(source.read_text(encoding="utf-8"), key_env=key_env)
+
+
+def study_task_split(*, tasks_path: str | Path, study_plan) -> str:
+    if not study_plan:
+        return ""
+    task_manifest = Path(tasks_path).expanduser().resolve()
+    split_paths = {
+        "pilot": Path(study_plan.pilot_tasks_path).resolve(),
+        "confirmatory": Path(study_plan.confirmatory_tasks_path).resolve(),
+    }
+    for split, split_path in split_paths.items():
+        if task_manifest == split_path:
+            return split
+    return "custom"
+
+
+def build_study_package_metadata(args: argparse.Namespace, *, study_plan) -> dict[str, object]:
+    if not study_plan:
+        return {}
+    study_plan_path = Path(args.study_plan).expanduser().resolve()
+    task_oracles_path = Path(args.task_oracles).expanduser().resolve() if args.task_oracles else Path(study_plan.task_oracles_path).resolve()
+    task_manifest_path = Path(args.tasks).expanduser().resolve()
+    plan_task_oracles_path = Path(study_plan.task_oracles_path).resolve()
+    paths = {
+        "study_plan": study_plan_path,
+        "protocol": Path(study_plan.protocol_path).resolve(),
+        "analysis_plan": Path(study_plan.analysis_plan_path).resolve(),
+        "task_oracles": task_oracles_path,
+        "task_manifest": task_manifest_path,
+        "pilot_task_manifest": Path(study_plan.pilot_tasks_path).resolve(),
+        "confirmatory_task_manifest": Path(study_plan.confirmatory_tasks_path).resolve(),
+    }
+    metadata: dict[str, object] = {
+        "hash_algorithm": "sha256",
+        "private_fingerprint_algorithm": "hmac-sha256",
+        "task_split": study_task_split(tasks_path=task_manifest_path, study_plan=study_plan),
+        "task_oracles_source": "study_plan" if task_oracles_path == plan_task_oracles_path else "custom",
+    }
+    for name, path in paths.items():
+        metadata[f"{name}_path"] = str(path)
+        metadata[f"{name}_sha256"] = file_sha256(path) if path.exists() else ""
+        metadata[f"{name}_hmac"] = file_hmac(path, key_env=args.hmac_key_env)
+    return metadata
+
+
+def semantic_session_artifact(
+    *,
+    run_id: str,
+    profile_id: str,
+    semantic_access_enabled: bool,
+    isolated_serena_session: bool,
+    hermetic_environment,
+    serena_readiness: dict[str, object] | None,
+    tool_versions: dict[str, str],
+    project_path_hmac: str,
+    dry_run: bool,
+    pre_task_process_state: dict[str, int],
+    post_task_process_state: dict[str, int],
+) -> dict[str, object]:
+    language_versions = {
+        "sourcekit-lsp": tool_versions.get("sourcekit-lsp", ""),
+        "typescript-language-server": tool_versions.get("typescript-language-server", ""),
+        "kotlin-language-server": tool_versions.get("kotlin-language-server", ""),
+        "vscode-json-languageserver": tool_versions.get("vscode-json-languageserver", ""),
+    }
+    if not semantic_access_enabled:
+        return {
+            "session_id": "",
+            "profile": profile_id,
+            "semantic_access_enabled": False,
+            "mode": "disabled",
+            "isolated": True,
+            "mcp_server_configured": False,
+            "transport": "",
+            "semantic_session_home": "",
+            "serena_home": "",
+            "xdg_config_home": "",
+            "xdg_cache_home": "",
+            "xdg_data_home": "",
+            "project_path_hmac": "",
+            "readiness_status": "",
+            "readiness_ready": None,
+            "readiness_process_state_after": {},
+            "language_server_versions": language_versions,
+            "lifecycle_owner": "none",
+            "pre_task_process_state": pre_task_process_state,
+            "post_task_process_state": post_task_process_state,
+            "process_survivor_count": serena_process_survivor_count(post_task_process_state),
+            "child_lsp_survivor_count": serena_child_lsp_survivor_count(post_task_process_state),
+            "teardown_verified": serena_process_survivor_count(post_task_process_state) == 0,
+            "teardown_policy": "no semantic MCP server configured for this arm",
+        }
+    semantic_home = Path(hermetic_environment.semantic_session_home) if hermetic_environment else None
+    serena_home = semantic_home / "home" if semantic_home else None
+    xdg_config_home = semantic_home / "xdg-config" if semantic_home else None
+    xdg_cache_home = semantic_home / "xdg-cache" if semantic_home else None
+    xdg_data_home = semantic_home / "xdg-data" if semantic_home else None
+    return {
+        "session_id": run_id,
+        "profile": profile_id,
+        "semantic_access_enabled": True,
+        "mode": "codex_mcp_stdio_per_run",
+        "isolated": bool(isolated_serena_session and hermetic_environment),
+        "mcp_server_configured": True,
+        "transport": "stdio",
+        "semantic_session_home": hermetic_environment.semantic_session_home if hermetic_environment else "",
+        "serena_home": str(serena_home) if serena_home else "",
+        "xdg_config_home": str(xdg_config_home) if xdg_config_home else "",
+        "xdg_cache_home": str(xdg_cache_home) if xdg_cache_home else "",
+        "xdg_data_home": str(xdg_data_home) if xdg_data_home else "",
+        "mcp_env_keys": ["RARB_SERENA_SESSION_HOME", "SERENA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"],
+        "project_path_hmac": project_path_hmac,
+        "requires_unique_port": False,
+        "readiness_status": serena_readiness.get("status") if serena_readiness else "",
+        "readiness_ready": serena_readiness.get("ready") if serena_readiness else None,
+        "readiness_process_state_after": serena_readiness.get("process_state_after") if serena_readiness else {},
+        "language_server_versions": language_versions,
+        "lifecycle_owner": "dry_run_no_process_started" if dry_run else "codex_subprocess_stdio",
+        "pre_task_process_state": pre_task_process_state,
+        "post_task_process_state": post_task_process_state,
+        "process_survivor_count": serena_process_survivor_count(post_task_process_state),
+        "child_lsp_survivor_count": serena_child_lsp_survivor_count(post_task_process_state),
+        "teardown_verified": dry_run or serena_process_survivor_count(post_task_process_state) == 0,
+        "teardown_policy": "Codex subprocess owns the stdio MCP server; session exit closes the per-run Serena process",
+    }
 
 
 def profile_path(profile_id: str) -> Path:
@@ -191,7 +355,7 @@ Symbol: {readiness.get("symbol") or ""}
 Source file: {readiness.get("source_file") or ""}
 Reason: {readiness.get("reason") or ""}
 Next action: {readiness.get("next_action") or ""}
-Process state: serena_mcp={process_state.get("serena_mcp", "unknown")}, kotlin_lsp={process_state.get("kotlin_lsp", "unknown")}, json_lsp={process_state.get("json_lsp", "unknown")}
+Process state: serena_mcp={process_state.get("serena_mcp", "unknown")}, sourcekit_lsp={process_state.get("sourcekit_lsp", "unknown")}, kotlin_lsp={process_state.get("kotlin_lsp", "unknown")}, json_lsp={process_state.get("json_lsp", "unknown")}
 Warnings: {warning_text}
 
 Serena coordination rules:
@@ -200,8 +364,8 @@ Serena coordination rules:
   treat the semantic layer as temporarily unavailable and report that honestly.
 - If Ready is false, do not claim semantic proof from Serena. Report blocked or
   partial according to the response contract, and include the reason above.
-- Multiple Serena/Kotlin LSP processes are a stale-session risk. Mention them as
-  route-readiness risk instead of hiding them.
+- Multiple Serena/SourceKit/Kotlin/JSON LSP processes are a stale-session risk.
+  Mention them as route-readiness risk instead of hiding them.
 """
 
 
@@ -228,13 +392,29 @@ def task_needs_serena_source_readiness(task) -> bool:
             task.expected_proof_layer,
         ]
     ).lower()
-    if "kotlin" not in haystack and "java" not in haystack:
+    language_terms = (
+        "kotlin",
+        "java",
+        "swift",
+        "ios",
+        "sourcekit",
+        "typescript",
+        "javascript",
+        "react",
+        "web",
+    )
+    if not any(term in haystack for term in language_terms):
         return False
     return any(
         term in haystack
         for term in (
             "known_kotlin_symbol",
             "known_java_symbol",
+            "known_swift_symbol",
+            "known_typescript_symbol",
+            "known_javascript_symbol",
+            "known_symbol",
+            "high_fanout",
             "semantic_identity",
             "reference_proof",
             "semantic_disagreement",
@@ -251,6 +431,34 @@ def serena_process_state_warnings(readiness: dict[str, object] | None) -> list[s
     return [str(warning) for warning in warnings if str(warning) in SERENA_PROCESS_STATE_WARNING_CODES]
 
 
+def zero_serena_process_counts() -> dict[str, int]:
+    return {key: 0 for key in SERENA_PROCESS_STATE_KEYS}
+
+
+def serena_process_counts() -> dict[str, int]:
+    captured = asdict(capture_serena_process_state())
+    return {key: int(captured.get(key, 0) or 0) for key in SERENA_PROCESS_STATE_KEYS}
+
+
+def serena_process_survivor_count(process_state: dict[str, int]) -> int:
+    return sum(max(0, int(process_state.get(key, 0) or 0)) for key in SERENA_PROCESS_STATE_KEYS)
+
+
+def serena_child_lsp_survivor_count(process_state: dict[str, int]) -> int:
+    return sum(max(0, int(process_state.get(key, 0) or 0)) for key in SERENA_LANGUAGE_SERVER_PROCESS_KEYS)
+
+
+def enforce_zero_serena_process_counts(*, process_state: dict[str, int], run_dir: Path, phase: str) -> None:
+    nonzero = {key: value for key, value in process_state.items() if value}
+    if not nonzero:
+        return
+    details = ", ".join(f"{key}={value}" for key, value in sorted(nonzero.items()))
+    raise SystemExit(
+        f"Serena process state is not clean {phase} a live controlled study cell; "
+        f"{details}. Inspect {run_dir} and clean stale Serena/SourceKit/Kotlin/JSON LSP sessions before rerunning."
+    )
+
+
 def enforce_clean_serena_process_state(*, readiness: dict[str, object] | None, run_dir: Path) -> None:
     warnings = serena_process_state_warnings(readiness)
     if not warnings:
@@ -258,12 +466,23 @@ def enforce_clean_serena_process_state(*, readiness: dict[str, object] | None, r
     raise SystemExit(
         "Serena process state is not clean for a live semantic-router cell; "
         f"warnings={','.join(warnings)}. "
-        f"Inspect {run_dir / 'serena-readiness.json'} and clean stale Serena/Kotlin LSP sessions before rerunning."
+        f"Inspect {run_dir / 'serena-readiness.json'} and clean stale Serena/SourceKit/Kotlin/JSON LSP sessions before rerunning."
     )
 
 
 def task_supports_dynamic_code_prompt(task) -> bool:
-    return task_needs_serena_source_readiness(task)
+    haystack = " ".join(
+        [
+            task.task_family,
+            task.prompt,
+            task.expected_proof_layer,
+        ]
+    ).lower()
+    if "high_fanout" in haystack or "literal" in haystack or "structural" in haystack or "runtime" in haystack:
+        return False
+    return task_needs_serena_source_readiness(task) and (
+        "known" in haystack or "definition" in haystack or "declaration" in haystack
+    )
 
 
 def dynamic_prompt_rng(*, seed: int, repeat_index: int, agent_id: str, task_id: str, repo: str) -> random.Random:
@@ -399,8 +618,11 @@ def git_metadata(repo: str | Path) -> dict[str, object]:
         "git_root": git("rev-parse", "--show-toplevel"),
         "branch": git("branch", "--show-current") or git("rev-parse", "--abbrev-ref", "HEAD"),
         "commit": git("rev-parse", "HEAD"),
+        "tree_hash": git("rev-parse", "HEAD^{tree}"),
+        "lockfile_hash": lockfile_hash(repo_path),
         "dirty": bool(status),
         "dirty_entries": len([line for line in status.splitlines() if line.strip()]),
+        "status_sha256": text_sha256(status),
     }
 
 
@@ -423,12 +645,70 @@ def _safe_repo_id(repo_id: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in value)[:80]
 
 
+def repo_snapshot_key(repo_id: str) -> str:
+    return f"repo:{repo_id or 'default'}"
+
+
+def block_snapshot_key(*, agent_id: str, repo_id: str, task_id: str, repeat_index: int) -> str:
+    return f"block:{agent_id}:{repo_id or 'default'}:{task_id}:repeat-{repeat_index + 1:03d}"
+
+
+def snapshot_dir_name(snapshot_key: str) -> str:
+    return f"{_safe_repo_id(snapshot_key)}-{text_sha256(snapshot_key)[:12]}"
+
+
+def materialize_snapshot(
+    *,
+    repo_id: str,
+    repo_path_value: str,
+    snapshot_root: Path,
+    snapshot_key: str,
+    snapshot_scope: str,
+    metadata: dict[str, object] | None = None,
+) -> tuple[str, dict[str, object]]:
+    repo_path = Path(repo_path_value).expanduser().resolve()
+    git_root_text = _git(repo_path, "rev-parse", "--show-toplevel", check=True).stdout.strip()
+    commit = _git(repo_path, "rev-parse", "HEAD", check=True).stdout.strip()
+    git_root = Path(git_root_text).resolve()
+    _git(git_root, "worktree", "prune")
+    try:
+        relative = repo_path.relative_to(git_root)
+    except ValueError:
+        relative = Path()
+    snapshot_path = snapshot_root / snapshot_dir_name(snapshot_key)
+    suffix = 1
+    while snapshot_path.exists():
+        suffix += 1
+        snapshot_path = snapshot_root / f"{snapshot_dir_name(snapshot_key)}-{suffix}"
+    _git(git_root, "worktree", "add", "--detach", str(snapshot_path), commit, check=True)
+    effective_path = (snapshot_path / relative).resolve()
+    snapshot_state = git_metadata(effective_path)
+    payload: dict[str, object] = {
+        "snapshot_scope": snapshot_scope,
+        "snapshot_key": snapshot_key,
+        "repo_id": repo_id or "default",
+        "source_path": str(repo_path),
+        "source_git_root": str(git_root),
+        "source_commit": commit,
+        "source_tree_hash": _git(git_root, "rev-parse", f"{commit}^{{tree}}", check=True).stdout.strip(),
+        "snapshot_path": str(effective_path),
+        "snapshot_git_root": str(snapshot_path.resolve()),
+        "snapshot_commit": snapshot_state.get("commit", ""),
+        "snapshot_dirty": snapshot_state.get("dirty", True),
+        "snapshot_tree_hash": git_tree_hash(effective_path),
+        "lockfile_hash": lockfile_hash(effective_path),
+    }
+    if metadata:
+        payload.update(metadata)
+    return str(effective_path), payload
+
+
 def snapshot_repo_map(repo_map: dict[str, str], *, out_root: Path) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
     snapshot_root = out_root / "_repo-snapshots"
     if snapshot_root.exists():
         shutil.rmtree(snapshot_root)
     snapshot_root.mkdir(parents=True, exist_ok=True)
-    source_cache: dict[tuple[str, str], Path] = {}
+    source_cache: dict[tuple[str, str], tuple[str, dict[str, object]]] = {}
     snapshots: dict[str, dict[str, object]] = {}
     mapped: dict[str, str] = {}
     for repo_id, repo_path_value in repo_map.items():
@@ -442,24 +722,66 @@ def snapshot_repo_map(repo_map: dict[str, str], *, out_root: Path) -> tuple[dict
             relative = Path()
         cache_key = (str(git_root), commit)
         if cache_key not in source_cache:
-            snapshot_path = snapshot_root / _safe_repo_id(repo_id)
-            suffix = 1
-            while snapshot_path.exists():
-                suffix += 1
-                snapshot_path = snapshot_root / f"{_safe_repo_id(repo_id)}-{suffix}"
-            _git(git_root, "worktree", "add", "--detach", str(snapshot_path), commit, check=True)
-            source_cache[cache_key] = snapshot_path.resolve()
-        snapshot_base = source_cache[cache_key]
-        effective_path = (snapshot_base / relative).resolve()
+            _effective_path, snapshot_payload = materialize_snapshot(
+                repo_id=repo_id,
+                repo_path_value=repo_path_value,
+                snapshot_root=snapshot_root,
+                snapshot_key=repo_snapshot_key(repo_id),
+                snapshot_scope="repo",
+            )
+            source_cache[cache_key] = (str(snapshot_payload["snapshot_git_root"]), snapshot_payload)
+        snapshot_base_path, snapshot_payload = source_cache[cache_key]
+        effective_path = (Path(snapshot_base_path).resolve() / relative).resolve()
         mapped[repo_id] = str(effective_path)
-        snapshots[repo_id or "default"] = {
-            "source_path": str(repo_path),
-            "source_git_root": str(git_root),
-            "source_commit": commit,
-            "snapshot_path": str(effective_path),
-            "snapshot_git_root": str(snapshot_base),
-        }
+        payload = dict(snapshot_payload)
+        payload["snapshot_path"] = str(effective_path)
+        snapshots[repo_id or "default"] = payload
     return mapped, snapshots
+
+
+def materialize_block_snapshots(
+    run_specs: list[dict[str, object]],
+    *,
+    repo_map: dict[str, str],
+    out_root: Path,
+) -> dict[str, dict[str, object]]:
+    snapshot_root = out_root / "_repo-snapshots"
+    if snapshot_root.exists():
+        shutil.rmtree(snapshot_root)
+    snapshot_root.mkdir(parents=True, exist_ok=True)
+    snapshots: dict[str, dict[str, object]] = {}
+    for spec in run_specs:
+        task = spec["task"]
+        repeat_index = int(spec["repeat_index"])
+        agent_id = str(spec["agent_id"])
+        repo_id = str(getattr(task, "repo", "") or "default")
+        task_id = str(getattr(task, "task_id", ""))
+        snapshot_key = block_snapshot_key(
+            agent_id=agent_id,
+            repo_id=repo_id,
+            task_id=task_id,
+            repeat_index=repeat_index,
+        )
+        if snapshot_key not in snapshots:
+            effective_path, payload = materialize_snapshot(
+                repo_id=repo_id,
+                repo_path_value=repo_for_task(repo_map, str(getattr(task, "repo", ""))),
+                snapshot_root=snapshot_root,
+                snapshot_key=snapshot_key,
+                snapshot_scope="block",
+                metadata={
+                    "agent": agent_id,
+                    "task_id": task_id,
+                    "repeat_index": repeat_index,
+                    "block_id": dict(spec.get("sequence") or {}).get("block_id", ""),
+                },
+            )
+            payload["snapshot_path"] = effective_path
+            snapshots[snapshot_key] = payload
+        spec["snapshot_scope"] = "block"
+        spec["snapshot_key"] = snapshot_key
+        spec["task_repo_path"] = snapshots[snapshot_key]["snapshot_path"]
+    return snapshots
 
 
 def parse_repo_map(value: str | None, *, default_repo: str | Path) -> dict[str, str]:
@@ -498,6 +820,34 @@ def missing_live_repo_mappings(tasks: list[TaskSpec], repo_map: dict[str, str]) 
     return sorted({task.repo for task in tasks if task.repo and task.repo not in repo_map})
 
 
+def study_repo_label_issues(*, tasks: list[TaskSpec], repo_map: dict[str, str], study_plan) -> list[str]:
+    if not study_plan:
+        return []
+    allowed = set(study_plan.repository_labels)
+    issues: list[str] = []
+    undeclared = sorted({task.repo for task in tasks if task.repo not in allowed})
+    if undeclared:
+        issues.append("undeclared task repository labels: " + ",".join(undeclared))
+    unmapped = sorted({task.repo for task in tasks if task.repo and task.repo not in repo_map})
+    if unmapped:
+        issues.append("missing explicit --repo-map entries: " + ",".join(unmapped))
+    return issues
+
+
+def study_task_family_issues(*, tasks: list[TaskSpec], study_plan) -> list[str]:
+    if not study_plan:
+        return []
+    expected = set(study_plan.task_families)
+    observed = {task.task_family for task in tasks}
+    issues: list[str] = []
+    extra = sorted(observed - expected)
+    if extra:
+        issues.append("undeclared task families: " + ",".join(extra))
+    if not observed:
+        issues.append("no study tasks selected")
+    return issues
+
+
 def monitor_event(path: Path, event: dict[str, object], *, enabled: bool) -> None:
     append_jsonl(path, event)
     if enabled:
@@ -519,6 +869,18 @@ def load_existing_run_rows(path: str | Path) -> list[dict[str, object]]:
         raise SystemExit(f"--resume-from has no runs.jsonl: {runs_path}")
     rows: list[dict[str, object]] = []
     with runs_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if isinstance(row, dict):
+                rows.append(row)
+    return rows
+
+
+def load_run_rows(path: str | Path) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    with Path(path).open(encoding="utf-8") as handle:
         for line in handle:
             if not line.strip():
                 continue
@@ -647,6 +1009,12 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
     repo_map = parse_repo_map(args.repo_map, default_repo=args.repo)
     if args.require_snapshots:
         repo_map = restrict_repo_map_to_tasks(repo_map, tasks)
+    study_repo_issues = study_repo_label_issues(tasks=tasks, repo_map=repo_map, study_plan=study_plan)
+    if study_repo_issues:
+        raise SystemExit("study plan repository label check failed; " + "; ".join(study_repo_issues))
+    study_family_issues = study_task_family_issues(tasks=tasks, study_plan=study_plan)
+    if study_family_issues:
+        raise SystemExit("study plan task-family check failed; " + "; ".join(study_family_issues))
     if not args.dry_run:
         missing_repos = missing_live_repo_mappings(tasks, repo_map)
         if missing_repos:
@@ -671,11 +1039,14 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 + ",".join(dirty_sources)
             )
     repo_snapshots: dict[str, dict[str, object]] = {}
-    if args.snapshot_repos:
+    if args.snapshot_repos and args.snapshot_scope == "repo":
         repo_map, repo_snapshots = snapshot_repo_map(repo_map, out_root=out_root)
         for repo_id, snapshot in repo_snapshots.items():
             snapshot_path = str(snapshot.get("snapshot_path", ""))
             if snapshot_path:
+                snapshot_state = git_metadata(snapshot_path)
+                snapshot["snapshot_commit"] = snapshot_state.get("commit", "")
+                snapshot["snapshot_dirty"] = snapshot_state.get("dirty", True)
                 snapshot["snapshot_tree_hash"] = git_tree_hash(snapshot_path)
                 snapshot["lockfile_hash"] = lockfile_hash(snapshot_path)
     repo_states = {repo_id or "default": git_metadata(path) for repo_id, path in repo_map.items()}
@@ -688,6 +1059,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 + " (rerun with --allow-dirty to override)"
             )
     route_profiles = {arm: load_route_profile(profile_path(arm)) for arm in arms}
+    route_profile_hashes = {arm: route_profile_hash(profile) for arm, profile in route_profiles.items()}
+    tool_versions = capture_tool_versions(cwd=ROOT) if args.capture_versions else {}
+    controller_state = git_metadata(ROOT)
     carried_rows = load_existing_run_rows(resume_root) if resume_root else []
     invalid_carried_rows: list[dict[str, object]] = []
     if resume_root:
@@ -697,21 +1071,33 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
     missing_artifact_carried_rows: list[dict[str, object]] = []
     carried_rows, missing_artifact_carried_rows = split_importable_carried_rows(carried_rows)
     existing_cells = {run_cell_key(row) for row in carried_rows}
+    task_manifest_path = Path(args.tasks).expanduser().resolve()
+    task_manifest_hash = file_sha256(task_manifest_path)
+    study_package = build_study_package_metadata(args, study_plan=study_plan)
     manifest = {
         "created_at": utc_now(),
         "study_plan": str(Path(args.study_plan).expanduser().resolve()) if args.study_plan else "",
         "study_id": study_plan.study_id if study_plan else "",
         "study_design_type": study_plan.design_type if study_plan else "",
+        "study_package": study_package,
         "order_design": args.order_design,
         "parallelism": args.parallelism,
         "isolated_agent_home": args.isolated_agent_home,
         "isolated_serena_session": args.isolated_serena_session,
         "prewarm_semantic_layer": args.prewarm_semantic_layer,
         "capture_versions": args.capture_versions,
+        "require_explicit_reasoning_effort": bool(getattr(args, "require_explicit_reasoning_effort", False)),
+        "require_family_repository_crossing": bool(study_plan.require_family_repository_crossing) if study_plan else False,
         "require_snapshots": args.require_snapshots,
+        "snapshot_scope": args.snapshot_scope if args.snapshot_repos else "none",
         "model_id": args.model_id,
         "reasoning_effort": args.reasoning_effort,
-        "tool_versions": capture_tool_versions(cwd=ROOT) if args.capture_versions else {},
+        "tool_versions": tool_versions,
+        "controller_commit": controller_state.get("commit", ""),
+        "controller_tree_hash": controller_state.get("tree_hash", ""),
+        "controller_branch": controller_state.get("branch", ""),
+        "controller_dirty": controller_state.get("dirty", True),
+        "controller_status_sha256": controller_state.get("status_sha256", ""),
         "task_oracles": str(Path(args.task_oracles).expanduser().resolve()) if args.task_oracles else "",
         "hmac_key_env": args.hmac_key_env,
         "private_hmac_configured": bool(os.environ.get(args.hmac_key_env, "")),
@@ -719,8 +1105,13 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "agents": list(agent_profiles),
         "repo": str(Path(args.repo).resolve()),
         "repo_map": repo_map,
-        "task_manifest": str(Path(args.tasks).expanduser().resolve()),
+        "task_manifest": str(task_manifest_path),
+        "task_manifest_hash": task_manifest_hash,
         "task_ids": [task.task_id for task in tasks],
+        "repository_labels": list(study_plan.repository_labels) if study_plan else [],
+        "task_families": list(study_plan.task_families) if study_plan else [],
+        "minimum_task_families": study_plan.minimum_task_families if study_plan else 0,
+        "minimum_tasks_per_family": study_plan.minimum_tasks_per_family if study_plan else 0,
         "source_repo_states": source_repo_states,
         "repo_snapshots": repo_snapshots,
         "repo_states": repo_states,
@@ -728,6 +1119,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "dry_run": args.dry_run,
         "live": not args.dry_run,
         "arms": list(route_profiles),
+        "route_profile_hashes": route_profile_hashes,
         "task_count": len(tasks),
         "repeats": args.repeats,
         "fresh_session_per_run": True,
@@ -795,6 +1187,19 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                             ),
                         }
                     )
+    if args.snapshot_repos and args.snapshot_scope == "block":
+        repo_snapshots = materialize_block_snapshots(run_specs, repo_map=repo_map, out_root=out_root)
+    for spec in run_specs:
+        task = spec["task"]
+        if "task_repo_path" not in spec:
+            spec["task_repo_path"] = repo_for_task(repo_map, str(getattr(task, "repo", "")))
+        if "snapshot_scope" not in spec:
+            spec["snapshot_scope"] = args.snapshot_scope if args.snapshot_repos else "none"
+        if "snapshot_key" not in spec:
+            repo_key = str(getattr(task, "repo", "") or "default")
+            spec["snapshot_key"] = repo_snapshot_key(repo_key) if args.snapshot_repos else ""
+    manifest["repo_snapshots"] = repo_snapshots
+    manifest["snapshot_scope"] = args.snapshot_scope if args.snapshot_repos else "none"
     manifest["existing_cells_available"] = len(existing_cells)
     manifest["skipped_existing_cells"] = skipped_existing_specs
     manifest["planned_new_runs"] = len(run_specs)
@@ -814,10 +1219,21 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         run_id = new_run_id("rarb")
         run_dir = out_root / run_id
         sentinel = f"BENCHMARK_DONE_{run_id}"
-        task_repo_path = repo_for_task(repo_map, task.repo)
+        task_repo_path = str(spec.get("task_repo_path") or repo_for_task(repo_map, task.repo))
+        snapshot_scope = str(spec.get("snapshot_scope") or ("none" if not args.snapshot_repos else args.snapshot_scope))
+        snapshot_key = str(spec.get("snapshot_key") or "")
         effective_profile = effective_route_profile(profile, task=task)
         terminal_mode = args.terminal_mode or agent_profile.terminal_mode
         run_dir.mkdir(parents=True, exist_ok=True)
+        pre_task_process_state = zero_serena_process_counts()
+        if args.require_clean_serena_process_state:
+            pre_task_process_state = zero_serena_process_counts() if args.dry_run else serena_process_counts()
+            if not args.dry_run:
+                enforce_zero_serena_process_counts(
+                    process_state=pre_task_process_state,
+                    run_dir=run_dir,
+                    phase="before launching",
+                )
         dynamic_target: dict[str, object] | None = None
         run_task = task
         if not args.static_code_prompts and task_supports_dynamic_code_prompt(task):
@@ -835,37 +1251,6 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 dynamic_target = target.to_dict()
                 run_task = materialize_task_for_symbol(task, target)
                 to_json_file(run_dir / "dynamic-task-target.json", dynamic_target)
-        serena_readiness: dict[str, object] | None = None
-        semantic_setup_seconds = 0.0
-        if (
-            not args.dry_run
-            and not args.skip_serena_readiness
-            and route_uses_serena(effective_profile)
-            and task_needs_serena_source_readiness(run_task)
-        ):
-            semantic_setup_started = time.monotonic()
-            readiness = run_serena_source_symbol_readiness(
-                repo=task_repo_path,
-                prompt=run_task.prompt,
-                source_symbol=str(dynamic_target["symbol"]) if dynamic_target else None,
-                source_file=str(dynamic_target["source_file"]) if dynamic_target else None,
-                timeout_seconds=args.serena_readiness_timeout,
-            )
-            semantic_setup_seconds = time.monotonic() - semantic_setup_started
-            write_serena_readiness(run_dir / "serena-readiness.json", readiness)
-            serena_readiness = asdict(readiness)
-            if args.require_clean_serena_process_state:
-                enforce_clean_serena_process_state(readiness=serena_readiness, run_dir=run_dir)
-        prompt = render_task_packet(
-            run_id=run_id,
-            agent=agent_profile.agent_id,
-            repo=task_repo_path,
-            task=run_task,
-            profile=effective_profile,
-            sentinel=sentinel,
-            serena_readiness=serena_readiness,
-        )
-        (run_dir / "task-packet.md").write_text(prompt, encoding="utf-8")
         response_contract_path = ROOT / "benchmarks" / "real-agent-routing" / "contracts" / "response-contract.md"
         response_contract_hash = text_sha256(response_contract_path.read_text(encoding="utf-8"))
         hermetic_environment = None
@@ -881,6 +1266,51 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 timeout_seconds=min(args.timeout, task.timeout_seconds),
                 response_contract=response_contract_hash,
             )
+        serena_readiness: dict[str, object] | None = None
+        semantic_setup_seconds = 0.0
+        if (
+            not args.dry_run
+            and not args.skip_serena_readiness
+            and route_uses_serena(effective_profile)
+            and (args.prewarm_semantic_layer or task_needs_serena_source_readiness(run_task))
+        ):
+            semantic_setup_started = time.monotonic()
+            readiness = run_serena_source_symbol_readiness(
+                repo=task_repo_path,
+                prompt=run_task.prompt,
+                source_symbol=str(dynamic_target["symbol"]) if dynamic_target else None,
+                source_file=str(dynamic_target["source_file"]) if dynamic_target else None,
+                timeout_seconds=args.serena_readiness_timeout,
+                env=hermetic_environment.semantic_env if hermetic_environment else None,
+                semantic_session_home=hermetic_environment.semantic_session_home if hermetic_environment else None,
+            )
+            semantic_setup_seconds = time.monotonic() - semantic_setup_started
+            write_serena_readiness(run_dir / "serena-readiness.json", readiness)
+            serena_readiness = asdict(readiness)
+            if args.prewarm_semantic_layer and not readiness.ready:
+                raise SystemExit(
+                    "semantic readiness prewarm failed before live semantic-router run; "
+                    f"inspect {run_dir / 'serena-readiness.json'}"
+                )
+            if args.require_clean_serena_process_state:
+                enforce_clean_serena_process_state(readiness=serena_readiness, run_dir=run_dir)
+                readiness_process_state_after = serena_readiness.get("process_state_after")
+                if isinstance(readiness_process_state_after, dict):
+                    enforce_zero_serena_process_counts(
+                        process_state={key: int(readiness_process_state_after.get(key, 0) or 0) for key in SERENA_PROCESS_STATE_KEYS},
+                        run_dir=run_dir,
+                        phase="after semantic readiness prewarm",
+                    )
+        prompt = render_task_packet(
+            run_id=run_id,
+            agent=agent_profile.agent_id,
+            repo=task_repo_path,
+            task=run_task,
+            profile=effective_profile,
+            sentinel=sentinel,
+            serena_readiness=serena_readiness,
+        )
+        (run_dir / "task-packet.md").write_text(prompt, encoding="utf-8")
         isolation = materialize_route_isolation(
             agent_profile=agent_profile,
             route_profile=effective_profile,
@@ -927,6 +1357,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             task_id=task.task_id,
             max_output_bytes=effective_profile.max_raw_output_bytes,
         )
+        post_task_process_state = zero_serena_process_counts()
+        if args.require_clean_serena_process_state:
+            post_task_process_state = zero_serena_process_counts() if args.dry_run else serena_process_counts()
         metrics = json.loads((run_dir / "metrics.normalized.json").read_text(encoding="utf-8"))
         judge = judge_file(
             bridge_result.transcript_path,
@@ -938,10 +1371,15 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             dry_run=args.dry_run,
             out=run_dir / "judge.json",
         )
+        repo_key = task.repo or "default"
+        source_state = source_repo_states.get(repo_key, source_repo_states.get("default", {}))
+        snapshot_state = repo_snapshots.get(snapshot_key, repo_snapshots.get(repo_key, repo_snapshots.get("default", {})))
         row = {
             "run_id": run_id,
             "study_id": study_plan.study_id if study_plan else "",
-            "protocol_commit": git_metadata(ROOT).get("commit", ""),
+            "protocol_commit": controller_state.get("commit", ""),
+            "controller_commit": controller_state.get("commit", ""),
+            "controller_tree_hash": controller_state.get("tree_hash", ""),
             "block_id": sequence.get("block_id", ""),
             "sequence_id": sequence.get("sequence_id", ""),
             "sequence_position": sequence.get("sequence_position"),
@@ -960,6 +1398,10 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "expected_proof_layer": run_task.expected_proof_layer,
             "expected_success_signal": run_task.expected_success_signal,
             "dynamic_target_symbol": dynamic_target.get("symbol") if dynamic_target else "",
+            "dynamic_target_hmac": private_hmac(
+                json.dumps(dynamic_target or {}, sort_keys=True, separators=(",", ":")),
+                key_env=args.hmac_key_env,
+            ),
             "dynamic_target_symbol_hmac": private_hmac(str(dynamic_target.get("symbol")) if dynamic_target else "", key_env=args.hmac_key_env),
             "dynamic_target_source_file": dynamic_target.get("source_file") if dynamic_target else "",
             "dynamic_target_line": dynamic_target.get("line") if dynamic_target else None,
@@ -967,26 +1409,38 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "dynamic_target_declaration_kind": dynamic_target.get("declaration_kind") if dynamic_target else "",
             "repo": task.repo,
             "repo_path": task_repo_path,
+            "snapshot_scope": snapshot_scope,
+            "snapshot_key": snapshot_key,
+            "snapshot_key_hmac": private_hmac(snapshot_key, key_env=args.hmac_key_env) if snapshot_key else "",
             "source_state_hmac": private_hmac(
-                json.dumps(repo_states.get(task.repo or "default", repo_states.get("default", {})), sort_keys=True),
+                json.dumps(source_state, sort_keys=True),
                 key_env=args.hmac_key_env,
             ),
-            "snapshot_tree_hash": repo_snapshots.get(task.repo or "default", repo_snapshots.get("default", {})).get("snapshot_tree_hash", ""),
-            "lockfile_hash": repo_snapshots.get(task.repo or "default", repo_snapshots.get("default", {})).get("lockfile_hash", ""),
-            "task_manifest_hash": text_sha256(Path(args.tasks).expanduser().resolve().read_text(encoding="utf-8")),
+            "snapshot_state_hmac": private_hmac(
+                json.dumps(snapshot_state, sort_keys=True),
+                key_env=args.hmac_key_env,
+            ),
+            "source_commit": source_state.get("commit", ""),
+            "snapshot_commit": snapshot_state.get("snapshot_commit", ""),
+            "source_tree_hash": source_state.get("tree_hash", ""),
+            "snapshot_tree_hash": snapshot_state.get("snapshot_tree_hash", ""),
+            "source_lockfile_hash": source_state.get("lockfile_hash", ""),
+            "lockfile_hash": snapshot_state.get("lockfile_hash", ""),
+            "task_manifest_hash": task_manifest_hash,
             "route_profile_hash": hermetic_environment.effective_config.get("route_profile_hash") if hermetic_environment else "",
             "agent_config_hash": hermetic_environment.effective_config_sha256 if hermetic_environment else "",
             "model_id": args.model_id,
             "reasoning_effort": args.reasoning_effort,
+            "response_contract_hash": response_contract_hash,
             "run_dir": str(run_dir),
             "completion_reason": bridge_result.completion_reason,
             "failure_reason": metrics.get("failure_reason", ""),
             "wall_seconds": metrics.get("wall_seconds", 0),
-            "semantic_setup_seconds": round(semantic_setup_seconds, 3),
+            "semantic_setup_seconds": round(semantic_setup_seconds, 6),
             "task_execution_seconds": metrics.get("task_execution_seconds", metrics.get("wall_seconds", 0)),
             "end_to_end_seconds": metrics.get(
                 "end_to_end_seconds",
-                round(float(metrics.get("wall_seconds", 0) or 0) + semantic_setup_seconds, 3),
+                round(float(metrics.get("wall_seconds", 0) or 0) + semantic_setup_seconds, 6),
             ),
             "correctness_status": judge["correctness_status"],
             "policy_adherence": judge["policy_adherence"],
@@ -1027,6 +1481,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "serena_readiness_warnings": serena_readiness.get("warnings") if serena_readiness else [],
             "serena_readiness_symbol": serena_readiness.get("symbol") if serena_readiness else "",
             "serena_readiness_source_file": serena_readiness.get("source_file") if serena_readiness else "",
+            "serena_process_state_after_readiness": serena_readiness.get("process_state_after") if serena_readiness else {},
             "model_visible_proxy_tokens": metrics.get("model_visible_proxy_tokens", 0),
             "tool_call_count": metrics.get("tool_call_count", 0),
             "files_opened_count": metrics.get("files_opened_count", 0),
@@ -1041,10 +1496,54 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             transcript_path=bridge_result.transcript_path,
             run_row=row,
         )
+        semantic_session = semantic_session_artifact(
+            run_id=run_id,
+            profile_id=profile_id,
+            semantic_access_enabled=bool(row["semantic_access_enabled"]),
+            isolated_serena_session=args.isolated_serena_session,
+            hermetic_environment=hermetic_environment,
+            serena_readiness=serena_readiness,
+            tool_versions=tool_versions,
+            project_path_hmac=private_hmac(task_repo_path, key_env=args.hmac_key_env),
+            dry_run=args.dry_run,
+            pre_task_process_state=pre_task_process_state,
+            post_task_process_state=post_task_process_state,
+        )
+        to_json_file(run_dir / "semantic-session.json", semantic_session)
         oracle_payload = asdict(oracle_result)
         to_json_file(run_dir / "oracle.json", oracle_payload)
         row.update(
             {
+                "semantic_session_mode": semantic_session["mode"],
+                "semantic_session_isolated": semantic_session["isolated"],
+                "semantic_session_artifact": "semantic-session.json",
+                "semantic_session_id_hmac": private_hmac(str(semantic_session.get("session_id", "")), key_env=args.hmac_key_env)
+                if semantic_session.get("semantic_access_enabled")
+                else "",
+                "semantic_project_path_hmac": semantic_session.get("project_path_hmac", ""),
+                "semantic_lifecycle_owner": semantic_session.get("lifecycle_owner", ""),
+                "semantic_teardown_verified": semantic_session.get("teardown_verified"),
+                "semantic_process_survivor_count": semantic_session.get("process_survivor_count"),
+                "semantic_child_lsp_survivor_count": semantic_session.get("child_lsp_survivor_count"),
+                "serena_process_state_before": pre_task_process_state,
+                "serena_process_state_after": post_task_process_state,
+                "codex_version": tool_versions.get("codex", ""),
+                "serena_version": tool_versions.get("serena", ""),
+                "sourcekit_lsp_version": tool_versions.get("sourcekit-lsp", ""),
+                "typescript_language_server_version": tool_versions.get("typescript-language-server", ""),
+                "node_version": tool_versions.get("node", ""),
+                "npm_version": tool_versions.get("npm", ""),
+                "pnpm_version": tool_versions.get("pnpm", ""),
+                "yarn_version": tool_versions.get("yarn", ""),
+                "tsc_version": tool_versions.get("tsc", ""),
+                "kotlin_language_server_version": tool_versions.get("kotlin-language-server", ""),
+                "json_language_server_version": tool_versions.get("vscode-json-languageserver", ""),
+                "rg_version": tool_versions.get("rg", ""),
+                "fd_version": tool_versions.get("fd", ""),
+                "ast_grep_version": tool_versions.get("ast-grep", ""),
+                "git_version": tool_versions.get("git", ""),
+                "python_version": tool_versions.get("python", ""),
+                "os_version": tool_versions.get("os", ""),
                 "oracle_id": oracle_result.oracle_id,
                 "oracle_type": oracle_result.oracle_type,
                 "oracle_status": oracle_result.status,
@@ -1052,6 +1551,12 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             }
         )
         append_jsonl(runs_path, row)
+        if args.require_clean_serena_process_state and not args.dry_run and not row["semantic_teardown_verified"]:
+            enforce_zero_serena_process_counts(
+                process_state=post_task_process_state,
+                run_dir=run_dir,
+                phase="after completing",
+            )
         monitor_event(
             monitor_path,
             {
@@ -1071,6 +1576,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             },
             enabled=args.monitor,
         )
+    write_treatment_diff_artifact(rows=load_run_rows(runs_path), out=out_root / "treatment-diffs.jsonl")
     summary = write_report(runs_jsonl=runs_path, out_dir=out_root, dry_run=args.dry_run)
     return {"manifest": manifest, "summary": summary, "out": str(out_root)}
 
@@ -1109,6 +1615,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live", action="store_true", help="Run a live subject agent; requires adapter support.")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow live runs when the target repo is dirty.")
     parser.add_argument("--snapshot-repos", action="store_true", help="Run against clean detached git worktree snapshots under the output directory.")
+    parser.add_argument(
+        "--snapshot-scope",
+        choices=["repo", "block"],
+        default="repo",
+        help="Snapshot granularity. Study mode requires one detached worktree per task/repeat block.",
+    )
     parser.add_argument("--seed", type=int, help="Random seed for run order and sampled code prompts. Defaults to a generated seed recorded in the manifest.")
     parser.add_argument("--no-randomize-order", action="store_true")
     parser.add_argument("--monitor", action="store_true", help="Print one progress line per run and write monitor.jsonl.")

@@ -1,22 +1,26 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import signal
 import subprocess
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from scripts.lib.agent_session import to_json_file, utc_now
 
 
 SOURCE_SYMBOL_RE = re.compile(r"\b[A-Z][A-Za-z0-9_]{3,}\b")
+SOURCE_FILE_GLOBS = ["*.kt", "*.java", "*.swift", "*.ts", "*.tsx", "*.js", "*.jsx"]
 SERENA_MCP_PATTERN = "serena start-mcp-server"
+SOURCEKIT_LSP_PATTERN = "sourcekit-lsp"
 KOTLIN_LSP_PATTERN = "KotlinLspServerKt"
 JSON_LSP_PATTERN = "vscode-json-languageserver"
 PROCESS_KIND_PATTERNS = {
     "serena_mcp": SERENA_MCP_PATTERN,
+    "sourcekit_lsp": SOURCEKIT_LSP_PATTERN,
     "kotlin_lsp": KOTLIN_LSP_PATTERN,
     "json_lsp": JSON_LSP_PATTERN,
 }
@@ -34,6 +38,7 @@ class SerenaProcessState:
     serena_mcp: int
     kotlin_lsp: int
     json_lsp: int
+    sourcekit_lsp: int = 0
 
 
 @dataclass(frozen=True)
@@ -68,6 +73,9 @@ class SerenaReadiness:
     warnings: list[str]
     reason: str
     next_action: str
+    semantic_session_home: str = ""
+    isolated_env_keys: list[str] = field(default_factory=list)
+    process_state_after: SerenaProcessState | None = None
 
 
 def count_processes(pattern: str) -> int:
@@ -250,6 +258,7 @@ def terminate_processes(processes: list[SerenaProcess], *, grace_seconds: float 
 def serena_process_state() -> SerenaProcessState:
     return SerenaProcessState(
         serena_mcp=count_processes(SERENA_MCP_PATTERN),
+        sourcekit_lsp=count_processes(SOURCEKIT_LSP_PATTERN),
         kotlin_lsp=count_processes(KOTLIN_LSP_PATTERN),
         json_lsp=count_processes(JSON_LSP_PATTERN),
     )
@@ -259,6 +268,8 @@ def serena_process_state_warnings(process_state: SerenaProcessState) -> list[str
     warnings: list[str] = []
     if process_state.serena_mcp > 1:
         warnings.append("multiple_serena_mcp_processes")
+    if process_state.sourcekit_lsp > 1:
+        warnings.append("multiple_sourcekit_lsp_processes")
     if process_state.kotlin_lsp > 1:
         warnings.append("multiple_kotlin_lsp_processes")
     if process_state.json_lsp > 1:
@@ -277,11 +288,18 @@ def serena_process_cleanup_plan(
     state = process_state or serena_process_state()
     warning_values = warnings if warnings is not None else serena_process_state_warnings(state)
     process_values = processes if processes is not None else serena_related_processes()
-    grouped: dict[str, list[SerenaProcess]] = {"serena_mcp": [], "kotlin_lsp": [], "json_lsp": [], "unknown": []}
+    grouped: dict[str, list[SerenaProcess]] = {
+        "serena_mcp": [],
+        "sourcekit_lsp": [],
+        "kotlin_lsp": [],
+        "json_lsp": [],
+        "unknown": [],
+    }
     for process in process_values:
         grouped.setdefault(serena_process_kind(process.command), []).append(process)
     stale_kinds = {
         "serena_mcp": state.serena_mcp > 1,
+        "sourcekit_lsp": state.sourcekit_lsp > 1,
         "kotlin_lsp": state.kotlin_lsp > 1,
         "json_lsp": state.json_lsp > 1,
     }
@@ -418,7 +436,22 @@ def stale_processes_from_cleanup_plan(plan: dict[str, object]) -> list[SerenaPro
 
 def extract_source_symbol(prompt: str) -> str:
     candidates = SOURCE_SYMBOL_RE.findall(prompt)
-    ignored = {"Find", "Report", "Evidence", "Serena", "Kotlin", "Java", "Android"}
+    ignored = {
+        "Find",
+        "Determine",
+        "Report",
+        "Evidence",
+        "Serena",
+        "Kotlin",
+        "Java",
+        "Android",
+        "Swift",
+        "SourceKit",
+        "TypeScript",
+        "JavaScript",
+        "React",
+        "Web",
+    }
     for candidate in candidates:
         if candidate not in ignored:
             return candidate
@@ -430,8 +463,12 @@ def candidate_source_files(repo: str | Path, symbol: str, *, limit: int = 20) ->
         return []
     repo_path = Path(repo).expanduser().resolve()
     pattern = rf"\b{re.escape(symbol)}\b"
+    command = ["rg", "--no-config", "-l"]
+    for glob in SOURCE_FILE_GLOBS:
+        command.extend(["-g", glob])
+    command.extend([pattern, "."])
     completed = subprocess.run(
-        ["rg", "-l", "-g", "*.kt", "-g", "*.java", pattern, "."],
+        command,
         cwd=repo_path,
         text=True,
         stdout=subprocess.PIPE,
@@ -441,7 +478,15 @@ def candidate_source_files(repo: str | Path, symbol: str, *, limit: int = 20) ->
     files = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
     if not files:
         return []
-    expected_basenames = {f"{symbol}.kt", f"{symbol}.java"}
+    expected_basenames = {
+        f"{symbol}.kt",
+        f"{symbol}.java",
+        f"{symbol}.swift",
+        f"{symbol}.ts",
+        f"{symbol}.tsx",
+        f"{symbol}.js",
+        f"{symbol}.jsx",
+    }
     files.sort(key=lambda value: (Path(value).name not in expected_basenames, len(Path(value).parts), value))
     return files[:limit]
 
@@ -452,9 +497,9 @@ def classify_index_output(*, symbol: str, source_file: str, returncode: int | No
         return "fail", False, "timeout", "increase Serena readiness timeout and inspect language-server logs"
     if returncode != 0:
         if "language server manager is not initialized" in combined:
-            return "fail", False, "language_server_manager_not_initialized", "restart stale Serena sessions and warm the Kotlin LSP before full-router runs"
+            return "fail", False, "language_server_manager_not_initialized", "restart stale Serena sessions and warm the project language server before full-router runs"
         if "cancelled (-32800)" in combined:
-            return "fail", False, "kotlin_lsp_initialization_cancelled", "restart stale Serena/Kotlin LSP sessions and retry source-symbol smoke"
+            return "fail", False, "language_server_initialization_cancelled", "restart stale Serena/LSP sessions and retry source-symbol smoke"
         return "fail", False, "serena_index_file_failed", "inspect serena project index-file output and project configuration"
     symbol_line = re.compile(rf"^\s*-\s+{re.escape(symbol)}\s+at line\s+\d+\s+of kind\s+\d+\s*$", re.MULTILINE)
     if source_file and symbol_line.search(stdout):
@@ -469,10 +514,16 @@ def run_serena_source_symbol_readiness(
     source_symbol: str | None = None,
     source_file: str | None = None,
     timeout_seconds: int = 90,
+    env: dict[str, str] | None = None,
+    semantic_session_home: str | Path | None = None,
 ) -> SerenaReadiness:
     repo_path = Path(repo).expanduser().resolve()
     process_state = serena_process_state()
     warnings = serena_process_state_warnings(process_state)
+    readiness_env = dict(env or {})
+    readiness_env_keys = sorted(readiness_env)
+    readiness_command_env = {**os.environ, **readiness_env} if readiness_env else None
+    semantic_home_text = str(Path(semantic_session_home).expanduser().resolve()) if semantic_session_home else ""
 
     symbol = source_symbol or extract_source_symbol(prompt)
     if not shutil.which("serena"):
@@ -491,6 +542,8 @@ def run_serena_source_symbol_readiness(
             warnings=warnings,
             reason="serena_not_found",
             next_action="install Serena or fix PATH before full-router semantic runs",
+            semantic_session_home=semantic_home_text,
+            isolated_env_keys=readiness_env_keys,
         )
     selected_file = source_file or ""
     if not selected_file:
@@ -511,7 +564,9 @@ def run_serena_source_symbol_readiness(
             process_state=process_state,
             warnings=warnings,
             reason="source_symbol_or_file_not_resolved",
-            next_action="provide a known source symbol/file for Serena readiness smoke",
+            next_action="provide a known source symbol/file in a supported source file for Serena readiness smoke",
+            semantic_session_home=semantic_home_text,
+            isolated_env_keys=readiness_env_keys,
         )
     command = ["serena", "project", "index-file", selected_file, str(repo_path), "--verbose"]
     try:
@@ -523,7 +578,9 @@ def run_serena_source_symbol_readiness(
             stderr=subprocess.PIPE,
             timeout=timeout_seconds,
             check=False,
+            env=readiness_command_env,
         )
+        process_state_after = serena_process_state()
         status, ready, reason, next_action = classify_index_output(
             symbol=symbol,
             source_file=selected_file,
@@ -546,6 +603,9 @@ def run_serena_source_symbol_readiness(
             warnings=warnings,
             reason=reason,
             next_action=next_action,
+            semantic_session_home=semantic_home_text,
+            isolated_env_keys=readiness_env_keys,
+            process_state_after=process_state_after,
         )
     except subprocess.TimeoutExpired as exc:
         return SerenaReadiness(
@@ -562,7 +622,9 @@ def run_serena_source_symbol_readiness(
             process_state=process_state,
             warnings=warnings,
             reason="timeout",
-            next_action="increase readiness timeout or inspect Kotlin LSP startup logs",
+            next_action="increase readiness timeout or inspect project language-server startup logs",
+            semantic_session_home=semantic_home_text,
+            isolated_env_keys=readiness_env_keys,
         )
 
 

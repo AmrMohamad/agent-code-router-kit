@@ -49,11 +49,16 @@ Dry-run mode validates the harness without launching a real agent:
 python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --dry-run \
   --agent codex \
-  --repo "$PWD" \
-  --tasks benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv \
-  --arms A-search-only,D-full-router \
-  --task-limit 3 \
-  --repeats 1 \
+  --repo /path/to/clean/ios-reference \
+  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference \
+  --tasks benchmarks/real-agent-routing/studies/router-effect-v1/pilot-tasks.tsv \
+  --task-oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
+  --study-plan benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml \
+  --arms A-search-only,B-search-summary,C-lsp-naive,D-full-router \
+  --repeats 4 \
+  --snapshot-repos \
+  --model-id '<exact-model-id>' \
+  --reasoning-effort '<fixed-effort>' \
   --out /tmp/agent-code-router-kit-rarb
 ```
 
@@ -93,14 +98,17 @@ Live mode is explicit:
 ```bash
 python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --live \
-  --agents codex,claude-code,cursor-agent \
-  --repo /path/to/clean/android-repo \
-  --repo-map sample_b2b_android=/path/to/clean/android-repo \
-  --tasks benchmarks/real-agent-routing/tasks/android-realworld.sample.tsv \
-  --arms A-search-only,D-full-router \
-  --task-limit 1 \
-  --repeats 1 \
+  --agent codex \
+  --repo /path/to/clean/ios-reference \
+  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference \
+  --tasks benchmarks/real-agent-routing/studies/router-effect-v1/pilot-tasks.tsv \
+  --task-oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
+  --study-plan benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml \
+  --arms A-search-only,B-search-summary,C-lsp-naive,D-full-router \
+  --repeats 4 \
   --snapshot-repos \
+  --model-id '<exact-model-id>' \
+  --reasoning-effort '<fixed-effort>' \
   --out results/real-agent-routing/live-pilot
 ```
 
@@ -181,10 +189,12 @@ benchmark failures. They are valid live outcomes for execution coverage and
 failure-rate reporting, but they are not correctness passes and cannot support
 route-savings claims.
 
-Use `--snapshot-repos` when source repos have unrelated local edits. It creates
-clean detached git worktrees under the benchmark output directory, runs agents
-against those snapshots, and records both source and snapshot repo states in the
-manifest.
+Use `--snapshot-repos` when source repos have unrelated local edits. Outside
+study mode this creates clean detached git worktrees under the benchmark output
+directory, runs agents against those repository snapshots, and records both
+source and snapshot repo states in the manifest. With `router-effect-v1`, the
+study plan upgrades this to block-scoped snapshots: every `(agent, task,
+repository, repeat)` block gets one detached worktree shared by its four arms.
 
 ## Router Effect V1 Study Mode
 
@@ -199,21 +209,37 @@ The runner enforces the study controls when `--study-plan` is present:
 - A/B/C/D arm coverage;
 - at least four repeats;
 - balanced Latin-square order;
-- clean detached snapshots;
+- clean detached snapshots, block-scoped by task/repository/repeat;
 - fresh controlled Codex home per run;
 - isolated semantic-session configuration for C/D;
+- per-run `semantic-session.json` artifacts proving semantic access is either
+  disabled or isolated through Codex MCP stdio;
+- unique semantic-session ids for C/D, with isolated Serena home plus
+  `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, and `XDG_DATA_HOME` under the run
+  directory;
 - captured tool versions;
+- row-level Codex, Serena, language-server, and OS version provenance;
+- semantic readiness prewarm for C/D cells before task execution, with
+  `semantic_setup_seconds` reported separately from `task_execution_seconds`;
+- clean Serena process-state enforcement for live semantic-access cells;
+- block-level `treatment-diffs.jsonl` evidence proving A/B/C/D effective
+  configs differ only on the preregistered treatment fields;
 - external task oracle artifacts;
+- frozen study-package provenance in `run-manifest.json`, including hashes for
+  the study plan, protocol, analysis plan, oracle file, and task manifest;
+- controller commit/tree provenance from a clean benchmark-controller checkout;
 - model and reasoning-effort metadata.
 
 Example dry-run control check:
 
 ```bash
+export RARB_PRIVATE_HMAC_KEY="$(openssl rand -hex 32)"
+
 python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --dry-run \
   --agent codex \
   --repo /path/to/clean/ios-reference \
-  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference,portable_reference=/path/to/clean/portable-reference \
+  --repo-map ios_reference=/path/to/clean/ios-reference,web_reference=/path/to/clean/web-reference \
   --tasks benchmarks/real-agent-routing/studies/router-effect-v1/pilot-tasks.tsv \
   --task-oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
   --study-plan benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml \
@@ -223,6 +249,15 @@ python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --model-id '<exact-model-id>' \
   --reasoning-effort '<fixed-effort>' \
   --out results/real-agent-routing/router-effect-v1-dry-run
+```
+
+Validate oracle coverage before live execution:
+
+```bash
+python3 scripts/benchmarks/verify_task_oracles.py \
+  --tasks benchmarks/real-agent-routing/studies/router-effect-v1/confirmatory-tasks.tsv \
+  --oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
+  --require-task-specific
 ```
 
 Audit the resulting package:
@@ -241,6 +276,85 @@ python3 scripts/benchmarks/analyze_real_agent_study.py \
   --metric exact_uncached_input_tokens \
   --out results/real-agent-routing/router-effect-v1-dry-run/study-analysis.json
 ```
+
+The confirmatory analysis contains intention-to-treat pairwise effects,
+pass/pass sensitivity, factorial effects, task-family and repository strata,
+Latin-square sequence-position sensitivity, and Holm-corrected paired
+correctness comparisons. Pairing and factorial blocks are keyed by agent,
+task id, repository id, and repetition index so reused task ids in different
+repositories stay independent. Public bundles remap repository-stratified keys
+to opaque repository ids.
+
+Pass `--pricing pricing.json` only when the pinned model identifier and per-1M
+token prices are explicit. The pricing JSON must include `model_id`,
+`input_per_1m`, `cached_input_per_1m`, `output_per_1m`, and
+`reasoning_output_per_1m`. Cost estimates are reported separately from context
+efficiency and are not inferred from uncached tokens alone.
+
+Estimate whether the observed pilot variance supports the planned confirmatory
+sample size. The power artifact reports the primary A/D comparison and every
+preregistered pairwise comparison used for decomposition:
+
+```bash
+python3 scripts/benchmarks/estimate_study_power.py \
+  --runs results/real-agent-routing/router-effect-v1-dry-run/runs.jsonl \
+  --metric exact_uncached_input_tokens \
+  --minimum-effect 0.15 \
+  --floor-repeats 4 \
+  --out results/real-agent-routing/router-effect-v1-dry-run/study-power.json
+```
+
+This hardening phase already represents more than five hours of study-control,
+audit, fixture, and documentation work. Treat the current `router-effect-v1`
+control surface as sufficient for this phase; further work should move to a
+real live confirmatory execution and sanitized evidence export rather than
+continuing to add framework gates.
+
+Use the stricter audit before any publishable claim:
+
+```bash
+python3 scripts/benchmarks/audit_real_agent_study.py \
+  --root results/real-agent-routing/router-effect-v1-dry-run \
+  --confirmatory \
+  --out results/real-agent-routing/router-effect-v1-dry-run/confirmatory-audit.json
+```
+
+The `--confirmatory` gate requires a live run from the frozen
+`confirmatory-tasks.tsv` plus the study-plan `task-oracles.json`. It rejects
+custom task manifests, custom oracle files, dry-runs, missing
+`study-analysis.json`, missing `study-power.json`, or run rows whose
+`task_manifest_hash` does not match the frozen package in `run-manifest.json`.
+It also recomputes the frozen study-package file hashes and validates the
+analysis plan's primary outcome, repository/task cluster unit, factorial
+effects, stratification fields, power inputs, and controller commit/tree
+consistency before accepting the run.
+The analysis and power artifacts must use the preregistered primary context
+metric, `exact_uncached_input_tokens`.
+The confirmatory audit recomputes both artifacts from the current `runs.jsonl`;
+stale, hand-edited, or mismatched `study-analysis.json` and `study-power.json`
+files fail even when their schema is otherwise valid.
+Captured Codex, Serena, language-server, frontend runtime, package-manager, and
+OS versions must also be stable within each four-arm block. Row-level
+language-server fields must match the per-run `semantic-session.json` artifact,
+so stale semantic-session metadata cannot silently support a fixed-tooling claim.
+For web/frontend rows, the confirmatory audit requires usable Node,
+TypeScript-language-server, and at least one package-manager version.
+Live confirmatory semantic-access rows must also show passed Serena readiness
+in both `runs.jsonl` and `semantic-session.json`, and include the
+`serena-readiness.json` artifact created before task execution. The manifest
+must prove that clean Serena process-state enforcement was enabled.
+The audit also recomputes `treatment-diffs.jsonl` from each run's
+`effective-agent-config.json`; missing, stale, or invalid treatment-diff
+evidence blocks publishable treatment-isolation claims.
+If `study-analysis.json` reports `cost.status=estimated`, the audit also
+requires the pricing model to match the pinned study model and every arm to
+include total cost, median cost, cost per run, and cost per successful task.
+Do not use `--rerun-failed` for confirmatory studies. Wrong answers, timeouts,
+policy violations, and controlled output-budget stops are randomized outcomes
+for the intention-to-treat analysis. The confirmatory audit fails packages that
+rerun failed agent outcomes or carry forward invalid, rerun, or
+missing-artifact cells; resume carry-forward is acceptable only for intact rows
+with self-contained artifacts.
 
 Build a public bundle only after verifying that private paths, prompts, source
 snippets, symbols, and transcripts are excluded:
@@ -363,21 +477,30 @@ when intentionally overriding the recorded task manifest.
 
 The benchmark package is sanitized and public-safe. It captures routing conclusions without private project names, raw private output, credentials, or organization-specific paths.
 
-Swift/iOS fixture results demonstrate that broad raw search can flood context, while grouped file/count summaries keep high-fanout work bounded. Android/Kotlin results demonstrate the same routing principle under Android-specific constraints: Gradle project model, generated sources, Android Studio indexing, emulator/runtime proof, and Serena/Kotlin LSP process lifecycle must stay separate proof layers.
+The current `router-effect-v1` study fixtures are scoped to Swift/iOS and
+web/frontend repositories. They demonstrate the routing principle under native
+app and frontend constraints: broad raw search can flood context, grouped
+file/count summaries keep high-fanout work bounded, semantic identity belongs to
+SourceKit-LSP or Serena-backed symbol tools when applicable, and build/runtime
+truth remains a separate proof layer.
 
 Core routing rule:
 
 ```text
 Known Swift symbol       -> SourceKit-LSP / Serena first
-Known Kotlin/Java symbol -> Serena / Kotlin or Java LSP first, after readiness smoke
+Known web symbol         -> Serena or language-aware symbol tools first
 High-fanout symbol       -> grouped summaries/counts first
 Literal/resource         -> rg/fd first
 GraphQL/generated        -> GraphQL/discovery/build mapping first, then semantic symbol proof if concrete
 Structural pattern       -> ast-grep first
-Build/runtime truth      -> Xcode, Android Studio, Gradle, emulator/device, CI, or plugin proof
+Build/runtime truth      -> Xcode, browser/runtime, CI, or plugin proof
 ```
 
-Android operational gates are intentionally conservative. A passing build/install/launch smoke proves only build/runtime smoke, not business-flow correctness. Empty Serena references are treated as a named semantic disagreement when Android Studio usages returns real locations; the policy then records which layer is trusted for that pattern instead of silently accepting either result.
+The study gates are intentionally conservative. A passing build, launch, or
+browser/runtime smoke proves only that proof layer, not business-flow
+correctness. Empty semantic references are treated as named disagreements when a
+different proof layer returns real locations; the policy records which layer is
+trusted for that pattern instead of silently accepting either result.
 
 ## Proof Boundaries
 
@@ -386,7 +509,7 @@ This toolkit does not claim that:
 - LSP proves runtime behavior;
 - `rg` proves all real symbol references;
 - `ast-grep` proves types;
-- Xcode/Android Studio/Gradle/build output replaces semantic navigation;
+- Xcode, browser/runtime, CI, or build output replaces semantic navigation;
 - generated files, XIB/storyboard, localization, and resource behavior are fully semantic;
 - future agent behavior will always follow the policy without instruction.
 

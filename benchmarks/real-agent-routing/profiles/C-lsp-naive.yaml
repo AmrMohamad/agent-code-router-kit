@@ -8,9 +8,9 @@ allowed_tools:
   - fd
 blocked_tools: []
 required_first_tool: semantic_for_known_symbol
-high_fanout_policy: weak
+high_fanout_policy: raw_search_allowed
 max_raw_output_bytes: 50000
 instructions: |
-  Semantic tools are available for known symbols. High-fanout budgeting is not
-  strictly enforced in this arm so the benchmark can observe whether LSP alone
-  still floods context.
+  Semantic tools are available for known symbols. Routing discipline remains off:
+  use the same controlled raw high-fanout policy as A-search-only so A/C isolates
+  semantic access without adding summary-first behavior.

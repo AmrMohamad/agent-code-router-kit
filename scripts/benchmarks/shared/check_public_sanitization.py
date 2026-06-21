@@ -42,6 +42,7 @@ PNG_SUFFIXES = {".png"}
 PNG_METADATA_CHUNKS = {b"tEXt", b"zTXt", b"iTXt", b"eXIf"}
 PUBLIC_EVIDENCE_PARTS = ("benchmarks", "real-agent-routing", "evidence")
 CODEX_SMOKE_EVIDENCE_PARTS = (*PUBLIC_EVIDENCE_PARTS, "codex-ad-smoke-anonymized")
+ROUTER_EFFECT_STUDY_ID = "router-effect-v1"
 CODEX_SMOKE_ALLOWED_FILES = {
     "README.md",
     "audit.sanitized.json",
@@ -51,6 +52,16 @@ CODEX_SMOKE_ALLOWED_FILES = {
     "runs.sanitized.jsonl",
     "source.sanitized.json",
     "summary.sanitized.json",
+}
+ROUTER_EFFECT_STUDY_ALLOWED_FILES = {
+    "README.md",
+    "analysis.sanitized.json",
+    "artifact-hashes.sha256.json",
+    "audit.sanitized.json",
+    "manifest.sanitized.json",
+    "power.sanitized.json",
+    "runs.sanitized.jsonl",
+    "treatment-diffs.sanitized.jsonl",
 }
 CODEX_SMOKE_TOP_LEVEL_KEYS = {
     "source.sanitized.json": {
@@ -182,6 +193,193 @@ CODEX_SMOKE_CLAIM_ROW_KEYS = CODEX_SMOKE_SOURCE_CLAIM_ROW_KEYS | {
     "treatment_minus_baseline_exact_uncached_tokens",
     "uncached_tokens_avoided",
 }
+ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS = {
+    "manifest.sanitized.json": {
+        "agents",
+        "controller_commit",
+        "controller_dirty",
+        "controller_tree_hash",
+        "isolated_agent_home",
+        "isolated_serena_session",
+        "minimum_task_families",
+        "minimum_tasks_per_family",
+        "model_id",
+        "order_design",
+        "parallelism",
+        "privacy",
+        "reasoning_effort",
+        "repo_count",
+        "repository_labels",
+        "require_clean_serena_process_state",
+        "require_explicit_reasoning_effort",
+        "require_family_repository_crossing",
+        "route_profile_hashes",
+        "snapshot_scope",
+        "snapshot_repos",
+        "study_id",
+        "study_package",
+        "task_count",
+        "task_families",
+        "tool_versions",
+    },
+    "audit.sanitized.json": {
+        "audit_mode",
+        "arm_counts",
+        "fail_count",
+        "issue_counts",
+        "min_task_families",
+        "min_tasks_per_family",
+        "run_count",
+        "status",
+    },
+    "analysis.sanitized.json": {
+        "analysis_id",
+        "arm_counts",
+        "bootstrap",
+        "cell_key_fields",
+        "cluster_unit",
+        "correctness_counts",
+        "correctness_noninferiority_margin",
+        "correctness_pairwise",
+        "cost",
+        "expected_arms",
+        "factorial_effects",
+        "factorial_effects_by_repo",
+        "factorial_effects_by_task_family",
+        "intention_to_treat_run_count",
+        "metric",
+        "multiple_comparison_correction",
+        "notes",
+        "pairwise_effects",
+        "pairwise_effects_by_repo",
+        "pairwise_effects_by_sequence_position",
+        "pairwise_effects_by_task_family",
+        "pass_all_sensitivity_factorial_effects",
+        "pass_pass_sensitivity_pairwise_effects",
+        "run_count",
+    },
+    "power.sanitized.json": {
+        "all_preregistered_comparisons_power_target_met",
+        "alpha",
+        "cell_key_fields",
+        "cluster_unit",
+        "method",
+        "metric",
+        "minimum_effect",
+        "minimum_effect_log",
+        "observed_pairs",
+        "pair_count",
+        "pairwise_power",
+        "pilot_log_ratio_variance",
+        "power",
+        "power_target_met",
+        "primary_comparison",
+        "recommended_pairs",
+        "recommended_repeats_floor",
+        "status",
+        "z_alpha_two_sided",
+        "z_power",
+    },
+}
+ROUTER_EFFECT_STUDY_RUN_ROW_KEYS = {
+    "agent",
+    "agent_config_hash",
+    "ast_grep_count",
+    "ast_grep_version",
+    "block_id",
+    "codex_version",
+    "completion_reason",
+    "controller_commit",
+    "controller_tree_hash",
+    "correctness_status",
+    "dynamic_target_hmac",
+    "end_to_end_seconds",
+    "exact_cached_input_tokens",
+    "exact_input_tokens",
+    "exact_output_tokens",
+    "exact_reasoning_output_tokens",
+    "exact_total_tokens",
+    "exact_uncached_input_tokens",
+    "exact_uncached_total_tokens",
+    "exact_usage_event_count",
+    "files_opened_count",
+    "fd_version",
+    "git_version",
+    "json_language_server_version",
+    "kotlin_language_server_version",
+    "model_visible_bytes",
+    "node_version",
+    "npm_version",
+    "oracle_status",
+    "order_design",
+    "os_version",
+    "observed_task_tools",
+    "policy_adherence",
+    "previous_arm",
+    "profile",
+    "protocol_commit",
+    "python_version",
+    "pnpm_version",
+    "repeat_index",
+    "repo_public_id",
+    "response_contract_hash",
+    "route_hard_controls",
+    "route_isolation_mode",
+    "route_profile_hash",
+    "route_weak_controls",
+    "routing_discipline_enabled",
+    "rg_version",
+    "runtime_tool_count",
+    "run_id",
+    "search_count",
+    "semantic_access_enabled",
+    "semantic_child_lsp_survivor_count",
+    "semantic_lifecycle_owner",
+    "semantic_process_survivor_count",
+    "semantic_project_path_hmac",
+    "semantic_session_artifact",
+    "semantic_session_id_hmac",
+    "semantic_session_isolated",
+    "semantic_session_mode",
+    "semantic_setup_seconds",
+    "semantic_teardown_verified",
+    "semantic_tool_count",
+    "sequence_id",
+    "sequence_position",
+    "serena_process_state_after",
+    "serena_process_state_before",
+    "serena_version",
+    "snapshot_key_hmac",
+    "snapshot_scope",
+    "snapshot_state_hmac",
+    "source_state_hmac",
+    "sourcekit_lsp_version",
+    "study_id",
+    "task_execution_seconds",
+    "task_family",
+    "task_prompt_hmac",
+    "task_public_id",
+    "tsc_version",
+    "typescript_language_server_version",
+    "token_source",
+    "tool_call_count",
+    "tool_evidence_source",
+    "tool_output_bytes",
+    "wall_seconds",
+    "yarn_version",
+}
+ROUTER_EFFECT_TREATMENT_DIFF_ROW_KEYS = {
+    "agent",
+    "block_id",
+    "comparisons",
+    "missing_profiles",
+    "repeat_index",
+    "repo_public_id",
+    "task_family",
+    "task_public_id",
+    "valid",
+}
+HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 ALLOWED_TARGET_LABELS = {"Commerce Web Frontend", "Native iOS Commerce App"}
 ALLOWED_OBSERVED_TOOLS = {"rg", "sed", "find_symbol", "get_symbols_overview"}
 ABSOLUTE_USER_PATH_RE = re.compile(r"(?i)(/users/[^\\s\"']+|/home/[^\\s\"']+|[a-z]:\\\\users\\\\[^\\s\"']+|/private/tmp/[^\\s\"']+)")
@@ -327,6 +525,21 @@ def is_codex_smoke_evidence_path(rel: Path) -> bool:
     return len(rel.parts) >= len(CODEX_SMOKE_EVIDENCE_PARTS) and rel.parts[: len(CODEX_SMOKE_EVIDENCE_PARTS)] == CODEX_SMOKE_EVIDENCE_PARTS
 
 
+def is_router_effect_study_evidence_path(path: Path, rel: Path) -> bool:
+    if is_codex_smoke_evidence_path(rel) or not is_public_evidence_path(rel):
+        return False
+    manifest_path = path if path.name == "manifest.sanitized.json" else path.parent / "manifest.sanitized.json"
+    if not manifest_path.exists():
+        return False
+    if path.name == "manifest.sanitized.json":
+        return True
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    return isinstance(manifest, dict) and manifest.get("study_id") == ROUTER_EFFECT_STUDY_ID
+
+
 def iter_json_values(value: object, json_path: str = "$"):
     if isinstance(value, dict):
         for key, item in value.items():
@@ -356,7 +569,10 @@ def public_evidence_schema_violations(path: Path, root: Path) -> list[dict[str, 
     rel_text = rel.as_posix()
     violations: list[dict[str, str]] = []
     is_codex_smoke = is_codex_smoke_evidence_path(rel)
+    is_router_effect_study = is_router_effect_study_evidence_path(path, rel)
     if is_codex_smoke and path.name not in CODEX_SMOKE_ALLOWED_FILES:
+        violations.append({"file": rel_text, "label": "evidence_unexpected_file", "where": "path"})
+    if is_router_effect_study and path.name not in ROUTER_EFFECT_STUDY_ALLOWED_FILES:
         violations.append({"file": rel_text, "label": "evidence_unexpected_file", "where": "path"})
     for payload_index, payload in enumerate(evidence_json_payloads(path)):
         if isinstance(payload, dict) and "__invalid_json__" in payload:
@@ -422,6 +638,59 @@ def public_evidence_schema_violations(path: Path, root: Path) -> list[dict[str, 
                                 "where": f"$[{payload_index}].rows[{index}].{key}",
                             }
                         )
+        if is_router_effect_study and path.name in ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS and isinstance(payload, dict):
+            unexpected = set(payload) - ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS[path.name]
+            for key in sorted(unexpected):
+                violations.append(
+                    {"file": rel_text, "label": "evidence_unexpected_json_field", "where": f"$[{payload_index}].{key}"}
+                )
+        if is_router_effect_study and path.name == "runs.sanitized.jsonl" and isinstance(payload, dict):
+            unexpected = set(payload) - ROUTER_EFFECT_STUDY_RUN_ROW_KEYS
+            for key in sorted(unexpected):
+                violations.append(
+                    {"file": rel_text, "label": "evidence_unexpected_json_field", "where": f"$[{payload_index}].{key}"}
+                )
+        if is_router_effect_study and path.name == "treatment-diffs.sanitized.jsonl" and isinstance(payload, dict):
+            unexpected = set(payload) - ROUTER_EFFECT_TREATMENT_DIFF_ROW_KEYS
+            for key in sorted(unexpected):
+                violations.append(
+                    {"file": rel_text, "label": "evidence_unexpected_json_field", "where": f"$[{payload_index}].{key}"}
+                )
+        if is_router_effect_study and path.name == "artifact-hashes.sha256.json" and isinstance(payload, dict):
+            expected_files = {
+                item.name
+                for item in path.parent.iterdir()
+                if item.is_file()
+                and item.name != "artifact-hashes.sha256.json"
+                and item.name in ROUTER_EFFECT_STUDY_ALLOWED_FILES
+            }
+            unexpected_files = set(payload) - expected_files
+            missing_files = expected_files - set(payload)
+            for key in sorted(unexpected_files):
+                violations.append(
+                    {
+                        "file": rel_text,
+                        "label": "evidence_unexpected_artifact_hash_file",
+                        "where": f"$[{payload_index}].{key}",
+                    }
+                )
+            for key in sorted(missing_files):
+                violations.append(
+                    {
+                        "file": rel_text,
+                        "label": "evidence_missing_artifact_hash_file",
+                        "where": f"$[{payload_index}].{key}",
+                    }
+                )
+            for key, value in payload.items():
+                if not isinstance(value, str) or not HEX64_RE.fullmatch(value):
+                    violations.append(
+                        {
+                            "file": rel_text,
+                            "label": "evidence_invalid_artifact_hash",
+                            "where": f"$[{payload_index}].{key}",
+                        }
+                    )
         for json_path, value in iter_json_values(payload, f"$[{payload_index}]"):
             lower = value.lower()
             if ABSOLUTE_USER_PATH_RE.search(value):
@@ -436,7 +705,7 @@ def public_evidence_schema_violations(path: Path, root: Path) -> list[dict[str, 
             )
             if is_codex_smoke and is_target_label and value not in ALLOWED_TARGET_LABELS:
                 violations.append({"file": rel_text, "label": "evidence_unapproved_target_label", "where": json_path})
-            if is_codex_smoke and "observed_task_tools" in json_path and lower not in ALLOWED_OBSERVED_TOOLS:
+            if (is_codex_smoke or is_router_effect_study) and "observed_task_tools" in json_path and lower not in ALLOWED_OBSERVED_TOOLS:
                 violations.append({"file": rel_text, "label": "evidence_unapproved_observed_tool", "where": json_path})
     return violations
 

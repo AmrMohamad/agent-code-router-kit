@@ -69,11 +69,19 @@ Study mode requires clean detached snapshots, a fresh controlled Codex home per
 run, isolated semantic-session configuration for semantic arms, captured tool
 versions, external task oracles, and balanced Latin-square ordering. It writes
 per-run `effective-agent-config.json`, `effective-agent-config.sha256`,
-`treatment-diff.json`, and `oracle.json` artifacts.
+`treatment-diff.json`, `semantic-session.json`, and `oracle.json` artifacts.
+Semantic C/D runs use per-run Codex MCP stdio sessions with isolated Serena and
+XDG homes under the run directory; A/B rows record semantic access as disabled.
+The run manifest also
+pins the study package with hashes for the study plan, protocol, analysis plan,
+oracle file, and task manifest; private task/oracle inputs are additionally
+fingerprinted with keyed HMACs for safe public evidence.
 
 Dry-run the study controls before any live execution:
 
 ```bash
+export RARB_PRIVATE_HMAC_KEY="$(openssl rand -hex 32)"
+
 python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --dry-run \
   --agent codex \
@@ -98,6 +106,23 @@ python3 scripts/benchmarks/audit_real_agent_study.py \
   --out results/real-agent-routing/router-effect-v1-dry-run/study-audit.json
 ```
 
+Before a live confirmatory run, validate that each frozen task has a
+task-specific oracle contract:
+
+```bash
+python3 scripts/benchmarks/verify_task_oracles.py \
+  --tasks benchmarks/real-agent-routing/studies/router-effect-v1/confirmatory-tasks.tsv \
+  --oracles benchmarks/real-agent-routing/studies/router-effect-v1/task-oracles.json \
+  --require-task-specific
+```
+
+The stricter `--confirmatory` audit is intentionally reserved for live runs
+using the frozen `confirmatory-tasks.tsv` and the study-plan oracle file. It
+rejects dry-runs, custom task manifests, custom oracle files, missing
+analysis/power artifacts, non-primary metric analysis, and row hashes that do
+not match the frozen package. It also rejects weak oracle plans that rely only
+on family-level fallbacks.
+
 The study protocol is intentionally public-safe: repository labels are generic,
 and public evidence must omit private names, paths, prompts, symbols, snippets,
 and transcripts.
@@ -119,6 +144,7 @@ serena-readiness.json         # live semantic-router source-symbol cells only
 effective-agent-config.json   # study/hermetic mode only
 effective-agent-config.sha256 # study/hermetic mode only
 treatment-diff.json           # study/hermetic mode only
+semantic-session.json         # study mode only
 oracle.json                   # study/oracle mode only
 visible-terminal-transcript.txt # codex-tui mode only
 codex-tui-process-cleanup.json # codex-tui mode only

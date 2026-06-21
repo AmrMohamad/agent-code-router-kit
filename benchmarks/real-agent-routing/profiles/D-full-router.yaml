@@ -12,7 +12,7 @@ allowed_tools:
   - adb
 required_first_tool: intent_router
 blocked_tools: []
-high_fanout_policy: summary_first_required
+high_fanout_policy: summary_first
 max_raw_output_bytes: 12000
 instructions: |
   Classify intent before tool use. Use semantic tools for known source symbols,

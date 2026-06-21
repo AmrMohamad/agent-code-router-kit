@@ -16,6 +16,14 @@ FACTORIAL_ARM_ORDER = [
     "D-full-router",
 ]
 
+FACTORIAL_COMPARISONS = [
+    ("A-search-only", "B-search-summary"),
+    ("A-search-only", "C-lsp-naive"),
+    ("C-lsp-naive", "D-full-router"),
+    ("B-search-summary", "D-full-router"),
+    ("A-search-only", "D-full-router"),
+]
+
 
 @dataclass(frozen=True)
 class TreatmentFactors:
@@ -113,6 +121,17 @@ def allowed_config_diff_fields(left_profile_id: str, right_profile_id: str) -> s
     return allowed
 
 
+def required_config_diff_fields(left_profile_id: str, right_profile_id: str) -> set[str]:
+    left = factors_for_profile(left_profile_id)
+    right = factors_for_profile(right_profile_id)
+    required: set[str] = set()
+    if left.semantic_access_enabled != right.semantic_access_enabled:
+        required.update(SEMANTIC_TREATMENT_FIELDS)
+    if left.routing_discipline_enabled != right.routing_discipline_enabled:
+        required.update(ROUTING_TREATMENT_FIELDS)
+    return required
+
+
 def diff_effective_agent_configs(
     left: dict[str, object],
     right: dict[str, object],
@@ -127,14 +146,18 @@ def diff_effective_agent_configs(
         if left.get(key) != right.get(key)
     }
     allowed = allowed_config_diff_fields(left_profile_id, right_profile_id)
+    required = required_config_diff_fields(left_profile_id, right_profile_id)
     disallowed = sorted(key for key in changed if key not in allowed)
+    missing_required = sorted(key for key in required if key not in changed)
     return {
         "left_profile": left_profile_id,
         "right_profile": right_profile_id,
         "allowed_fields": sorted(allowed),
+        "required_fields": sorted(required),
         "changed_fields": changed,
         "disallowed_fields": disallowed,
-        "valid": not disallowed,
+        "missing_required_fields": missing_required,
+        "valid": not disallowed and not missing_required,
     }
 
 

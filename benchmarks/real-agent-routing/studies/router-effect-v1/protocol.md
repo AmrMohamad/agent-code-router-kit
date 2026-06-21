@@ -4,11 +4,16 @@ This study measures a Codex-specific routing intervention with a hermetic
 factorial design. It is not an LSP-only claim and it is not a cross-agent
 claim.
 
+The preregistered subject-agent set for this protocol is exactly `codex`.
+Replication with other agents belongs in a separate protocol or study id.
+
 ## Claim Boundary
 
 For a pinned Codex model and fixed tool versions, on preregistered tasks from
 clean repository snapshots, semantic access and routing discipline may change
-context use and correctness relative to controlled baselines.
+context use and correctness relative to controlled baselines. Because the study
+contains both Swift/iOS and web/frontend tasks, publishable runs must record the
+native semantic stack and the frontend runtime/semantic stack.
 
 ## Factorial Arms
 
@@ -21,6 +26,12 @@ context use and correctness relative to controlled baselines.
 
 Every arm runs from a fresh controlled Codex home with user config, rules, and
 plugins ignored. Only semantic access and routing discipline may differ.
+Semantic-access arms require a readiness prewarm before task execution. The
+readiness result and semantic setup time are reported separately from task
+execution time.
+Every completed four-arm block publishes `treatment-diffs.jsonl`, comparing
+effective agent configs for the preregistered A/B, A/C, C/D, B/D, and A/D
+contrasts.
 
 ## Order Design
 
@@ -36,9 +47,35 @@ each sequence position.
 
 ## Repository Policy
 
-Confirmatory runs require clean detached snapshots. Public evidence may publish
-only opaque repository labels and keyed private fingerprints. Private paths,
-project names, symbols, prompts, and snippets must not be committed.
+Confirmatory runs require clean detached snapshots and a clean controller
+checkout. Snapshots are block-scoped: each `(agent, task, repository, repeat)`
+block receives one detached worktree, and the four arms in that block must share
+that same immutable snapshot. Snapshot keys are local/private; public evidence
+may expose only keyed HMACs and the declared snapshot scope. The manifest and run
+rows must record the controller commit and tree hash used to execute the study.
+Live semantic-access cells must also enforce clean Serena process-state
+readiness before task execution. Public evidence may publish only opaque
+repository labels and keyed private fingerprints. Private paths, project names,
+symbols, prompts, and snippets must not be committed.
+
+The confirmatory package is frozen by hashing the study plan, this protocol,
+the analysis plan, the task oracle file, the pilot task manifest, and the
+confirmatory task manifest before execution. The publishable audit must reject
+any run that uses a custom task manifest or oracle file, whose active task
+manifest is not the preregistered confirmatory manifest, whose pilot and
+confirmatory task manifests overlap, whose frozen package file hashes no longer
+match the referenced files, whose analysis-plan semantics drift from this
+protocol, or whose run rows do not match the frozen task manifest hash. Public
+bundles may expose keyed HMAC fingerprints for private task/oracle inputs, not
+plain private-input hashes.
+
+Pilot/development tasks are used only for debugging, variance estimation, and
+power planning. Confirmatory tasks are held out and must remain disjoint from
+the pilot split before the final study launches.
+
+Each confirmatory task requires a task-specific external oracle contract.
+Family-level fallback oracles are acceptable only for exploratory development
+work; they are insufficient for a publishable confirmatory audit.
 
 ## Task Families
 
@@ -50,8 +87,9 @@ The confirmatory set contains five families:
 - structural pattern
 - build/runtime proof boundary
 
-At least three independent tasks are defined per family. The repository labels
-in this protocol are generic placeholders, not private project identifiers.
+At least three independent tasks are defined per family across the preregistered
+`ios_reference` and `web_reference` labels. The repository labels in this
+protocol are generic placeholders, not private project identifiers.
 
 ## Outcomes
 
@@ -69,8 +107,41 @@ Secondary outcomes:
 - tool-output bytes
 - wall time
 - semantic setup time
-- estimated cost when pricing and model identifiers are available
+- estimated cost from explicit pinned-model pricing
 - tool calls, opened files, policy violations, timeouts, and failures
+
+Every live row must include exact input, cached input, uncached input, output,
+total, uncached total, reasoning-output tokens, and a positive usage-event
+count. The audit rejects rows whose uncached and total fields are internally
+inconsistent. Web/frontend rows must also include usable Node, TypeScript
+language-server, and package-manager version metadata so frontend semantic
+access is not treated as an unpinned environment detail.
+
+Cost is a secondary outcome only, but confirmatory reports must still include an
+estimated-cost block from explicit pricing for the pinned model: uncached input,
+cached input, output, and reasoning-output rates per one million tokens. Cost
+reporting must include total cost, median cost, cost per run, and cost per
+successful task by arm.
+
+The model configuration is part of the preregistered control surface. Live
+confirmatory runs must use an exact pinned model identifier and an explicit
+non-default reasoning-effort value, and every run row must match the manifest
+values.
 
 Every randomized run is retained for intention-to-treat analysis. Pass/pass
 comparisons are secondary sensitivity analyses only.
+Confirmatory runs must not use rerun-failed mode; wrong answers, timeouts,
+policy violations, and output-budget stops are study outcomes, not cells to
+replace. Valid resume carry-forward is allowed only for intact prior rows with
+self-contained artifacts.
+
+Continuous outcomes use paired log ratios with repository/task-cluster bootstrap
+confidence intervals. The preregistered bootstrap uses 1,000 iterations and seed
+12,345; generated analysis artifacts must publish those settings and the audit
+must reject drift from them. The analysis block key is agent, task id,
+repository id, and repetition index, so reused task ids in different
+repositories remain independent cells. Confirmatory analysis reports pairwise
+effects, pass/pass sensitivity, factorial effects, task-family effects,
+repository-stratified effects, and Latin-square sequence-position sensitivity.
+Pairwise correctness comparisons use Holm correction. Public evidence must
+replace repository-stratified keys with opaque repository ids.

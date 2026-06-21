@@ -41,6 +41,23 @@ class SerenaReadinessTests(unittest.TestCase):
 
         self.assertEqual(files[0], "app/src/main/java/com/example/SampleFeatureViewModel.kt")
 
+    def test_candidate_source_files_supports_swift_and_web_sources(self) -> None:
+        result = subprocess.CompletedProcess(
+            args=["rg"],
+            returncode=0,
+            stdout=(
+                "Sources/App/Other.swift\n"
+                "Sources/App/CheckoutCoordinator.swift\n"
+                "src/components/CheckoutCoordinator.tsx\n"
+            ),
+            stderr="",
+        )
+        with mock.patch("scripts.lib.serena_readiness.subprocess.run", return_value=result):
+            files = candidate_source_files(Path("/repo"), "CheckoutCoordinator")
+
+        self.assertEqual(files[0], "Sources/App/CheckoutCoordinator.swift")
+        self.assertIn("src/components/CheckoutCoordinator.tsx", files)
+
     def test_classify_index_output_requires_symbol_line(self) -> None:
         status, ready, reason, next_action = classify_index_output(
             symbol="SampleCatalogViewModel",
@@ -66,7 +83,7 @@ class SerenaReadinessTests(unittest.TestCase):
 
         self.assertEqual(status, "fail")
         self.assertFalse(ready)
-        self.assertEqual(reason, "kotlin_lsp_initialization_cancelled")
+        self.assertEqual(reason, "language_server_initialization_cancelled")
         self.assertIn("restart stale Serena", next_action)
 
     def test_run_readiness_records_process_warnings_and_source_smoke(self) -> None:
@@ -83,24 +100,40 @@ class SerenaReadinessTests(unittest.TestCase):
             stderr="",
         )
 
+        isolated_env = {
+            "RARB_SERENA_SESSION_HOME": "/tmp/semantic-session",
+            "SERENA_HOME": "/tmp/semantic-session/home",
+            "XDG_CONFIG_HOME": "/tmp/semantic-session/xdg-config",
+            "XDG_CACHE_HOME": "/tmp/semantic-session/xdg-cache",
+            "XDG_DATA_HOME": "/tmp/semantic-session/xdg-data",
+        }
+
         with (
             mock.patch("scripts.lib.serena_readiness.shutil.which", return_value="/usr/local/bin/serena"),
             mock.patch(
                 "scripts.lib.serena_readiness.serena_process_state",
                 return_value=SerenaProcessState(serena_mcp=2, kotlin_lsp=3, json_lsp=0),
             ),
-            mock.patch("scripts.lib.serena_readiness.subprocess.run", side_effect=[rg_result, index_result]),
+            mock.patch("scripts.lib.serena_readiness.subprocess.run", side_effect=[rg_result, index_result]) as run_mock,
         ):
             readiness = run_serena_source_symbol_readiness(
                 repo="/repo",
                 prompt="Find SampleCatalogViewModel",
                 timeout_seconds=5,
+                env=isolated_env,
+                semantic_session_home="/tmp/semantic-session",
             )
 
         self.assertTrue(readiness.ready)
         self.assertEqual(readiness.status, "pass")
         self.assertEqual(readiness.source_file, "app/SampleCatalogViewModel.kt")
         self.assertEqual(readiness.warnings, ["multiple_serena_mcp_processes", "multiple_kotlin_lsp_processes"])
+        self.assertEqual(readiness.semantic_session_home, str(Path("/tmp/semantic-session").resolve()))
+        self.assertEqual(readiness.isolated_env_keys, sorted(isolated_env))
+        self.assertEqual(readiness.process_state_after, SerenaProcessState(serena_mcp=2, kotlin_lsp=3, json_lsp=0))
+        index_env = run_mock.call_args_list[1].kwargs["env"]
+        for key, value in isolated_env.items():
+            self.assertEqual(index_env[key], value)
 
     def test_cleanup_plan_lists_stale_candidates_without_terminating(self) -> None:
         plan = serena_process_cleanup_plan(

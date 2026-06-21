@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -39,11 +41,24 @@ class HermeticAgentEnvironment:
     reasoning_effort: str
     sandbox: str
     codex_config_overrides: list[str]
+    semantic_env: dict[str, str]
     env: dict[str, str]
     effective_config: dict[str, object]
     effective_config_sha256: str
+    auth_files_copied: list[str]
     hard_controls: list[str]
     weak_controls: list[str]
+
+
+def serena_session_env(*, semantic_home: str | Path) -> dict[str, str]:
+    semantic_root = Path(semantic_home).resolve()
+    return {
+        "RARB_SERENA_SESSION_HOME": str(semantic_root),
+        "SERENA_HOME": str(semantic_root / "home"),
+        "XDG_CONFIG_HOME": str(semantic_root / "xdg-config"),
+        "XDG_CACHE_HOME": str(semantic_root / "xdg-cache"),
+        "XDG_DATA_HOME": str(semantic_root / "xdg-data"),
+    }
 
 
 def serena_mcp_config(*, repo_path: str | Path, semantic_home: str | Path) -> dict[str, object]:
@@ -63,13 +78,23 @@ def serena_mcp_config(*, repo_path: str | Path, semantic_home: str | Path) -> di
             "--enable-gui-log-window",
             "false",
         ],
-        "env": {
-            "RARB_SERENA_SESSION_HOME": str(Path(semantic_home).resolve()),
-            "XDG_CONFIG_HOME": str((Path(semantic_home).resolve() / "xdg-config")),
-        },
+        "env": serena_session_env(semantic_home=semantic_home),
         "startup_timeout_sec": 30,
         "tool_timeout_sec": 120,
     }
+
+
+def copy_codex_auth_files(*, codex_home: Path) -> list[str]:
+    source_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
+    copied: list[str] = []
+    for name in ("auth.json", "credentials.json"):
+        source = source_home / name
+        if not source.exists() or not source.is_file():
+            continue
+        target = codex_home / name
+        shutil.copy2(source, target)
+        copied.append(name)
+    return copied
 
 
 def materialize_hermetic_agent_environment(
@@ -90,8 +115,12 @@ def materialize_hermetic_agent_environment(
     semantic_home = out / "serena-session"
     codex_home.mkdir(parents=True, exist_ok=True)
     semantic_home.mkdir(parents=True, exist_ok=True)
+    for child in ("home", "xdg-config", "xdg-cache", "xdg-data"):
+        (semantic_home / child).mkdir(parents=True, exist_ok=True)
+    auth_files_copied = copy_codex_auth_files(codex_home=codex_home) if agent_profile.agent_id == "codex" else []
     runtime_mcp_servers: dict[str, object] = {}
     normalized_mcp_servers: dict[str, object] = {}
+    semantic_env = serena_session_env(semantic_home=semantic_home) if factors.semantic_access_enabled else {}
     if factors.semantic_access_enabled:
         runtime_mcp_servers["serena"] = serena_mcp_config(repo_path=repo_path, semantic_home=semantic_home)
         normalized_mcp_servers["serena"] = {
@@ -112,7 +141,10 @@ def materialize_hermetic_agent_environment(
             ],
             "env": {
                 "RARB_SERENA_SESSION_HOME": "<isolated-serena-session>",
+                "SERENA_HOME": "<isolated-serena-home>",
                 "XDG_CONFIG_HOME": "<isolated-serena-xdg-config>",
+                "XDG_CACHE_HOME": "<isolated-serena-xdg-cache>",
+                "XDG_DATA_HOME": "<isolated-serena-xdg-data>",
             },
             "startup_timeout_sec": 30,
             "tool_timeout_sec": 120,
@@ -136,6 +168,8 @@ def materialize_hermetic_agent_environment(
         "model_id": model_id,
         "reasoning_effort": reasoning_effort,
         "response_contract": response_contract,
+        "auth_preserved": bool(auth_files_copied),
+        "auth_file_kinds": sorted(auth_files_copied),
         "mcp_servers": normalized_mcp_servers,
         "serena": {
             "enabled": factors.semantic_access_enabled,
@@ -143,6 +177,7 @@ def materialize_hermetic_agent_environment(
             "project": "<snapshot-repo>" if factors.semantic_access_enabled else "",
         },
         "router_policy": router_policy,
+        "high_fanout_policy": route_profile.high_fanout_policy,
         "max_raw_output_bytes": route_profile.max_raw_output_bytes,
         "route_profile_hash": route_profile_hash(route_profile),
     }
@@ -164,6 +199,7 @@ def materialize_hermetic_agent_environment(
         reasoning_effort=reasoning_effort,
         sandbox=sandbox,
         codex_config_overrides=config_overrides,
+        semantic_env=semantic_env,
         env={
             "CODEX_HOME": str(codex_home.resolve()),
             "RARB_HERMETIC_AGENT_HOME": "1",
@@ -172,14 +208,16 @@ def materialize_hermetic_agent_environment(
         },
         effective_config=effective_config,
         effective_config_sha256=config_hash,
+        auth_files_copied=auth_files_copied,
         hard_controls=[
             "codex_fresh_home",
+            *([] if not auth_files_copied else ["codex_auth_preserved"]),
             "codex_ignore_user_config",
             "codex_ignore_rules",
             "codex_plugins_disabled",
             "codex_controlled_mcp_servers",
         ],
-        weak_controls=[],
+        weak_controls=[] if auth_files_copied else ["codex_auth_not_found"],
     )
     to_json_file(out / "effective-agent-config.json", effective_config)
     (out / "effective-agent-config.sha256").write_text(config_hash + "\n", encoding="utf-8")

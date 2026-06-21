@@ -16,6 +16,7 @@ from scripts.benchmarks.run_real_agent_benchmark import (
     main,
     render_task_packet,
     route_uses_serena,
+    task_supports_dynamic_code_prompt,
     task_needs_serena_source_readiness,
 )
 from scripts.agents.generic_terminal_agent_bridge import BridgeRunResult
@@ -38,6 +39,13 @@ def make_git_repo(path: Path) -> None:
     (path / "README.md").write_text("clean\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
     subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def fake_codex_home(path: Path) -> Path:
+    home = path / "fake-codex-home"
+    home.mkdir()
+    (home / "auth.json").write_text('{"mode":"test"}\n', encoding="utf-8")
+    return home
 
 
 def write_one_task(path: Path) -> None:
@@ -127,8 +135,8 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
         cases = [
             ("A-search-only", "raw_search_allowed", 50000, False),
             ("B-search-summary", "summary_first", 12000, True),
-            ("C-lsp-naive", "weak", 50000, False),
-            ("D-full-router", "summary_first_required", 12000, True),
+            ("C-lsp-naive", "raw_search_allowed", 50000, False),
+            ("D-full-router", "summary_first", 12000, True),
         ]
 
         for profile_id, expected_policy, expected_budget, requires_summary_first in cases:
@@ -168,6 +176,54 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
 
         self.assertTrue(route_uses_serena(profile))
         self.assertTrue(task_needs_serena_source_readiness(task))
+
+    def test_swift_and_web_symbol_tasks_require_serena_readiness(self) -> None:
+        swift_task = TaskSpec(
+            task_id="known_swift_symbol",
+            task_family="known_swift_symbol_definition",
+            repo="sample",
+            prompt="Find CheckoutCoordinator in the Swift iOS source and report semantic identity.",
+            route_profiles=["D-full-router"],
+            edit_allowed=False,
+            build_allowed=False,
+            expected_proof_layer="semantic_identity_or_search_labeled",
+            expected_success_signal="CheckoutCoordinator definition reported",
+            forbidden_claims="Do not claim runtime behavior.",
+            timeout_seconds=900,
+        )
+        web_task = TaskSpec(
+            task_id="known_web_symbol",
+            task_family="known_typescript_symbol_definition",
+            repo="sample",
+            prompt="Find AccountPanel in the React web source and report semantic identity.",
+            route_profiles=["D-full-router"],
+            edit_allowed=False,
+            build_allowed=False,
+            expected_proof_layer="semantic_identity_or_search_labeled",
+            expected_success_signal="AccountPanel definition reported",
+            forbidden_claims="Do not claim runtime behavior.",
+            timeout_seconds=900,
+        )
+
+        self.assertTrue(task_needs_serena_source_readiness(swift_task))
+        self.assertTrue(task_needs_serena_source_readiness(web_task))
+        self.assertTrue(task_supports_dynamic_code_prompt(swift_task))
+
+        high_fanout_task = TaskSpec(
+            task_id="high_fanout_swift_symbol",
+            task_family="high_fanout_swift_symbol",
+            repo="sample",
+            prompt=IOS_HIGH_FANOUT_PROMPT,
+            route_profiles=["D-full-router"],
+            edit_allowed=False,
+            build_allowed=False,
+            expected_proof_layer="high_fanout_summary",
+            expected_success_signal="summary counts reported",
+            forbidden_claims="Do not claim runtime behavior.",
+            timeout_seconds=900,
+        )
+        self.assertTrue(task_needs_serena_source_readiness(high_fanout_task))
+        self.assertFalse(task_supports_dynamic_code_prompt(high_fanout_task))
 
     def test_search_only_profile_does_not_trigger_serena_readiness(self) -> None:
         profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/A-search-only.yaml")
@@ -539,22 +595,27 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
             source.write_text("package com.example\n\nclass RandomRealViewModel\n", encoding="utf-8")
             tasks = Path(tmp) / "tasks.tsv"
             write_full_router_task(tasks)
-            readiness = SerenaReadiness(
-                status="fail",
-                ready=False,
-                created_at="2026-06-01T00:00:00Z",
-                repo=str(repo),
-                symbol="SampleFeatureViewModel",
-                source_file="",
-                command=["serena", "project", "index-file"],
-                returncode=1,
-                stdout_tail="",
-                stderr_tail="language server manager is not initialized",
-                process_state=SerenaProcessState(serena_mcp=3, kotlin_lsp=2, json_lsp=0),
-                warnings=["multiple_serena_mcp_processes", "multiple_kotlin_lsp_processes"],
-                reason="language_server_manager_not_initialized",
-                next_action="restart stale Serena sessions",
-            )
+            def readiness_side_effect(**kwargs):
+                return SerenaReadiness(
+                    status="fail",
+                    ready=False,
+                    created_at="2026-06-01T00:00:00Z",
+                    repo=str(repo),
+                    symbol="SampleFeatureViewModel",
+                    source_file="",
+                    command=["serena", "project", "index-file"],
+                    returncode=1,
+                    stdout_tail="",
+                    stderr_tail="language server manager is not initialized",
+                    process_state=SerenaProcessState(serena_mcp=3, kotlin_lsp=2, json_lsp=0),
+                    warnings=["multiple_serena_mcp_processes", "multiple_kotlin_lsp_processes"],
+                    reason="language_server_manager_not_initialized",
+                    next_action="restart stale Serena sessions",
+                    semantic_session_home=str(Path(kwargs["semantic_session_home"]).resolve()),
+                    isolated_env_keys=sorted(kwargs["env"]),
+                    process_state_after=SerenaProcessState(serena_mcp=0, kotlin_lsp=0, json_lsp=0),
+                )
+
             isolation = RouteIsolation(
                 agent_id="codex",
                 profile_id="D-full-router",
@@ -569,10 +630,11 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
             )
 
             with (
+                mock.patch.dict("os.environ", {"CODEX_HOME": str(fake_codex_home(Path(tmp)))}),
                 mock.patch("scripts.benchmarks.run_real_agent_benchmark.shutil.which", return_value="/usr/bin/codex"),
                 mock.patch(
                     "scripts.benchmarks.run_real_agent_benchmark.run_serena_source_symbol_readiness",
-                    return_value=readiness,
+                    side_effect=readiness_side_effect,
                 ) as readiness_mock,
                 mock.patch("scripts.benchmarks.run_real_agent_benchmark.materialize_route_isolation", return_value=isolation),
                 mock.patch("scripts.benchmarks.run_real_agent_benchmark.TerminalAgentBridge", FakeBridge),
@@ -594,6 +656,7 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
                         "--task-limit",
                         "1",
                         "--allow-dirty",
+                        "--isolated-agent-home",
                         "--out",
                         str(Path(tmp) / "out"),
                     ]
@@ -602,6 +665,12 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
             self.assertEqual(code, 0)
             readiness_mock.assert_called_once()
             self.assertEqual(readiness_mock.call_args.kwargs["source_symbol"], "RandomRealViewModel")
+            readiness_env = readiness_mock.call_args.kwargs["env"]
+            self.assertIsInstance(readiness_env, dict)
+            for key in ("RARB_SERENA_SESSION_HOME", "SERENA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"):
+                self.assertIn(key, readiness_env)
+            readiness_session_home = readiness_mock.call_args.kwargs["semantic_session_home"]
+            self.assertTrue(Path(readiness_session_home).resolve().is_relative_to((Path(tmp) / "out").resolve()))
             out = Path(tmp) / "out"
             row = json.loads((out / "runs.jsonl").read_text(encoding="utf-8").splitlines()[0])
             run_dir = Path(row["run_dir"])
@@ -611,7 +680,11 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
             self.assertFalse(row["serena_readiness_ready"])
             self.assertEqual(row["serena_readiness_reason"], "language_server_manager_not_initialized")
             self.assertIn("multiple_serena_mcp_processes", row["serena_readiness_warnings"])
-            self.assertTrue((run_dir / "serena-readiness.json").exists())
+            readiness_payload = json.loads((run_dir / "serena-readiness.json").read_text(encoding="utf-8"))
+            self.assertEqual(readiness_payload["semantic_session_home"], str(Path(readiness_session_home).resolve()))
+            self.assertEqual(readiness_payload["isolated_env_keys"], sorted(readiness_env))
+            self.assertEqual(readiness_payload["process_state_after"]["serena_mcp"], 0)
+            self.assertEqual(row["serena_process_state_after_readiness"], readiness_payload["process_state_after"])
             self.assertTrue((run_dir / "dynamic-task-target.json").exists())
             self.assertIn("Ready: false", (run_dir / "task-packet.md").read_text(encoding="utf-8"))
             self.assertIn("Find RandomRealViewModel", (run_dir / "task-packet.md").read_text(encoding="utf-8"))
@@ -779,6 +852,10 @@ class RealAgentBenchmarkRunnerTests(unittest.TestCase):
                 mock.patch(
                     "scripts.benchmarks.run_real_agent_benchmark.run_serena_source_symbol_readiness",
                     return_value=readiness,
+                ),
+                mock.patch(
+                    "scripts.benchmarks.run_real_agent_benchmark.capture_serena_process_state",
+                    return_value=SerenaProcessState(serena_mcp=0, kotlin_lsp=0, json_lsp=0),
                 ),
                 mock.patch("scripts.benchmarks.run_real_agent_benchmark.TerminalAgentBridge") as bridge_mock,
                 contextlib.redirect_stdout(io.StringIO()),

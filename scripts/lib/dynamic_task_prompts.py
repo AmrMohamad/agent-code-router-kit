@@ -9,11 +9,21 @@ from pathlib import Path
 from scripts.lib.serena_readiness import extract_source_symbol
 
 
-DECLARATION_RE = re.compile(
-    r"^\s*(?:public|internal|private|protected)?\s*"
-    r"(?:(?:data|sealed|enum|annotation|value)\s+)?"
-    r"(class|interface|object)\s+([A-Z][A-Za-z0-9_]{3,})\b"
-)
+SOURCE_GLOBS = ["*.kt", "*.java", "*.swift", "*.ts", "*.tsx", "*.js", "*.jsx"]
+BROAD_DECLARATION_RE = r"\b(class|interface|object|struct|enum|protocol|actor|function|const|let|var)\s+[A-Z][A-Za-z0-9_]{3,}\b"
+DECLARATION_PATTERNS = [
+    re.compile(
+        r"^\s*(?:(?:public|internal|private|protected)\s+)*"
+        r"(?:(?:data|sealed|annotation|value)\s+)?"
+        r"(class|interface|object|enum)\s+([A-Z][A-Za-z0-9_]{3,})\b"
+    ),
+    re.compile(
+        r"^\s*(?:(?:public|internal|private|fileprivate|open|final)\s+)*"
+        r"(class|struct|enum|protocol|actor)\s+([A-Z][A-Za-z0-9_]{3,})\b"
+    ),
+    re.compile(r"^\s*(?:export\s+default\s+|export\s+)?(?:async\s+)?(function)\s+([A-Z][A-Za-z0-9_]{3,})\b"),
+    re.compile(r"^\s*(?:export\s+)?(const|let|var)\s+([A-Z][A-Za-z0-9_]{3,})\s*[:=]"),
+]
 EXCLUDED_PARTS = {
     ".gradle",
     ".idea",
@@ -42,20 +52,40 @@ def _allowed_source_path(path: str) -> bool:
     return not bool(parts.intersection(EXCLUDED_PARTS))
 
 
+def _language_for_path(path: str) -> str:
+    suffix = Path(path).suffix.lower()
+    return {
+        ".kt": "kotlin",
+        ".java": "java",
+        ".swift": "swift",
+        ".ts": "typescript",
+        ".tsx": "typescriptreact",
+        ".js": "javascript",
+        ".jsx": "javascriptreact",
+    }.get(suffix, "unknown")
+
+
+def _declaration_match(code: str) -> tuple[str, str] | None:
+    for pattern in DECLARATION_PATTERNS:
+        match = pattern.search(code)
+        if match:
+            return match.group(1), match.group(2)
+    return None
+
+
 def discover_code_symbol_targets(repo: str | Path, *, limit: int = 2000) -> list[CodeSymbolTarget]:
     repo_path = Path(repo).expanduser().resolve()
+    command = [
+        "rg",
+        "--no-config",
+        "-n",
+        "--no-heading",
+    ]
+    for glob in SOURCE_GLOBS:
+        command.extend(["-g", glob])
+    command.extend([BROAD_DECLARATION_RE, "."])
     completed = subprocess.run(
-        [
-            "rg",
-            "-n",
-            "--no-heading",
-            "-g",
-            "*.kt",
-            "-g",
-            "*.java",
-            DECLARATION_RE.pattern,
-            ".",
-        ],
+        command,
         cwd=repo_path,
         text=True,
         stdout=subprocess.PIPE,
@@ -67,17 +97,17 @@ def discover_code_symbol_targets(repo: str | Path, *, limit: int = 2000) -> list
         path, line_text, code = raw_line.split(":", 2) if raw_line.count(":") >= 2 else ("", "", "")
         if not path or not line_text.isdigit() or not _allowed_source_path(path):
             continue
-        match = DECLARATION_RE.search(code)
-        if not match:
+        declaration = _declaration_match(code)
+        if not declaration:
             continue
-        language = "kotlin" if path.endswith(".kt") else "java"
+        declaration_kind, symbol = declaration
         targets.append(
             CodeSymbolTarget(
-                symbol=match.group(2),
+                symbol=symbol,
                 source_file=path,
                 line=int(line_text),
-                language=language,
-                declaration_kind=match.group(1),
+                language=_language_for_path(path),
+                declaration_kind=declaration_kind,
             )
         )
         if len(targets) >= limit:

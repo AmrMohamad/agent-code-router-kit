@@ -18,7 +18,7 @@ class AgentRunSchemaTests(unittest.TestCase):
     def test_load_route_profile(self) -> None:
         profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/D-full-router.yaml")
         self.assertEqual(profile.profile_id, "D-full-router")
-        self.assertEqual(profile.high_fanout_policy, "summary_first_required")
+        self.assertEqual(profile.high_fanout_policy, "summary_first")
         self.assertIn("Serena", profile.allowed_tools)
 
     def test_load_tasks(self) -> None:

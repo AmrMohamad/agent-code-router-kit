@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import statistics
 import sys
 from collections import Counter, defaultdict
@@ -14,6 +15,16 @@ if __package__ in {None, ""}:
 
 from scripts.lib.agent_session import to_json_file
 from scripts.lib.treatment_config import FACTORIAL_ARM_ORDER
+
+
+PRICE_FIELDS = [
+    "input_per_1m",
+    "cached_input_per_1m",
+    "output_per_1m",
+    "reasoning_output_per_1m",
+]
+DEFAULT_BOOTSTRAP_ITERATIONS = 1000
+DEFAULT_BOOTSTRAP_SEED = 12345
 
 
 def load_jsonl(path: Path) -> list[dict[str, object]]:
@@ -27,14 +38,40 @@ def numeric(row: dict[str, object], key: str) -> float | None:
     return None
 
 
-def paired_log_ratios(rows: list[dict[str, object]], *, metric: str, left: str, right: str) -> list[dict[str, object]]:
-    by_cell: dict[tuple[str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
+def row_passes(row: dict[str, object]) -> bool:
+    status = str(row.get("oracle_status") or row.get("correctness_status") or "")
+    return status == "pass"
+
+
+def analysis_cell_key(row: dict[str, object]) -> tuple[str, str, str, int]:
+    return (
+        str(row.get("agent", "")),
+        str(row.get("task_id", "")),
+        str(row.get("repo", "")),
+        int(row.get("repeat_index", 0)),
+    )
+
+
+def analysis_cluster_key(row: dict[str, object]) -> tuple[str, str]:
+    return (str(row.get("repo", "")), str(row.get("task_id", "")))
+
+
+def paired_log_ratios(
+    rows: list[dict[str, object]],
+    *,
+    metric: str,
+    left: str,
+    right: str,
+    pass_pass_only: bool = False,
+) -> list[dict[str, object]]:
+    by_cell: dict[tuple[str, str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
     for row in rows:
-        key = (str(row.get("agent", "")), str(row.get("task_id", "")), int(row.get("repeat_index", 0)))
-        by_cell[key][str(row.get("profile", ""))] = row
+        by_cell[analysis_cell_key(row)][str(row.get("profile", ""))] = row
     result: list[dict[str, object]] = []
     for key, profiles in by_cell.items():
         if left not in profiles or right not in profiles:
+            continue
+        if pass_pass_only and (not row_passes(profiles[left]) or not row_passes(profiles[right])):
             continue
         left_value = numeric(profiles[left], metric)
         right_value = numeric(profiles[right], metric)
@@ -44,9 +81,13 @@ def paired_log_ratios(rows: list[dict[str, object]], *, metric: str, left: str, 
             {
                 "agent": key[0],
                 "task_id": key[1],
-                "repeat_index": key[2],
+                "repo": key[2],
+                "task_family": profiles[left].get("task_family", ""),
+                "repeat_index": key[3],
                 "left_profile": left,
                 "right_profile": right,
+                "left_sequence_position": profiles[left].get("sequence_position"),
+                "right_sequence_position": profiles[right].get("sequence_position"),
                 "left": left_value,
                 "right": right_value,
                 "log_ratio": math.log(right_value / left_value),
@@ -56,7 +97,58 @@ def paired_log_ratios(rows: list[dict[str, object]], *, metric: str, left: str, 
     return result
 
 
-def summarize_effect(rows: list[dict[str, object]]) -> dict[str, object]:
+def percentile(values: list[float], q: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * q
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    fraction = position - lower
+    return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
+
+
+def cluster_bootstrap_log_ci(
+    rows: list[dict[str, object]],
+    *,
+    iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict[str, float]:
+    if not rows:
+        return {}
+    if iterations <= 0:
+        raise ValueError("bootstrap iterations must be positive")
+    by_task: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for row in rows:
+        by_task[analysis_cluster_key(row)].append(float(row["log_ratio"]))
+    tasks = sorted(by_task)
+    if not tasks:
+        return {}
+    rng = random.Random(seed)
+    estimates: list[float] = []
+    for _ in range(iterations):
+        sample_logs: list[float] = []
+        for _task in tasks:
+            picked = rng.choice(tasks)
+            sample_logs.extend(by_task[picked])
+        if sample_logs:
+            estimates.append((math.exp(statistics.mean(sample_logs)) - 1.0) * 100.0)
+    return {
+        "lower": round(percentile(estimates, 0.025), 2),
+        "upper": round(percentile(estimates, 0.975), 2),
+    }
+
+
+def summarize_effect(
+    rows: list[dict[str, object]],
+    *,
+    bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict[str, object]:
     if not rows:
         return {"pair_count": 0}
     changes = [float(row["percent_change"]) for row in rows]
@@ -66,14 +158,329 @@ def summarize_effect(rows: list[dict[str, object]]) -> dict[str, object]:
         "median_percent_change": round(statistics.median(changes), 2),
         "mean_log_effect": round(statistics.mean(logs), 6),
         "mean_log_effect_as_percent": round((math.exp(statistics.mean(logs)) - 1.0) * 100.0, 2),
+        "cluster_bootstrap_95ci_percent": cluster_bootstrap_log_ci(
+            rows,
+            iterations=bootstrap_iterations,
+            seed=bootstrap_seed,
+        ),
     }
 
 
-def analyze(root: str | Path, *, metric: str) -> dict[str, object]:
+def grouped_effects(
+    rows: list[dict[str, object]],
+    *,
+    group_key: str,
+    bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict[str, dict[str, object]]:
+    groups: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in rows:
+        value = row.get(group_key)
+        if value in {"", None}:
+            value = "unknown"
+        groups[str(value)].append(row)
+    return {
+        key: summarize_effect(
+            values,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        for key, values in sorted(groups.items())
+    }
+
+
+def binomial_cdf(k: int, n: int, p: float = 0.5) -> float:
+    if n <= 0:
+        return 1.0
+    return sum(math.comb(n, i) * (p**i) * ((1.0 - p) ** (n - i)) for i in range(k + 1))
+
+
+def mcnemar_exact_p(left_only: int, right_only: int) -> float:
+    discordant = left_only + right_only
+    if discordant == 0:
+        return 1.0
+    return min(1.0, 2.0 * binomial_cdf(min(left_only, right_only), discordant, 0.5))
+
+
+def paired_correctness(rows: list[dict[str, object]], *, left: str, right: str, noninferiority_margin: float) -> dict[str, object]:
+    by_cell: dict[tuple[str, str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
+    for row in rows:
+        by_cell[analysis_cell_key(row)][str(row.get("profile", ""))] = row
+    both_pass = left_only = right_only = neither_pass = 0
+    for profiles in by_cell.values():
+        if left not in profiles or right not in profiles:
+            continue
+        left_pass = row_passes(profiles[left])
+        right_pass = row_passes(profiles[right])
+        if left_pass and right_pass:
+            both_pass += 1
+        elif left_pass and not right_pass:
+            left_only += 1
+        elif right_pass and not left_pass:
+            right_only += 1
+        else:
+            neither_pass += 1
+    total = both_pass + left_only + right_only + neither_pass
+    left_passes = both_pass + left_only
+    right_passes = both_pass + right_only
+    pass_rate_difference = ((right_passes - left_passes) / total) if total else 0.0
+    return {
+        "pair_count": total,
+        "left_profile": left,
+        "right_profile": right,
+        "both_pass": both_pass,
+        "left_only_pass": left_only,
+        "right_only_pass": right_only,
+        "neither_pass": neither_pass,
+        "left_pass_rate": round(left_passes / total, 4) if total else 0.0,
+        "right_pass_rate": round(right_passes / total, 4) if total else 0.0,
+        "right_minus_left_pass_rate": round(pass_rate_difference, 4),
+        "mcnemar_exact_p": round(mcnemar_exact_p(left_only, right_only), 6),
+        "noninferiority_margin": noninferiority_margin,
+        "noninferiority_passed": pass_rate_difference >= -noninferiority_margin if total else False,
+    }
+
+
+def block_metric_rows(rows: list[dict[str, object]], *, metric: str, pass_all_only: bool = False) -> list[dict[str, object]]:
+    by_cell: dict[tuple[str, str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
+    for row in rows:
+        by_cell[analysis_cell_key(row)][str(row.get("profile", ""))] = row
+    blocks: list[dict[str, object]] = []
+    for key, profiles in by_cell.items():
+        if any(profile not in profiles for profile in FACTORIAL_ARM_ORDER):
+            continue
+        if pass_all_only and any(not row_passes(profiles[profile]) for profile in FACTORIAL_ARM_ORDER):
+            continue
+        values: dict[str, float] = {}
+        for profile in FACTORIAL_ARM_ORDER:
+            value = numeric(profiles[profile], metric)
+            if value is None:
+                break
+            values[profile] = value
+        if len(values) != len(FACTORIAL_ARM_ORDER):
+            continue
+        exemplar = profiles[FACTORIAL_ARM_ORDER[0]]
+        blocks.append(
+            {
+                "agent": key[0],
+                "task_id": key[1],
+                "task_family": exemplar.get("task_family", ""),
+                "repo": key[2],
+                "repeat_index": key[3],
+                "values": values,
+            }
+        )
+    return blocks
+
+
+def factorial_effect_rows(rows: list[dict[str, object]], *, metric: str, pass_all_only: bool = False) -> dict[str, list[dict[str, object]]]:
+    blocks = block_metric_rows(rows, metric=metric, pass_all_only=pass_all_only)
+    effects: dict[str, list[dict[str, object]]] = {
+        "semantic_access_main_effect": [],
+        "routing_discipline_main_effect": [],
+        "interaction": [],
+    }
+    for block in blocks:
+        values = dict(block["values"])
+        logs = {profile: math.log(float(value)) for profile, value in values.items()}
+        effect_values = {
+            "semantic_access_main_effect": ((logs["C-lsp-naive"] + logs["D-full-router"]) / 2.0)
+            - ((logs["A-search-only"] + logs["B-search-summary"]) / 2.0),
+            "routing_discipline_main_effect": ((logs["B-search-summary"] + logs["D-full-router"]) / 2.0)
+            - ((logs["A-search-only"] + logs["C-lsp-naive"]) / 2.0),
+            "interaction": logs["D-full-router"] - logs["C-lsp-naive"] - logs["B-search-summary"] + logs["A-search-only"],
+        }
+        for name, value in effect_values.items():
+            effects[name].append(
+                {
+                    "task_id": block["task_id"],
+                    "task_family": block.get("task_family", ""),
+                    "repo": block.get("repo", ""),
+                    "log_ratio": value,
+                    "percent_change": (math.exp(value) - 1.0) * 100.0,
+                }
+            )
+    return effects
+
+
+def summarize_factorial_effects(
+    rows: list[dict[str, object]],
+    *,
+    metric: str,
+    pass_all_only: bool = False,
+    bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict[str, object]:
+    effects = factorial_effect_rows(rows, metric=metric, pass_all_only=pass_all_only)
+    return {
+        name: summarize_effect(
+            values,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        for name, values in effects.items()
+    }
+
+
+def summarize_factorial_effects_by_group(
+    rows: list[dict[str, object]],
+    *,
+    metric: str,
+    group_key: str,
+    pass_all_only: bool = False,
+    bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict[str, object]:
+    effects = factorial_effect_rows(rows, metric=metric, pass_all_only=pass_all_only)
+    return {
+        name: grouped_effects(
+            values,
+            group_key=group_key,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        for name, values in effects.items()
+    }
+
+
+def holm_correct_pairwise(correctness_pairwise: dict[str, dict[str, object]], *, alpha: float = 0.05) -> dict[str, object]:
+    p_values: list[tuple[str, float]] = []
+    for name, result in correctness_pairwise.items():
+        value = result.get("mcnemar_exact_p")
+        if isinstance(value, int | float):
+            p_values.append((name, float(value)))
+    ordered = sorted(p_values, key=lambda item: item[1])
+    adjusted: dict[str, dict[str, object]] = {}
+    running_max = 0.0
+    total = len(ordered)
+    for rank, (name, p_value) in enumerate(ordered, start=1):
+        adjusted_p = min(1.0, p_value * (total - rank + 1))
+        running_max = max(running_max, adjusted_p)
+        adjusted[name] = {
+            "raw_p": round(p_value, 6),
+            "holm_adjusted_p": round(running_max, 6),
+            "reject_alpha": running_max <= alpha,
+        }
+    return {
+        "method": "holm",
+        "alpha": alpha,
+        "comparisons": adjusted,
+    }
+
+
+def load_pricing(path: str | Path | None) -> dict[str, object]:
+    if not path:
+        return {}
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise SystemExit("pricing file must be a JSON object")
+    return {str(key): value for key, value in data.items()}
+
+
+def pricing_rates(pricing: dict[str, object]) -> tuple[dict[str, float], list[str], list[str]]:
+    rates: dict[str, float] = {}
+    missing: list[str] = []
+    invalid: list[str] = []
+    for field in PRICE_FIELDS:
+        if field not in pricing:
+            missing.append(field)
+            continue
+        try:
+            value = float(pricing[field])
+        except (TypeError, ValueError):
+            invalid.append(field)
+            continue
+        if value < 0:
+            invalid.append(field)
+            continue
+        rates[field] = value
+    return rates, missing, invalid
+
+
+def estimate_row_cost(row: dict[str, object], pricing: dict[str, object]) -> float | None:
+    rates, missing, invalid = pricing_rates(pricing)
+    if not pricing or missing or invalid:
+        return None
+    uncached_input = numeric(row, "exact_uncached_input_tokens")
+    cached_input = numeric(row, "exact_cached_input_tokens") or 0.0
+    output = numeric(row, "exact_output_tokens") or 0.0
+    reasoning = numeric(row, "exact_reasoning_output_tokens") or 0.0
+    if uncached_input is None:
+        return None
+    return (
+        uncached_input * rates["input_per_1m"]
+        + cached_input * rates["cached_input_per_1m"]
+        + output * rates["output_per_1m"]
+        + reasoning * rates["reasoning_output_per_1m"]
+    ) / 1_000_000.0
+
+
+def summarize_costs(rows: list[dict[str, object]], pricing: dict[str, object]) -> dict[str, object]:
+    if not pricing:
+        return {"status": "not_configured"}
+    rates, missing, invalid = pricing_rates(pricing)
+    model_id = str(pricing.get("model_id") or pricing.get("model") or "")
+    if missing or invalid:
+        return {
+            "status": "invalid_pricing",
+            "pricing_model_id": model_id,
+            "missing_price_fields": missing,
+            "invalid_price_fields": invalid,
+            "required_price_fields": PRICE_FIELDS,
+        }
+    by_arm: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in rows:
+        cost = estimate_row_cost(row, pricing)
+        if cost is not None:
+            by_arm[str(row.get("profile", ""))].append(
+                {
+                    "cost": cost,
+                    "passed": row_passes(row),
+                }
+            )
+    return {
+        "status": "estimated" if by_arm else "missing_exact_token_inputs",
+        "pricing_model_id": model_id,
+        "pricing_per_1m_tokens": rates,
+        "by_arm": {
+            arm: cost_summary(values)
+            for arm, values in sorted(by_arm.items())
+        },
+    }
+
+
+def cost_summary(values: list[dict[str, object]]) -> dict[str, object]:
+    costs = [float(value["cost"]) for value in values]
+    successful = [value for value in values if value.get("passed") is True]
+    total = sum(costs)
+    return {
+        "run_count": len(values),
+        "successful_task_count": len(successful),
+        "total_estimated_cost": round(total, 6),
+        "median_estimated_cost": round(statistics.median(costs), 6),
+        "estimated_cost_per_run": round(total / len(values), 6) if values else None,
+        "estimated_cost_per_successful_task": round(total / len(successful), 6) if successful else None,
+    }
+
+
+def analyze(
+    root: str | Path,
+    *,
+    metric: str,
+    pricing: dict[str, object] | None = None,
+    correctness_noninferiority_margin: float = 0.05,
+    bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict[str, object]:
     base = Path(root).expanduser().resolve()
     rows = load_jsonl(base / "runs.jsonl")
     correctness = Counter(str(row.get("oracle_status") or row.get("correctness_status", "")) for row in rows)
     pairwise = {}
+    pass_pass_pairwise = {}
+    pairwise_by_task_family = {}
+    pairwise_by_repo = {}
+    pairwise_by_sequence_position = {}
+    correctness_pairwise = {}
     for left, right in [
         ("A-search-only", "B-search-summary"),
         ("A-search-only", "C-lsp-naive"),
@@ -81,19 +488,101 @@ def analyze(root: str | Path, *, metric: str) -> dict[str, object]:
         ("A-search-only", "D-full-router"),
     ]:
         effects = paired_log_ratios(rows, metric=metric, left=left, right=right)
-        pairwise[f"{left}_to_{right}"] = summarize_effect(effects)
+        comparison = f"{left}_to_{right}"
+        pairwise[comparison] = summarize_effect(
+            effects,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        pairwise_by_task_family[comparison] = grouped_effects(
+            effects,
+            group_key="task_family",
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        pairwise_by_repo[comparison] = grouped_effects(
+            effects,
+            group_key="repo",
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        pairwise_by_sequence_position[comparison] = grouped_effects(
+            effects,
+            group_key="right_sequence_position",
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        pass_pass_effects = paired_log_ratios(rows, metric=metric, left=left, right=right, pass_pass_only=True)
+        pass_pass_pairwise[comparison] = summarize_effect(
+            pass_pass_effects,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        )
+        correctness_pairwise[comparison] = paired_correctness(
+            rows,
+            left=left,
+            right=right,
+            noninferiority_margin=correctness_noninferiority_margin,
+        )
     return {
         "analysis_id": "router-effect-v1",
         "metric": metric,
+        "bootstrap": {
+            "method": "repository_task_cluster_resampling",
+            "cluster_unit": "repository_task",
+            "confidence_interval": 0.95,
+            "iterations": bootstrap_iterations,
+            "seed": bootstrap_seed,
+        },
+        "cell_key_fields": ["agent", "task_id", "repo", "repeat_index"],
+        "cluster_unit": "repository_task",
         "run_count": len(rows),
         "arm_counts": dict(Counter(str(row.get("profile", "")) for row in rows)),
         "expected_arms": FACTORIAL_ARM_ORDER,
         "correctness_counts": dict(correctness),
+        "correctness_pairwise": correctness_pairwise,
+        "correctness_noninferiority_margin": correctness_noninferiority_margin,
         "intention_to_treat_run_count": len(rows),
         "pairwise_effects": pairwise,
+        "pairwise_effects_by_task_family": pairwise_by_task_family,
+        "pairwise_effects_by_repo": pairwise_by_repo,
+        "pairwise_effects_by_sequence_position": pairwise_by_sequence_position,
+        "pass_pass_sensitivity_pairwise_effects": pass_pass_pairwise,
+        "factorial_effects": summarize_factorial_effects(
+            rows,
+            metric=metric,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        ),
+        "factorial_effects_by_task_family": summarize_factorial_effects_by_group(
+            rows,
+            metric=metric,
+            group_key="task_family",
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        ),
+        "factorial_effects_by_repo": summarize_factorial_effects_by_group(
+            rows,
+            metric=metric,
+            group_key="repo",
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        ),
+        "pass_all_sensitivity_factorial_effects": summarize_factorial_effects(
+            rows,
+            metric=metric,
+            pass_all_only=True,
+            bootstrap_iterations=bootstrap_iterations,
+            bootstrap_seed=bootstrap_seed,
+        ),
+        "multiple_comparison_correction": holm_correct_pairwise(correctness_pairwise),
+        "cost": summarize_costs(rows, pricing or {}),
         "notes": [
             "Percent change is treatment minus baseline over baseline.",
-            "Pass/pass sensitivity and bootstrap confidence intervals should be generated for final public evidence.",
+            "Cluster bootstrap intervals resample repository/task clusters, not tool calls or token events.",
+            "Sequence-position effects group each pair by the treatment arm's Latin-square position.",
+            "Repository-stratified effects must be anonymized before public release.",
+            "Estimated cost is optional and requires explicit model pricing inputs.",
         ],
     }
 
@@ -102,9 +591,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Analyze router-effect-v1 benchmark output.")
     parser.add_argument("--root", required=True)
     parser.add_argument("--metric", default="exact_uncached_input_tokens")
+    parser.add_argument("--pricing", help="Optional JSON pricing file with per-1M token prices.")
+    parser.add_argument("--correctness-noninferiority-margin", type=float, default=0.05)
+    parser.add_argument("--bootstrap-iterations", type=int, default=DEFAULT_BOOTSTRAP_ITERATIONS)
+    parser.add_argument("--bootstrap-seed", type=int, default=DEFAULT_BOOTSTRAP_SEED)
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
-    result = analyze(args.root, metric=args.metric)
+    result = analyze(
+        args.root,
+        metric=args.metric,
+        pricing=load_pricing(args.pricing),
+        correctness_noninferiority_margin=args.correctness_noninferiority_margin,
+        bootstrap_iterations=args.bootstrap_iterations,
+        bootstrap_seed=args.bootstrap_seed,
+    )
     to_json_file(args.out, result)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

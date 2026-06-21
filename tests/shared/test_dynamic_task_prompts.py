@@ -32,6 +32,31 @@ class DynamicTaskPromptTests(unittest.TestCase):
         self.assertEqual(targets[0].language, "kotlin")
         self.assertEqual(targets[1].language, "java")
 
+    def test_discovers_swift_and_web_declarations(self) -> None:
+        result = subprocess.CompletedProcess(
+            args=["rg"],
+            returncode=0,
+            stdout=(
+                "./Sources/App/CheckoutCoordinator.swift:12:final class CheckoutCoordinator\n"
+                "./Sources/App/AppRouter.swift:20:protocol AppRouter\n"
+                "./src/components/AccountPanel.tsx:5:export function AccountPanel() {\n"
+                "./src/hooks/useCartState.ts:7:export const CartSummaryView = () => null\n"
+            ),
+            stderr="",
+        )
+        with mock.patch("scripts.lib.dynamic_task_prompts.subprocess.run", return_value=result):
+            targets = discover_code_symbol_targets("/repo")
+
+        self.assertEqual(
+            [(target.symbol, target.language, target.declaration_kind) for target in targets],
+            [
+                ("CheckoutCoordinator", "swift", "class"),
+                ("AppRouter", "swift", "protocol"),
+                ("AccountPanel", "typescriptreact", "function"),
+                ("CartSummaryView", "typescript", "const"),
+            ],
+        )
+
     def test_select_is_seeded_and_reproducible(self) -> None:
         result = subprocess.CompletedProcess(
             args=["rg"],
