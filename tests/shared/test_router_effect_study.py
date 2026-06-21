@@ -329,6 +329,21 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("semantic_session_id", {issue["code"] for issue in semantic_audit["issues"]})
             semantic_payload["session_id"] = original_session_id
             semantic_path.write_text(json.dumps(semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            original_language_versions = dict(semantic_payload["language_server_versions"])
+            semantic_payload["language_server_versions"]["sourcekit-lsp"] = "different-sourcekit"
+            semantic_path.write_text(json.dumps(semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            language_version_audit = audit(out)
+            self.assertIn("semantic_language_version_match", {issue["code"] for issue in language_version_audit["issues"]})
+            semantic_payload["language_server_versions"] = original_language_versions
+            semantic_path.write_text(json.dumps(semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            runs_path = out / "runs.jsonl"
+            original_runs_text = runs_path.read_text(encoding="utf-8")
+            row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
+            row_lines[0]["codex_version"] = "different-codex-version"
+            runs_path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in row_lines), encoding="utf-8")
+            tool_version_audit = audit(out)
+            self.assertIn("block_tool_version_match", {issue["code"] for issue in tool_version_audit["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
             confirmatory_dry_run = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertEqual(confirmatory_dry_run["status"], "fail")
             confirmatory_dry_run_codes = {issue["code"] for issue in confirmatory_dry_run["issues"]}

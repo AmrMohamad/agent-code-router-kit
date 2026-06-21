@@ -305,6 +305,10 @@ metric, `exact_uncached_input_tokens`.
 The confirmatory audit recomputes both artifacts from the current `runs.jsonl`;
 stale, hand-edited, or mismatched `study-analysis.json` and `study-power.json`
 files fail even when their schema is otherwise valid.
+Captured Codex, Serena, language-server, and OS versions must also be stable
+within each four-arm block. Row-level language-server fields must match the
+per-run `semantic-session.json` artifact, so stale semantic-session metadata
+cannot silently support a fixed-tooling claim.
 If `study-analysis.json` reports `cost.status=estimated`, the audit also
 requires the pricing model to match the pinned study model and every arm to
 include total cost, median cost, cost per run, and cost per successful task.

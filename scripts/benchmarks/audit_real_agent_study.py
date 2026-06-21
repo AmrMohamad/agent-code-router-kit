@@ -23,6 +23,22 @@ from scripts.lib.treatment_config import (
 )
 
 
+TOOL_VERSION_FIELDS = [
+    "codex_version",
+    "serena_version",
+    "sourcekit_lsp_version",
+    "kotlin_language_server_version",
+    "json_language_server_version",
+    "os_version",
+]
+
+LANGUAGE_SERVER_VERSION_FIELDS = {
+    "sourcekit-lsp": "sourcekit_lsp_version",
+    "kotlin-language-server": "kotlin_language_server_version",
+    "vscode-json-languageserver": "json_language_server_version",
+}
+
+
 def load_json(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -484,6 +500,18 @@ def audit(
         if semantic_session is None:
             add_issue(issues, "fail", "semantic_session_artifact", f"run {row.get('run_id')} has no semantic-session.json")
         else:
+            language_versions = semantic_session.get("language_server_versions")
+            if not isinstance(language_versions, dict):
+                add_issue(issues, "fail", "semantic_language_versions", f"run {row.get('run_id')} semantic session lacks language-server version metadata")
+            else:
+                for tool_name, row_field in LANGUAGE_SERVER_VERSION_FIELDS.items():
+                    if str(language_versions.get(tool_name, "")) != str(row.get(row_field, "")):
+                        add_issue(
+                            issues,
+                            "fail",
+                            "semantic_language_version_match",
+                            f"run {row.get('run_id')} {tool_name} version differs between row and semantic-session artifact",
+                        )
             if semantic_session.get("semantic_access_enabled") != factors.semantic_access_enabled:
                 add_issue(issues, "fail", "semantic_session_factor", f"run {row.get('run_id')} semantic-session factor mismatch")
             if factors.semantic_access_enabled:
@@ -565,6 +593,10 @@ def audit(
         reasoning_efforts = {str(row.get("reasoning_effort", "")) for row in profile_rows.values()}
         if len(model_ids) != 1 or len(reasoning_efforts) != 1:
             add_issue(issues, "fail", "block_model_config_match", f"{key} model or reasoning effort differs across arms")
+        for field in TOOL_VERSION_FIELDS:
+            versions = {str(row.get(field, "")) for row in profile_rows.values()}
+            if len(versions) != 1:
+                add_issue(issues, "fail", "block_tool_version_match", f"{key} {field} differs across arms")
         comparisons = [
             ("A-search-only", "B-search-summary"),
             ("A-search-only", "C-lsp-naive"),
