@@ -207,6 +207,7 @@ ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS = {
         "reasoning_effort",
         "repo_count",
         "require_clean_serena_process_state",
+        "route_profile_hashes",
         "snapshot_repos",
         "study_id",
         "study_package",

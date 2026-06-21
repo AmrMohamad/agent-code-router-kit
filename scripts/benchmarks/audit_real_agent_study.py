@@ -719,6 +719,15 @@ def audit(
         add_issue(issues, "fail", "model_id", "study requires an exact pinned model id")
     if manifest.get("private_hmac_configured") is not True:
         add_issue(issues, "fail", "private_hmac", "study requires private HMAC key configuration")
+    route_profile_hashes = manifest.get("route_profile_hashes")
+    if confirmatory:
+        if not isinstance(route_profile_hashes, dict):
+            add_issue(issues, "fail", "route_profile_hashes", "confirmatory study manifest must record route_profile_hashes")
+            route_profile_hashes = {}
+        else:
+            for arm in FACTORIAL_ARM_ORDER:
+                if not is_sha256_hex(route_profile_hashes.get(arm)):
+                    add_issue(issues, "fail", "route_profile_hashes", f"manifest route_profile_hashes.{arm} is missing or invalid")
     source_states = manifest.get("source_repo_states")
     snapshot_states = manifest.get("repo_snapshots")
     if not isinstance(source_states, dict) or not source_states:
@@ -859,6 +868,12 @@ def audit(
                 add_issue(issues, "fail", "agent_config_hash_file", f"run {row.get('run_id')} has no effective-agent-config.sha256")
             elif config_hash_path.read_text(encoding="utf-8").strip() != row.get("agent_config_hash"):
                 add_issue(issues, "fail", "agent_config_hash_match", f"run {row.get('run_id')} config hash does not match row")
+        row_route_profile_hash = row.get("route_profile_hash")
+        if not is_sha256_hex(row_route_profile_hash):
+            add_issue(issues, "fail", "route_profile_hash", f"run {row.get('run_id')} has no valid route profile hash")
+        elif isinstance(route_profile_hashes, dict) and is_sha256_hex(route_profile_hashes.get(profile)):
+            if row_route_profile_hash != route_profile_hashes.get(profile):
+                add_issue(issues, "fail", "row_route_profile_hash_match", f"run {row.get('run_id')} route profile hash does not match manifest")
         if not row.get("task_prompt_hmac"):
             add_issue(issues, "fail", "task_prompt_hmac", f"run {row.get('run_id')} has no task prompt HMAC")
         if not row.get("source_state_hmac"):
@@ -1082,6 +1097,8 @@ def audit(
         for profile, config in configs.items():
             if config is None:
                 add_issue(issues, "fail", "effective_config_missing", f"{key}/{profile} missing effective-agent-config.json")
+            elif config.get("route_profile_hash") != profile_rows[profile].get("route_profile_hash"):
+                add_issue(issues, "fail", "effective_config_route_profile_hash", f"{key}/{profile} route profile hash differs between row and effective config")
         if any(config is None for config in configs.values()):
             continue
         prompt_hashes = {str(row.get("task_prompt_sha256", "")) for row in profile_rows.values()}

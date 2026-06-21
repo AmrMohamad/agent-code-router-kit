@@ -406,6 +406,12 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertRegex(manifest["controller_commit"], r"^[0-9a-f]{40,64}$")
             self.assertRegex(manifest["controller_tree_hash"], r"^[0-9a-f]{40,64}$")
             self.assertIsInstance(manifest["controller_dirty"], bool)
+            self.assertEqual(
+                set(manifest["route_profile_hashes"]),
+                {"A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"},
+            )
+            for digest in manifest["route_profile_hashes"].values():
+                self.assertRegex(digest, r"^[0-9a-f]{64}$")
             for row in rows:
                 run_dir = Path(row["run_dir"])
                 self.assertTrue((run_dir / "semantic-session.json").exists())
@@ -419,6 +425,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                 self.assertEqual(row["source_tree_hash"], row["snapshot_tree_hash"])
                 self.assertEqual(row["source_lockfile_hash"], row["lockfile_hash"])
                 self.assertRegex(row["snapshot_state_hmac"], r"^[0-9a-f]{24}$")
+                self.assertEqual(row["route_profile_hash"], manifest["route_profile_hashes"][row["profile"]])
                 semantic_session = json.loads((run_dir / "semantic-session.json").read_text(encoding="utf-8"))
                 self.assertTrue(row["semantic_teardown_verified"])
                 self.assertEqual(row["semantic_process_survivor_count"], 0)
@@ -866,6 +873,26 @@ class RouterEffectStudyTests(unittest.TestCase):
             priced_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertEqual(priced_audit["status"], "pass", priced_audit)
 
+            bad_route_hash_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            bad_route_hash_rows[0]["route_profile_hash"] = "0" * 64
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in bad_route_hash_rows),
+                encoding="utf-8",
+            )
+            bad_route_hash_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("row_route_profile_hash_match", {issue["code"] for issue in bad_route_hash_audit["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            first_row = json.loads(original_runs_text.splitlines()[0])
+            effective_config_path = Path(first_row["run_dir"]) / "effective-agent-config.json"
+            effective_config = json.loads(effective_config_path.read_text(encoding="utf-8"))
+            original_effective_config = dict(effective_config)
+            effective_config["route_profile_hash"] = "0" * 64
+            effective_config_path.write_text(json.dumps(effective_config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            bad_effective_hash_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("effective_config_route_profile_hash", {issue["code"] for issue in bad_effective_hash_audit["issues"]})
+            effective_config_path.write_text(json.dumps(original_effective_config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             malformed_cost_analysis = dict(priced_analysis)
             malformed_cost_analysis["cost"] = {
                 "status": "estimated",
@@ -1133,6 +1160,12 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertRegex(manifest["controller_commit"], r"^[0-9a-f]{40,64}$")
             self.assertRegex(manifest["controller_tree_hash"], r"^[0-9a-f]{40,64}$")
             self.assertIsInstance(manifest["controller_dirty"], bool)
+            self.assertEqual(
+                set(manifest["route_profile_hashes"]),
+                {"A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"},
+            )
+            for digest in manifest["route_profile_hashes"].values():
+                self.assertRegex(digest, r"^[0-9a-f]{64}$")
             self.assertTrue(manifest["require_clean_serena_process_state"])
             self.assertIn("study_plan_hmac", manifest["study_package"])
             self.assertIn("protocol_hmac", manifest["study_package"])

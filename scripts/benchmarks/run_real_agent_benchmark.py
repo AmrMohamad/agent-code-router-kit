@@ -40,7 +40,13 @@ from scripts.lib.serena_readiness import (
 )
 from scripts.lib.task_oracles import load_task_oracles, verify_transcript_file
 from scripts.lib.treatment_diff_artifacts import write_treatment_diff_artifact
-from scripts.lib.treatment_config import FACTORIAL_ARM_ORDER, factors_for_profile, hmac_sha256_hex, validate_factorial_arm_set
+from scripts.lib.treatment_config import (
+    FACTORIAL_ARM_ORDER,
+    factors_for_profile,
+    hmac_sha256_hex,
+    route_profile_hash,
+    validate_factorial_arm_set,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -906,6 +912,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 + " (rerun with --allow-dirty to override)"
             )
     route_profiles = {arm: load_route_profile(profile_path(arm)) for arm in arms}
+    route_profile_hashes = {arm: route_profile_hash(profile) for arm, profile in route_profiles.items()}
     tool_versions = capture_tool_versions(cwd=ROOT) if args.capture_versions else {}
     controller_state = git_metadata(ROOT)
     carried_rows = load_existing_run_rows(resume_root) if resume_root else []
@@ -958,6 +965,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "dry_run": args.dry_run,
         "live": not args.dry_run,
         "arms": list(route_profiles),
+        "route_profile_hashes": route_profile_hashes,
         "task_count": len(tasks),
         "repeats": args.repeats,
         "fresh_session_per_run": True,

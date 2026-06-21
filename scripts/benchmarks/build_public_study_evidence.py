@@ -185,6 +185,7 @@ def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
         "controller_commit": manifest.get("controller_commit", ""),
         "controller_tree_hash": manifest.get("controller_tree_hash", ""),
         "controller_dirty": manifest.get("controller_dirty"),
+        "route_profile_hashes": manifest.get("route_profile_hashes", {}),
         "study_package": sanitized_study_package(manifest),
         "task_count": len(task_ids),
         "repo_count": len(repo_ids),
