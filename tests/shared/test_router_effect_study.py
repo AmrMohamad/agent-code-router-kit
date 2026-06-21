@@ -393,6 +393,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                     self.assertEqual(row["semantic_session_id_hmac"], "")
             self.assertTrue(manifest["snapshot_repos"])
             self.assertTrue(manifest["isolated_agent_home"])
+            self.assertTrue(manifest["require_clean_serena_process_state"])
             self.assertEqual(manifest["order_design"], "balanced-latin-square")
             self.assertEqual(manifest["study_package"]["task_split"], "custom")
             self.assertEqual(manifest["study_package"]["task_oracles_source"], "custom")
@@ -755,6 +756,13 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("serena_readiness_enabled", no_prewarm_codes)
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            no_process_state_manifest = dict(manifest)
+            no_process_state_manifest["require_clean_serena_process_state"] = False
+            manifest_path.write_text(json.dumps(no_process_state_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            no_process_state = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("serena_process_state", {issue["code"] for issue in no_process_state["issues"]})
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             bad_analysis_plan = root / "bad-analysis-plan.yaml"
             good_analysis_plan_text = (
                 ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/analysis-plan.yaml"
@@ -921,6 +929,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertRegex(manifest["controller_commit"], r"^[0-9a-f]{40,64}$")
             self.assertRegex(manifest["controller_tree_hash"], r"^[0-9a-f]{40,64}$")
             self.assertIsInstance(manifest["controller_dirty"], bool)
+            self.assertTrue(manifest["require_clean_serena_process_state"])
             self.assertIn("study_plan_hmac", manifest["study_package"])
             self.assertIn("protocol_hmac", manifest["study_package"])
             self.assertIn("analysis_plan_hmac", manifest["study_package"])

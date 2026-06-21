@@ -59,6 +59,7 @@ def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
     args.isolated_agent_home = True
     args.isolated_serena_session = True
     args.prewarm_semantic_layer = study_plan.require_prewarm_semantic_layer
+    args.require_clean_serena_process_state = study_plan.require_clean_serena_process_state
     args.capture_versions = True
     args.require_snapshots = study_plan.require_clean_snapshots
     args.parallelism = study_plan.parallelism

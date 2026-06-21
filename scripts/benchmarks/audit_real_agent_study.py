@@ -517,6 +517,8 @@ def audit(
         add_issue(issues, "fail", "prewarm_semantic_layer", "confirmatory study requires semantic readiness prewarm")
     if confirmatory and manifest.get("serena_readiness_enabled") is not True:
         add_issue(issues, "fail", "serena_readiness_enabled", "confirmatory study requires Serena readiness checks")
+    if confirmatory and manifest.get("require_clean_serena_process_state") is not True:
+        add_issue(issues, "fail", "serena_process_state", "confirmatory study requires clean Serena process-state enforcement")
     if manifest.get("capture_versions") is not True or not manifest.get("tool_versions"):
         add_issue(issues, "fail", "version_capture", "study requires captured tool/controller versions")
     if manifest.get("model_id") in {"", "not_pinned", None}:

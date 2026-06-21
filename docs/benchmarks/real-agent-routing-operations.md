@@ -211,6 +211,7 @@ The runner enforces the study controls when `--study-plan` is present:
 - row-level Codex, Serena, language-server, and OS version provenance;
 - semantic readiness prewarm for C/D cells before task execution, with
   `semantic_setup_seconds` reported separately from `task_execution_seconds`;
+- clean Serena process-state enforcement for live semantic-access cells;
 - block-level `treatment-diffs.jsonl` evidence proving A/B/C/D effective
   configs differ only on the preregistered treatment fields;
 - external task oracle artifacts;
@@ -322,7 +323,8 @@ per-run `semantic-session.json` artifact, so stale semantic-session metadata
 cannot silently support a fixed-tooling claim.
 Live confirmatory semantic-access rows must also show passed Serena readiness
 in both `runs.jsonl` and `semantic-session.json`, and include the
-`serena-readiness.json` artifact created before task execution.
+`serena-readiness.json` artifact created before task execution. The manifest
+must prove that clean Serena process-state enforcement was enabled.
 The audit also recomputes `treatment-diffs.jsonl` from each run's
 `effective-agent-config.json`; missing, stale, or invalid treatment-diff
 evidence blocks publishable treatment-isolation claims.
