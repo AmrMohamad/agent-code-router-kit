@@ -16,6 +16,7 @@ from scripts.benchmarks.estimate_study_power import estimate
 from scripts.benchmarks.run_real_agent_benchmark import main
 from scripts.benchmarks.verify_task_oracles import main as verify_task_oracles_main
 from scripts.lib.agent_session import AgentProfile, load_route_profile, load_tasks
+from scripts.lib.environment_capture import file_sha256
 from scripts.lib.experiment_design import balanced_latin_square
 from scripts.lib.hermetic_agent_environment import materialize_hermetic_agent_environment
 from scripts.lib.route_isolation import materialize_route_isolation
@@ -1069,6 +1070,8 @@ class RouterEffectStudyTests(unittest.TestCase):
             public_rows = [json.loads(line) for line in public_text.splitlines()]
             self.assertEqual(public_rows[0]["task_public_id"], "task_001")
             self.assertEqual(public_rows[0]["repo_public_id"], "repo_001")
+            self.assertIn("exact_uncached_total_tokens", public_rows[0])
+            self.assertIn("exact_usage_event_count", public_rows[0])
             self.assertIn("semantic_session_mode", public_rows[0])
             self.assertIn("semantic_teardown_verified", public_rows[0])
             self.assertIn("semantic_child_lsp_survivor_count", public_rows[0])
@@ -1124,6 +1127,16 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertNotIn("repo", public_treatment_rows[0])
             self.assertIn("manifest.sanitized.json", result["artifact_hashes"])
             self.assertIn("treatment-diffs.sanitized.jsonl", result["artifact_hashes"])
+            artifact_hashes = json.loads((public / "artifact-hashes.sha256.json").read_text(encoding="utf-8"))
+            expected_hashed_artifacts = {
+                path.name
+                for path in public.iterdir()
+                if path.is_file() and path.name != "artifact-hashes.sha256.json"
+            }
+            self.assertEqual(set(artifact_hashes), expected_hashed_artifacts)
+            self.assertEqual(artifact_hashes, result["artifact_hashes"])
+            for name, digest in artifact_hashes.items():
+                self.assertEqual(digest, file_sha256(public / name))
 
     def test_study_mode_requires_private_hmac_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
