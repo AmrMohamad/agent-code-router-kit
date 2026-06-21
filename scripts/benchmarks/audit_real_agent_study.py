@@ -350,24 +350,81 @@ def audit_confirmatory_study_package(
         "analysis_plan_sha256",
         "task_oracles_sha256",
         "task_manifest_sha256",
+        "pilot_task_manifest_sha256",
+        "confirmatory_task_manifest_sha256",
     ]
     for field in required_hashes:
         if not is_sha256_hex(package.get(field)):
             add_issue(issues, "fail", "study_package_hash", f"study_package.{field} is missing or not a SHA-256 hex digest")
-    for name in ("study_plan", "protocol", "analysis_plan", "task_oracles", "task_manifest"):
-        path = Path(str(package.get(f"{name}_path", "")))
+    for name in (
+        "study_plan",
+        "protocol",
+        "analysis_plan",
+        "task_oracles",
+        "task_manifest",
+        "pilot_task_manifest",
+        "confirmatory_task_manifest",
+    ):
+        raw_path = str(package.get(f"{name}_path", ""))
+        path = Path(raw_path)
         expected_hash = str(package.get(f"{name}_sha256", ""))
-        if not path.exists():
+        if not raw_path or not path.is_file():
             add_issue(issues, "fail", "study_package_file", f"study_package.{name}_path is not readable")
             continue
         if is_sha256_hex(expected_hash) and file_sha256(path) != expected_hash:
             add_issue(issues, "fail", "study_package_hash_match", f"study_package.{name}_sha256 does not match the frozen file")
-    required_hmacs = ["study_plan_hmac", "protocol_hmac", "analysis_plan_hmac", "task_oracles_hmac", "task_manifest_hmac"]
+    required_hmacs = [
+        "study_plan_hmac",
+        "protocol_hmac",
+        "analysis_plan_hmac",
+        "task_oracles_hmac",
+        "task_manifest_hmac",
+        "pilot_task_manifest_hmac",
+        "confirmatory_task_manifest_hmac",
+    ]
     for field in required_hmacs:
         if not is_hmac_fingerprint(package.get(field)):
             add_issue(issues, "fail", "study_package_hmac", f"study_package.{field} is missing or not a keyed HMAC fingerprint")
     if package.get("task_split") != "confirmatory":
         add_issue(issues, "fail", "confirmatory_task_manifest", "confirmatory audit requires the frozen confirmatory task manifest")
+    task_manifest_path = Path(str(package.get("task_manifest_path", "")))
+    confirmatory_task_manifest_path = Path(str(package.get("confirmatory_task_manifest_path", "")))
+    if task_manifest_path.exists() and confirmatory_task_manifest_path.exists():
+        if task_manifest_path.resolve() != confirmatory_task_manifest_path.resolve():
+            add_issue(
+                issues,
+                "fail",
+                "confirmatory_task_manifest",
+                "active task manifest must be the preregistered confirmatory task manifest",
+            )
+    pilot_task_manifest_path = Path(str(package.get("pilot_task_manifest_path", "")))
+    if pilot_task_manifest_path.exists() and confirmatory_task_manifest_path.exists():
+        try:
+            pilot_tasks = load_tasks(pilot_task_manifest_path)
+            confirmatory_tasks = load_tasks(confirmatory_task_manifest_path)
+        except (OSError, ValueError) as exc:
+            add_issue(issues, "fail", "heldout_task_split", f"could not read preregistered task splits: {exc}")
+        else:
+            pilot_keys = {(str(task.repo), str(task.task_id)) for task in pilot_tasks}
+            confirmatory_keys = {(str(task.repo), str(task.task_id)) for task in confirmatory_tasks}
+            overlap = pilot_keys & confirmatory_keys
+            if overlap:
+                add_issue(
+                    issues,
+                    "fail",
+                    "heldout_task_split",
+                    f"pilot and confirmatory task manifests overlap in {len(overlap)} repository/task keys",
+                )
+            pilot_ids = {str(task.task_id) for task in pilot_tasks}
+            confirmatory_ids = {str(task.task_id) for task in confirmatory_tasks}
+            id_overlap = pilot_ids & confirmatory_ids
+            if id_overlap:
+                add_issue(
+                    issues,
+                    "fail",
+                    "heldout_task_id_split",
+                    f"pilot and confirmatory task manifests reuse {len(id_overlap)} task ids",
+                )
     if package.get("task_oracles_source") != "study_plan":
         add_issue(issues, "fail", "confirmatory_task_oracles", "confirmatory audit requires the study-plan oracle file")
     manifest_task_hash = str(package.get("task_manifest_sha256", ""))

@@ -34,6 +34,8 @@ class StudyPlan:
     arms: list[str]
     protocol_path: str
     analysis_plan_path: str
+    pilot_tasks_path: str
+    confirmatory_tasks_path: str
     task_oracles_path: str
 
 
@@ -78,6 +80,10 @@ def load_study_plan(path: str | Path) -> StudyPlan:
         arms=arms,
         protocol_path=str((source.parent / str(data.get("protocol_path", "protocol.md"))).resolve()),
         analysis_plan_path=str((source.parent / str(data.get("analysis_plan_path", "analysis-plan.yaml"))).resolve()),
+        pilot_tasks_path=str((source.parent / str(data.get("pilot_tasks_path", "pilot-tasks.tsv"))).resolve()),
+        confirmatory_tasks_path=str(
+            (source.parent / str(data.get("confirmatory_tasks_path", "confirmatory-tasks.tsv"))).resolve()
+        ),
         task_oracles_path=str((source.parent / str(data.get("task_oracles_path", "task-oracles.json"))).resolve()),
     )
 

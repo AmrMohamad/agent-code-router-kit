@@ -143,6 +143,8 @@ def sanitized_study_package(manifest: dict[str, object]) -> dict[str, object]:
         "analysis_plan_hmac",
         "task_oracles_hmac",
         "task_manifest_hmac",
+        "pilot_task_manifest_hmac",
+        "confirmatory_task_manifest_hmac",
     ]
     return {field: package[field] for field in allowed_fields if field in package}
 

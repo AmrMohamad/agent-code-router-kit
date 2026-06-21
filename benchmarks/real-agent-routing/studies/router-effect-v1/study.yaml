@@ -16,4 +16,6 @@ require_explicit_reasoning_effort: true
 require_external_oracles: true
 protocol_path: protocol.md
 analysis_plan_path: analysis-plan.yaml
+pilot_tasks_path: pilot-tasks.tsv
+confirmatory_tasks_path: confirmatory-tasks.tsv
 task_oracles_path: task-oracles.json

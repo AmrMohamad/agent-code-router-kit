@@ -132,13 +132,12 @@ def study_task_split(*, tasks_path: str | Path, study_plan) -> str:
     if not study_plan:
         return ""
     task_manifest = Path(tasks_path).expanduser().resolve()
-    study_dir = Path(study_plan.protocol_path).resolve().parent
     split_paths = {
-        "pilot": study_dir / "pilot-tasks.tsv",
-        "confirmatory": study_dir / "confirmatory-tasks.tsv",
+        "pilot": Path(study_plan.pilot_tasks_path).resolve(),
+        "confirmatory": Path(study_plan.confirmatory_tasks_path).resolve(),
     }
     for split, split_path in split_paths.items():
-        if task_manifest == split_path.resolve():
+        if task_manifest == split_path:
             return split
     return "custom"
 
@@ -156,6 +155,8 @@ def build_study_package_metadata(args: argparse.Namespace, *, study_plan) -> dic
         "analysis_plan": Path(study_plan.analysis_plan_path).resolve(),
         "task_oracles": task_oracles_path,
         "task_manifest": task_manifest_path,
+        "pilot_task_manifest": Path(study_plan.pilot_tasks_path).resolve(),
+        "confirmatory_task_manifest": Path(study_plan.confirmatory_tasks_path).resolve(),
     }
     metadata: dict[str, object] = {
         "hash_algorithm": "sha256",

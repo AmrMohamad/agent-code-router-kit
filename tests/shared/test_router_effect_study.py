@@ -61,6 +61,14 @@ def write_study_task(path: Path) -> None:
     )
 
 
+def write_pilot_task(path: Path) -> None:
+    path.write_text(
+        "task_id\ttask_family\trepo\tprompt\troute_profiles\tedit_allowed\tbuild_allowed\texpected_proof_layer\texpected_success_signal\tforbidden_claims\ttimeout_seconds\n"
+        "pilot_task\tknown_symbol_definition\tios_reference\tFind the pilot declaration and report route-appropriate evidence.\tA-search-only,B-search-summary,C-lsp-naive,D-full-router\tfalse\tfalse\tsemantic_identity_or_search_labeled\tdeclaration reported\tDo not claim runtime behavior.\t900\n",
+        encoding="utf-8",
+    )
+
+
 def write_permissive_oracle(path: Path) -> None:
     path.write_text(
         json.dumps(
@@ -83,6 +91,52 @@ def write_permissive_oracle(path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
+
+
+def write_temp_study_plan(root: Path, *, confirmatory_tasks: Path, pilot_tasks: Path, oracles: Path) -> Path:
+    protocol = root / "protocol.md"
+    analysis_plan = root / "analysis-plan.yaml"
+    protocol.write_text(
+        (ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/protocol.md").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    analysis_plan.write_text(
+        (ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/analysis-plan.yaml").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    plan = root / "study.yaml"
+    plan.write_text(
+        "\n".join(
+            [
+                "study_id: router-effect-v1",
+                "design_type: 2x2_factorial",
+                "agents: codex",
+                "arms: A-search-only,B-search-summary,C-lsp-naive,D-full-router",
+                "repository_labels: ios_reference",
+                "order_design: balanced-latin-square",
+                "minimum_repeats: 4",
+                "parallelism: 1",
+                "require_clean_snapshots: true",
+                "require_fresh_agent_home: true",
+                "require_isolated_serena: true",
+                "require_prewarm_semantic_layer: true",
+                "require_clean_serena_process_state: true",
+                "require_capture_versions: true",
+                "require_explicit_reasoning_effort: true",
+                "require_external_oracles: true",
+                f"protocol_path: {protocol}",
+                f"analysis_plan_path: {analysis_plan}",
+                f"pilot_tasks_path: {pilot_tasks}",
+                f"confirmatory_tasks_path: {confirmatory_tasks}",
+                f"task_oracles_path: {oracles}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return plan
 
 
 def fake_codex_home(path: Path) -> Path:
@@ -203,6 +257,10 @@ class RouterEffectStudyTests(unittest.TestCase):
         study_plan = load_study_plan(study_dir / "study.yaml")
         self.assertTrue(study_plan.require_explicit_reasoning_effort)
         self.assertEqual(study_plan.agents, ["codex"])
+        self.assertEqual(Path(study_plan.pilot_tasks_path), study_dir / "pilot-tasks.tsv")
+        self.assertEqual(Path(study_plan.confirmatory_tasks_path), study_dir / "confirmatory-tasks.tsv")
+        task_ids_by_split: dict[str, set[str]] = {}
+        task_keys_by_split: dict[str, set[tuple[str, str]]] = {}
         for name, expected_count in {
             "pilot-tasks.tsv": 6,
             "confirmatory-tasks.tsv": 15,
@@ -211,6 +269,10 @@ class RouterEffectStudyTests(unittest.TestCase):
                 tasks = load_tasks(study_dir / name)
                 self.assertEqual(len(tasks), expected_count)
                 self.assertLessEqual({task.repo for task in tasks}, allowed)
+                task_ids_by_split[name] = {task.task_id for task in tasks}
+                task_keys_by_split[name] = {(task.repo, task.task_id) for task in tasks}
+        self.assertFalse(task_ids_by_split["pilot-tasks.tsv"] & task_ids_by_split["confirmatory-tasks.tsv"])
+        self.assertFalse(task_keys_by_split["pilot-tasks.tsv"] & task_keys_by_split["confirmatory-tasks.tsv"])
 
     def test_balanced_latin_square_places_each_arm_once_per_position(self) -> None:
         arms = ["A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"]
@@ -359,10 +421,18 @@ class RouterEffectStudyTests(unittest.TestCase):
             repo.mkdir()
             make_git_repo(repo)
             tasks = root / "tasks.tsv"
+            pilot_tasks = root / "pilot-tasks.tsv"
             oracles = root / "oracles.json"
             out = root / "out"
             write_study_task(tasks)
+            write_pilot_task(pilot_tasks)
             write_permissive_oracle(oracles)
+            study_plan = write_temp_study_plan(
+                root,
+                confirmatory_tasks=tasks,
+                pilot_tasks=pilot_tasks,
+                oracles=oracles,
+            )
 
             stdout = io.StringIO()
             env = {
@@ -384,7 +454,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                         "--task-oracles",
                         str(oracles),
                         "--study-plan",
-                        str(ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml"),
+                        str(study_plan),
                         "--arms",
                         "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
                         "--repeats",
@@ -469,10 +539,17 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(manifest["require_clean_serena_process_state"])
             self.assertTrue(manifest["require_explicit_reasoning_effort"])
             self.assertEqual(manifest["order_design"], "balanced-latin-square")
-            self.assertEqual(manifest["study_package"]["task_split"], "custom")
-            self.assertEqual(manifest["study_package"]["task_oracles_source"], "custom")
+            self.assertEqual(manifest["study_package"]["task_split"], "confirmatory")
+            self.assertEqual(manifest["study_package"]["task_oracles_source"], "study_plan")
             self.assertRegex(manifest["study_package"]["task_manifest_sha256"], r"^[0-9a-f]{64}$")
             self.assertRegex(manifest["study_package"]["task_manifest_hmac"], r"^[0-9a-f]{24}$")
+            self.assertRegex(manifest["study_package"]["pilot_task_manifest_sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(manifest["study_package"]["pilot_task_manifest_hmac"], r"^[0-9a-f]{24}$")
+            self.assertRegex(manifest["study_package"]["confirmatory_task_manifest_sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(manifest["study_package"]["confirmatory_task_manifest_hmac"], r"^[0-9a-f]{24}$")
+            self.assertEqual(manifest["study_package"]["task_manifest_path"], str(tasks.resolve()))
+            self.assertEqual(manifest["study_package"]["pilot_task_manifest_path"], str(pilot_tasks.resolve()))
+            self.assertEqual(manifest["study_package"]["confirmatory_task_manifest_path"], str(tasks.resolve()))
             self.assertEqual({row["task_manifest_hash"] for row in rows}, {manifest["study_package"]["task_manifest_sha256"]})
             for source_state in manifest["source_repo_states"].values():
                 self.assertFalse(source_state["dirty"])
@@ -532,8 +609,8 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(confirmatory_dry_run["status"], "fail")
             confirmatory_dry_run_codes = {issue["code"] for issue in confirmatory_dry_run["issues"]}
             self.assertIn("confirmatory_live", confirmatory_dry_run_codes)
-            self.assertIn("confirmatory_task_manifest", confirmatory_dry_run_codes)
-            self.assertIn("confirmatory_task_oracles", confirmatory_dry_run_codes)
+            self.assertNotIn("confirmatory_task_manifest", confirmatory_dry_run_codes)
+            self.assertNotIn("confirmatory_task_oracles", confirmatory_dry_run_codes)
 
             manifest["live"] = True
             (out / "run-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -708,10 +785,18 @@ class RouterEffectStudyTests(unittest.TestCase):
             repo.mkdir()
             make_git_repo(repo)
             tasks = root / "tasks.tsv"
+            pilot_tasks = root / "pilot-tasks.tsv"
             oracles = root / "oracles.json"
             out = root / "out"
             write_study_task(tasks)
+            write_pilot_task(pilot_tasks)
             write_permissive_oracle(oracles)
+            study_plan = write_temp_study_plan(
+                root,
+                confirmatory_tasks=tasks,
+                pilot_tasks=pilot_tasks,
+                oracles=oracles,
+            )
 
             env = {
                 "CODEX_HOME": str(fake_codex_home(root)),
@@ -732,7 +817,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                         "--task-oracles",
                         str(oracles),
                         "--study-plan",
-                        str(ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml"),
+                        str(study_plan),
                         "--arms",
                         "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
                         "--repeats",
@@ -1127,6 +1212,21 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("confirmatory_repository_labels", {issue["code"] for issue in bad_repo_label_audit["issues"]})
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            overlapping_pilot_tasks = root / "overlapping-pilot-tasks.tsv"
+            overlapping_pilot_tasks.write_text(tasks.read_text(encoding="utf-8"), encoding="utf-8")
+            overlapping_manifest = dict(manifest)
+            overlapping_package = dict(manifest["study_package"])
+            overlapping_package["pilot_task_manifest_path"] = str(overlapping_pilot_tasks)
+            overlapping_package["pilot_task_manifest_sha256"] = file_sha256(overlapping_pilot_tasks)
+            overlapping_package["pilot_task_manifest_hmac"] = "a" * 24
+            overlapping_manifest["study_package"] = overlapping_package
+            manifest_path.write_text(json.dumps(overlapping_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            overlap_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            overlap_codes = {issue["code"] for issue in overlap_audit["issues"]}
+            self.assertIn("heldout_task_split", overlap_codes)
+            self.assertIn("heldout_task_id_split", overlap_codes)
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
             semantic_index = next(index for index, row in enumerate(row_lines) if row["semantic_access_enabled"])
             row_lines[semantic_index]["serena_readiness_status"] = "fail"
@@ -1226,11 +1326,19 @@ class RouterEffectStudyTests(unittest.TestCase):
             repo.mkdir()
             make_git_repo(repo)
             tasks = root / "tasks.tsv"
+            pilot_tasks = root / "pilot-tasks.tsv"
             oracles = root / "oracles.json"
             out = root / "out"
             public = root / "benchmarks" / "real-agent-routing" / "evidence" / "router-effect-v1-public"
             write_study_task(tasks)
+            write_pilot_task(pilot_tasks)
             write_permissive_oracle(oracles)
+            study_plan = write_temp_study_plan(
+                root,
+                confirmatory_tasks=tasks,
+                pilot_tasks=pilot_tasks,
+                oracles=oracles,
+            )
 
             env = {
                 "CODEX_HOME": str(fake_codex_home(root)),
@@ -1251,7 +1359,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                         "--task-oracles",
                         str(oracles),
                         "--study-plan",
-                        str(ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml"),
+                        str(study_plan),
                         "--arms",
                         "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
                         "--repeats",
@@ -1360,9 +1468,15 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("analysis_plan_hmac", manifest["study_package"])
             self.assertIn("task_manifest_hmac", manifest["study_package"])
             self.assertIn("task_oracles_hmac", manifest["study_package"])
+            self.assertIn("pilot_task_manifest_hmac", manifest["study_package"])
+            self.assertIn("confirmatory_task_manifest_hmac", manifest["study_package"])
             self.assertNotIn("task_manifest_sha256", manifest["study_package"])
             self.assertNotIn("task_oracles_sha256", manifest["study_package"])
+            self.assertNotIn("pilot_task_manifest_sha256", manifest["study_package"])
+            self.assertNotIn("confirmatory_task_manifest_sha256", manifest["study_package"])
             self.assertNotIn("task_manifest_path", manifest["study_package"])
+            self.assertNotIn("pilot_task_manifest_path", manifest["study_package"])
+            self.assertNotIn("confirmatory_task_manifest_path", manifest["study_package"])
             public_analysis_text = (public / "analysis.sanitized.json").read_text(encoding="utf-8")
             self.assertNotIn('"ios_reference":', public_analysis_text)
             public_analysis = json.loads(public_analysis_text)
