@@ -6,6 +6,7 @@ import json
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+from string import hexdigits
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -64,6 +65,48 @@ def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
     return True
 
 
+def is_sha256_hex(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(char in hexdigits for char in value)
+
+
+def is_hmac_fingerprint(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 24 and all(char in hexdigits for char in value)
+
+
+def audit_confirmatory_study_package(
+    *,
+    manifest: dict[str, object],
+    rows: list[dict[str, object]],
+    issues: list[dict[str, object]],
+) -> None:
+    package = manifest.get("study_package")
+    if not isinstance(package, dict):
+        add_issue(issues, "fail", "study_package", "confirmatory study requires frozen study_package metadata")
+        return
+    required_hashes = [
+        "study_plan_sha256",
+        "protocol_sha256",
+        "analysis_plan_sha256",
+        "task_oracles_sha256",
+        "task_manifest_sha256",
+    ]
+    for field in required_hashes:
+        if not is_sha256_hex(package.get(field)):
+            add_issue(issues, "fail", "study_package_hash", f"study_package.{field} is missing or not a SHA-256 hex digest")
+    required_hmacs = ["task_oracles_hmac", "task_manifest_hmac"]
+    for field in required_hmacs:
+        if not is_hmac_fingerprint(package.get(field)):
+            add_issue(issues, "fail", "study_package_hmac", f"study_package.{field} is missing or not a keyed HMAC fingerprint")
+    if package.get("task_split") != "confirmatory":
+        add_issue(issues, "fail", "confirmatory_task_manifest", "confirmatory audit requires the frozen confirmatory task manifest")
+    if package.get("task_oracles_source") != "study_plan":
+        add_issue(issues, "fail", "confirmatory_task_oracles", "confirmatory audit requires the study-plan oracle file")
+    manifest_task_hash = str(package.get("task_manifest_sha256", ""))
+    row_task_hashes = {str(row.get("task_manifest_hash", "")) for row in rows}
+    if len(row_task_hashes) != 1 or manifest_task_hash not in row_task_hashes:
+        add_issue(issues, "fail", "task_manifest_hash_match", "row task_manifest_hash values must match the frozen study package")
+
+
 def audit(
     root: str | Path,
     *,
@@ -104,6 +147,8 @@ def audit(
         add_issue(issues, "fail", "model_id", "study requires an exact pinned model id")
     if manifest.get("private_hmac_configured") is not True:
         add_issue(issues, "fail", "private_hmac", "study requires private HMAC key configuration")
+    if confirmatory:
+        audit_confirmatory_study_package(manifest=manifest, rows=rows, issues=issues)
 
     arms = set(str(row.get("profile", "")) for row in rows)
     missing_arms = [arm for arm in FACTORIAL_ARM_ORDER if arm not in arms]

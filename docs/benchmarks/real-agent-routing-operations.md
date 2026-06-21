@@ -207,6 +207,8 @@ The runner enforces the study controls when `--study-plan` is present:
 - captured tool versions;
 - row-level Codex, Serena, language-server, and OS version provenance;
 - external task oracle artifacts;
+- frozen study-package provenance in `run-manifest.json`, including hashes for
+  the study plan, protocol, analysis plan, oracle file, and task manifest;
 - model and reasoning-effort metadata.
 
 Example dry-run control check:
@@ -271,6 +273,12 @@ python3 scripts/benchmarks/audit_real_agent_study.py \
   --confirmatory \
   --out results/real-agent-routing/router-effect-v1-dry-run/confirmatory-audit.json
 ```
+
+The `--confirmatory` gate requires a live run from the frozen
+`confirmatory-tasks.tsv` plus the study-plan `task-oracles.json`. It rejects
+custom task manifests, custom oracle files, dry-runs, missing
+`study-analysis.json`, missing `study-power.json`, or run rows whose
+`task_manifest_hash` does not match the frozen package in `run-manifest.json`.
 
 Build a public bundle only after verifying that private paths, prompts, source
 snippets, symbols, and transcripts are excluded:

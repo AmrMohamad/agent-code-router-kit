@@ -40,6 +40,13 @@ Confirmatory runs require clean detached snapshots. Public evidence may publish
 only opaque repository labels and keyed private fingerprints. Private paths,
 project names, symbols, prompts, and snippets must not be committed.
 
+The confirmatory package is frozen by hashing the study plan, this protocol,
+the analysis plan, the task oracle file, and the confirmatory task manifest
+before execution. The publishable audit must reject any run that uses a custom
+task manifest or oracle file, or whose run rows do not match the frozen task
+manifest hash. Public bundles may expose keyed HMAC fingerprints for private
+task/oracle inputs, not plain private-input hashes.
+
 ## Task Families
 
 The confirmatory set contains five families:

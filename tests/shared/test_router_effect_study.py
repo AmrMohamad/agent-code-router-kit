@@ -89,6 +89,10 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
     manifest = json.loads((out / "run-manifest.json").read_text(encoding="utf-8"))
     manifest["dry_run"] = False
     manifest["live"] = True
+    package = dict(manifest.get("study_package", {}))
+    package["task_split"] = "confirmatory"
+    package["task_oracles_source"] = "study_plan"
+    manifest["study_package"] = package
     (out / "run-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     token_values = {
         "A-search-only": 1000,
@@ -276,10 +280,18 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(manifest["snapshot_repos"])
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertEqual(manifest["order_design"], "balanced-latin-square")
+            self.assertEqual(manifest["study_package"]["task_split"], "custom")
+            self.assertEqual(manifest["study_package"]["task_oracles_source"], "custom")
+            self.assertRegex(manifest["study_package"]["task_manifest_sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(manifest["study_package"]["task_manifest_hmac"], r"^[0-9a-f]{24}$")
+            self.assertEqual({row["task_manifest_hash"] for row in rows}, {manifest["study_package"]["task_manifest_sha256"]})
             self.assertEqual(audit(out)["status"], "pass")
             confirmatory_dry_run = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertEqual(confirmatory_dry_run["status"], "fail")
-            self.assertIn("confirmatory_live", {issue["code"] for issue in confirmatory_dry_run["issues"]})
+            confirmatory_dry_run_codes = {issue["code"] for issue in confirmatory_dry_run["issues"]}
+            self.assertIn("confirmatory_live", confirmatory_dry_run_codes)
+            self.assertIn("confirmatory_task_manifest", confirmatory_dry_run_codes)
+            self.assertIn("confirmatory_task_oracles", confirmatory_dry_run_codes)
 
             manifest["live"] = True
             (out / "run-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -437,6 +449,12 @@ class RouterEffectStudyTests(unittest.TestCase):
             manifest = json.loads((public / "manifest.sanitized.json").read_text(encoding="utf-8"))
             self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])
+            self.assertTrue(manifest["privacy"]["private_task_oracle_and_manifest_hashes_omitted"])
+            self.assertIn("task_manifest_hmac", manifest["study_package"])
+            self.assertIn("task_oracles_hmac", manifest["study_package"])
+            self.assertNotIn("task_manifest_sha256", manifest["study_package"])
+            self.assertNotIn("task_oracles_sha256", manifest["study_package"])
+            self.assertNotIn("task_manifest_path", manifest["study_package"])
             self.assertIn("manifest.sanitized.json", result["artifact_hashes"])
 
     def test_study_mode_requires_private_hmac_key(self) -> None:

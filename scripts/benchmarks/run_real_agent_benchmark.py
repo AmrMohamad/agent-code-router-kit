@@ -29,7 +29,7 @@ from scripts.lib.agent_session import (
     utc_now,
 )
 from scripts.lib.dynamic_task_prompts import materialize_task_for_symbol, select_code_symbol_target
-from scripts.lib.environment_capture import capture_tool_versions, git_tree_hash, lockfile_hash, text_sha256
+from scripts.lib.environment_capture import capture_tool_versions, file_sha256, git_tree_hash, lockfile_hash, text_sha256
 from scripts.lib.experiment_design import assign_sequence, load_study_plan, sequence_metadata
 from scripts.lib.hermetic_agent_environment import materialize_hermetic_agent_environment
 from scripts.lib.route_isolation import materialize_route_isolation
@@ -91,6 +91,55 @@ def private_hmac(value: str, *, key_env: str) -> str:
     if not key:
         return ""
     return hmac_sha256_hex(value, key=key)
+
+
+def file_hmac(path: str | Path, *, key_env: str) -> str:
+    source = Path(path)
+    if not source.exists():
+        return ""
+    return private_hmac(source.read_text(encoding="utf-8"), key_env=key_env)
+
+
+def study_task_split(*, tasks_path: str | Path, study_plan) -> str:
+    if not study_plan:
+        return ""
+    task_manifest = Path(tasks_path).expanduser().resolve()
+    study_dir = Path(study_plan.protocol_path).resolve().parent
+    split_paths = {
+        "pilot": study_dir / "pilot-tasks.tsv",
+        "confirmatory": study_dir / "confirmatory-tasks.tsv",
+    }
+    for split, split_path in split_paths.items():
+        if task_manifest == split_path.resolve():
+            return split
+    return "custom"
+
+
+def build_study_package_metadata(args: argparse.Namespace, *, study_plan) -> dict[str, object]:
+    if not study_plan:
+        return {}
+    study_plan_path = Path(args.study_plan).expanduser().resolve()
+    task_oracles_path = Path(args.task_oracles).expanduser().resolve() if args.task_oracles else Path(study_plan.task_oracles_path).resolve()
+    task_manifest_path = Path(args.tasks).expanduser().resolve()
+    plan_task_oracles_path = Path(study_plan.task_oracles_path).resolve()
+    paths = {
+        "study_plan": study_plan_path,
+        "protocol": Path(study_plan.protocol_path).resolve(),
+        "analysis_plan": Path(study_plan.analysis_plan_path).resolve(),
+        "task_oracles": task_oracles_path,
+        "task_manifest": task_manifest_path,
+    }
+    metadata: dict[str, object] = {
+        "hash_algorithm": "sha256",
+        "private_fingerprint_algorithm": "hmac-sha256",
+        "task_split": study_task_split(tasks_path=task_manifest_path, study_plan=study_plan),
+        "task_oracles_source": "study_plan" if task_oracles_path == plan_task_oracles_path else "custom",
+    }
+    for name, path in paths.items():
+        metadata[f"{name}_path"] = str(path)
+        metadata[f"{name}_sha256"] = file_sha256(path) if path.exists() else ""
+        metadata[f"{name}_hmac"] = file_hmac(path, key_env=args.hmac_key_env)
+    return metadata
 
 
 def semantic_session_artifact(
@@ -741,11 +790,15 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
     missing_artifact_carried_rows: list[dict[str, object]] = []
     carried_rows, missing_artifact_carried_rows = split_importable_carried_rows(carried_rows)
     existing_cells = {run_cell_key(row) for row in carried_rows}
+    task_manifest_path = Path(args.tasks).expanduser().resolve()
+    task_manifest_hash = file_sha256(task_manifest_path)
+    study_package = build_study_package_metadata(args, study_plan=study_plan)
     manifest = {
         "created_at": utc_now(),
         "study_plan": str(Path(args.study_plan).expanduser().resolve()) if args.study_plan else "",
         "study_id": study_plan.study_id if study_plan else "",
         "study_design_type": study_plan.design_type if study_plan else "",
+        "study_package": study_package,
         "order_design": args.order_design,
         "parallelism": args.parallelism,
         "isolated_agent_home": args.isolated_agent_home,
@@ -763,7 +816,8 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "agents": list(agent_profiles),
         "repo": str(Path(args.repo).resolve()),
         "repo_map": repo_map,
-        "task_manifest": str(Path(args.tasks).expanduser().resolve()),
+        "task_manifest": str(task_manifest_path),
+        "task_manifest_hash": task_manifest_hash,
         "task_ids": [task.task_id for task in tasks],
         "source_repo_states": source_repo_states,
         "repo_snapshots": repo_snapshots,
@@ -1017,7 +1071,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             ),
             "snapshot_tree_hash": repo_snapshots.get(task.repo or "default", repo_snapshots.get("default", {})).get("snapshot_tree_hash", ""),
             "lockfile_hash": repo_snapshots.get(task.repo or "default", repo_snapshots.get("default", {})).get("lockfile_hash", ""),
-            "task_manifest_hash": text_sha256(Path(args.tasks).expanduser().resolve().read_text(encoding="utf-8")),
+            "task_manifest_hash": task_manifest_hash,
             "route_profile_hash": hermetic_environment.effective_config.get("route_profile_hash") if hermetic_environment else "",
             "agent_config_hash": hermetic_environment.effective_config_sha256 if hermetic_environment else "",
             "model_id": args.model_id,

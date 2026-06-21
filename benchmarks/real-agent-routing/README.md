@@ -69,7 +69,10 @@ Study mode requires clean detached snapshots, a fresh controlled Codex home per
 run, isolated semantic-session configuration for semantic arms, captured tool
 versions, external task oracles, and balanced Latin-square ordering. It writes
 per-run `effective-agent-config.json`, `effective-agent-config.sha256`,
-`treatment-diff.json`, and `oracle.json` artifacts.
+`treatment-diff.json`, and `oracle.json` artifacts. The run manifest also
+pins the study package with hashes for the study plan, protocol, analysis plan,
+oracle file, and task manifest; private task/oracle inputs are additionally
+fingerprinted with keyed HMACs for safe public evidence.
 
 Dry-run the study controls before any live execution:
 
@@ -99,6 +102,11 @@ python3 scripts/benchmarks/audit_real_agent_study.py \
   --root results/real-agent-routing/router-effect-v1-dry-run \
   --out results/real-agent-routing/router-effect-v1-dry-run/study-audit.json
 ```
+
+The stricter `--confirmatory` audit is intentionally reserved for live runs
+using the frozen `confirmatory-tasks.tsv` and the study-plan oracle file. It
+rejects dry-runs, custom task manifests, custom oracle files, missing
+analysis/power artifacts, and row hashes that do not match the frozen package.
 
 The study protocol is intentionally public-safe: repository labels are generic,
 and public evidence must omit private names, paths, prompts, symbols, snippets,

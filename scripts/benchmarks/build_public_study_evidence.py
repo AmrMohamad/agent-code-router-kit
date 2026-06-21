@@ -98,6 +98,27 @@ def sanitized_audit_summary(root: Path) -> dict[str, object]:
     }
 
 
+def sanitized_study_package(manifest: dict[str, object]) -> dict[str, object]:
+    package = manifest.get("study_package")
+    if not isinstance(package, dict):
+        return {}
+    allowed_fields = [
+        "hash_algorithm",
+        "private_fingerprint_algorithm",
+        "task_split",
+        "task_oracles_source",
+        "study_plan_sha256",
+        "protocol_sha256",
+        "analysis_plan_sha256",
+        "study_plan_hmac",
+        "protocol_hmac",
+        "analysis_plan_hmac",
+        "task_oracles_hmac",
+        "task_manifest_hmac",
+    ]
+    return {field: package[field] for field in allowed_fields if field in package}
+
+
 def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
     out.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((root / "run-manifest.json").read_text(encoding="utf-8"))
@@ -114,6 +135,7 @@ def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
         "model_id": manifest.get("model_id"),
         "reasoning_effort": manifest.get("reasoning_effort"),
         "tool_versions": manifest.get("tool_versions", {}),
+        "study_package": sanitized_study_package(manifest),
         "task_count": len(task_ids),
         "repo_count": len(repo_ids),
         "privacy": {
@@ -122,6 +144,7 @@ def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
             "private_task_ids_removed": True,
             "private_repo_ids_removed": True,
             "private_value_hmac_fields_only": True,
+            "private_task_oracle_and_manifest_hashes_omitted": True,
         },
     }
     to_json_file(out / "manifest.sanitized.json", public_manifest)
