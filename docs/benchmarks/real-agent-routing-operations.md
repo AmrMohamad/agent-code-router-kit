@@ -211,6 +211,8 @@ The runner enforces the study controls when `--study-plan` is present:
 - row-level Codex, Serena, language-server, and OS version provenance;
 - semantic readiness prewarm for C/D cells before task execution, with
   `semantic_setup_seconds` reported separately from `task_execution_seconds`;
+- block-level `treatment-diffs.jsonl` evidence proving A/B/C/D effective
+  configs differ only on the preregistered treatment fields;
 - external task oracle artifacts;
 - frozen study-package provenance in `run-manifest.json`, including hashes for
   the study plan, protocol, analysis plan, oracle file, and task manifest;
@@ -314,6 +316,9 @@ cannot silently support a fixed-tooling claim.
 Live confirmatory semantic-access rows must also show passed Serena readiness
 in both `runs.jsonl` and `semantic-session.json`, and include the
 `serena-readiness.json` artifact created before task execution.
+The audit also recomputes `treatment-diffs.jsonl` from each run's
+`effective-agent-config.json`; missing, stale, or invalid treatment-diff
+evidence blocks publishable treatment-isolation claims.
 If `study-analysis.json` reports `cost.status=estimated`, the audit also
 requires the pricing model to match the pinned study model and every arm to
 include total cost, median cost, cost per run, and cost per successful task.

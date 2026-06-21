@@ -35,6 +35,7 @@ from scripts.lib.hermetic_agent_environment import materialize_hermetic_agent_en
 from scripts.lib.route_isolation import materialize_route_isolation
 from scripts.lib.serena_readiness import run_serena_source_symbol_readiness, write_serena_readiness
 from scripts.lib.task_oracles import load_task_oracles, verify_transcript_file
+from scripts.lib.treatment_diff_artifacts import write_treatment_diff_artifact
 from scripts.lib.treatment_config import FACTORIAL_ARM_ORDER, factors_for_profile, hmac_sha256_hex, validate_factorial_arm_set
 
 
@@ -650,6 +651,18 @@ def load_existing_run_rows(path: str | Path) -> list[dict[str, object]]:
     return rows
 
 
+def load_run_rows(path: str | Path) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    with Path(path).open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if isinstance(row, dict):
+                rows.append(row)
+    return rows
+
+
 def filter_valid_carried_rows(rows: list[dict[str, object]], *, resume_root: Path) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     manifest_path = resume_root / "run-manifest.json"
     if not manifest_path.exists():
@@ -1242,6 +1255,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             },
             enabled=args.monitor,
         )
+    write_treatment_diff_artifact(rows=load_run_rows(runs_path), out=out_root / "treatment-diffs.jsonl")
     summary = write_report(runs_jsonl=runs_path, out_dir=out_root, dry_run=args.dry_run)
     return {"manifest": manifest, "summary": summary, "out": str(out_root)}
 

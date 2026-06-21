@@ -145,6 +145,15 @@ def sanitize_analysis_payload(analysis: dict[str, object], *, repo_ids: dict[str
     return sanitized
 
 
+def sanitized_treatment_diff_row(row: dict[str, object], *, task_ids: dict[str, str], repo_ids: dict[str, str]) -> dict[str, object]:
+    sanitized = dict(row)
+    sanitized["task_public_id"] = task_ids.get(str(row.get("task_id", "")), "")
+    sanitized["repo_public_id"] = repo_ids.get(str(row.get("repo", "")), "")
+    sanitized.pop("task_id", None)
+    sanitized.pop("repo", None)
+    return sanitized
+
+
 def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
     out.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((root / "run-manifest.json").read_text(encoding="utf-8"))
@@ -185,6 +194,17 @@ def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
     power_path = root / "study-power.json"
     if power_path.exists():
         to_json_file(out / "power.sanitized.json", json.loads(power_path.read_text(encoding="utf-8")))
+    treatment_diffs_path = root / "treatment-diffs.jsonl"
+    if treatment_diffs_path.exists():
+        with (out / "treatment-diffs.sanitized.jsonl").open("w", encoding="utf-8") as handle:
+            for row in load_jsonl(treatment_diffs_path):
+                handle.write(
+                    json.dumps(
+                        sanitized_treatment_diff_row(row, task_ids=task_ids, repo_ids=repo_ids),
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
     readme = (
         "# Router Effect V1 Public Evidence\n\n"
         "This bundle contains sanitized study metadata and run rows. It intentionally "

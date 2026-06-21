@@ -16,6 +16,13 @@ FACTORIAL_ARM_ORDER = [
     "D-full-router",
 ]
 
+FACTORIAL_COMPARISONS = [
+    ("A-search-only", "B-search-summary"),
+    ("A-search-only", "C-lsp-naive"),
+    ("C-lsp-naive", "D-full-router"),
+    ("B-search-summary", "D-full-router"),
+]
+
 
 @dataclass(frozen=True)
 class TreatmentFactors:

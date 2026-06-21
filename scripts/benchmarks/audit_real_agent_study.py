@@ -16,8 +16,10 @@ from scripts.benchmarks.estimate_study_power import estimate as compute_study_po
 from scripts.lib.agent_session import to_json_file
 from scripts.lib.agent_session import load_tasks
 from scripts.lib.task_oracles import load_task_oracles, validate_task_oracle_plan
+from scripts.lib.treatment_diff_artifacts import build_treatment_diff_rows
 from scripts.lib.treatment_config import (
     FACTORIAL_ARM_ORDER,
+    FACTORIAL_COMPARISONS,
     diff_effective_agent_configs,
     factors_for_profile,
 )
@@ -332,6 +334,23 @@ def audit_confirmatory_rerun_policy(*, manifest: dict[str, object], issues: list
             add_issue(issues, "fail", code, f"confirmatory study has nonempty {field}")
 
 
+def audit_treatment_diff_artifact(*, base: Path, rows: list[dict[str, object]], issues: list[dict[str, object]]) -> None:
+    path = base / "treatment-diffs.jsonl"
+    if not path.exists():
+        add_issue(issues, "fail", "treatment_diff_artifact", "confirmatory study requires treatment-diffs.jsonl")
+        return
+    actual = load_jsonl(path)
+    expected = build_treatment_diff_rows(rows)
+    if actual != expected:
+        add_issue(issues, "fail", "treatment_diff_artifact_consistency", "treatment-diffs.jsonl does not match recomputed effective-config diffs")
+    for row in actual:
+        if row.get("valid") is not True:
+            add_issue(issues, "fail", "treatment_diff_artifact_valid", f"treatment diff block {row.get('block_id')} is not valid")
+        comparisons = row.get("comparisons")
+        if not isinstance(comparisons, list) or len(comparisons) != len(FACTORIAL_COMPARISONS):
+            add_issue(issues, "fail", "treatment_diff_artifact_shape", f"treatment diff block {row.get('block_id')} does not include every preregistered comparison")
+
+
 def audit(
     root: str | Path,
     *,
@@ -386,6 +405,7 @@ def audit(
         audit_confirmatory_study_package(manifest=manifest, rows=rows, issues=issues)
         audit_confirmatory_oracle_plan(manifest=manifest, issues=issues)
         audit_confirmatory_rerun_policy(manifest=manifest, issues=issues)
+        audit_treatment_diff_artifact(base=base, rows=rows, issues=issues)
 
     arms = set(str(row.get("profile", "")) for row in rows)
     missing_arms = [arm for arm in FACTORIAL_ARM_ORDER if arm not in arms]
@@ -613,13 +633,7 @@ def audit(
             versions = {str(row.get(field, "")) for row in profile_rows.values()}
             if len(versions) != 1:
                 add_issue(issues, "fail", "block_tool_version_match", f"{key} {field} differs across arms")
-        comparisons = [
-            ("A-search-only", "B-search-summary"),
-            ("A-search-only", "C-lsp-naive"),
-            ("C-lsp-naive", "D-full-router"),
-            ("B-search-summary", "D-full-router"),
-        ]
-        for left, right in comparisons:
+        for left, right in FACTORIAL_COMPARISONS:
             diff = diff_effective_agent_configs(
                 configs[left] or {},
                 configs[right] or {},

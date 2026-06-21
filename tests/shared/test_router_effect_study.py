@@ -345,6 +345,14 @@ class RouterEffectStudyTests(unittest.TestCase):
                 self.assertFalse(snapshot_state["snapshot_dirty"])
                 self.assertEqual(snapshot_state["source_commit"], snapshot_state["snapshot_commit"])
                 self.assertEqual(snapshot_state["source_tree_hash"], snapshot_state["snapshot_tree_hash"])
+            treatment_diffs = [
+                json.loads(line)
+                for line in (out / "treatment-diffs.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(treatment_diffs), 4)
+            for treatment_diff in treatment_diffs:
+                self.assertTrue(treatment_diff["valid"], treatment_diff)
+                self.assertEqual(len(treatment_diff["comparisons"]), 4)
             self.assertEqual(audit(out)["status"], "pass")
             semantic_row = next(row for row in rows if row["semantic_access_enabled"])
             semantic_path = Path(semantic_row["run_dir"]) / "semantic-session.json"
@@ -602,6 +610,24 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_power_consistency", {issue["code"] for issue in stale_power_audit["issues"]})
             (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            treatment_diffs_path = out / "treatment-diffs.jsonl"
+            original_treatment_diffs = treatment_diffs_path.read_text(encoding="utf-8")
+            treatment_diff_rows = [json.loads(line) for line in original_treatment_diffs.splitlines()]
+            treatment_diff_rows[0]["valid"] = False
+            treatment_diffs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in treatment_diff_rows),
+                encoding="utf-8",
+            )
+            stale_treatment_diff = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            stale_treatment_diff_codes = {issue["code"] for issue in stale_treatment_diff["issues"]}
+            self.assertIn("treatment_diff_artifact_consistency", stale_treatment_diff_codes)
+            self.assertIn("treatment_diff_artifact_valid", stale_treatment_diff_codes)
+            treatment_diffs_path.write_text(original_treatment_diffs, encoding="utf-8")
+            treatment_diffs_path.unlink()
+            missing_treatment_diff = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("treatment_diff_artifact", {issue["code"] for issue in missing_treatment_diff["issues"]})
+            treatment_diffs_path.write_text(original_treatment_diffs, encoding="utf-8")
+
             pricing = {
                 "model_id": "codex-test-model",
                 "input_per_1m": 2.0,
@@ -766,6 +792,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue((public / "analysis.sanitized.json").exists())
             self.assertTrue((public / "power.sanitized.json").exists())
             self.assertTrue((public / "audit.sanitized.json").exists())
+            self.assertTrue((public / "treatment-diffs.sanitized.jsonl").exists())
             public_text = (public / "runs.sanitized.jsonl").read_text(encoding="utf-8")
             self.assertNotIn("study_task", public_text)
             self.assertNotIn("sample", public_text)
@@ -799,7 +826,16 @@ class RouterEffectStudyTests(unittest.TestCase):
                 "repo_001",
                 public_analysis["pairwise_effects_by_repo"]["A-search-only_to_D-full-router"],
             )
+            public_treatment_text = (public / "treatment-diffs.sanitized.jsonl").read_text(encoding="utf-8")
+            self.assertNotIn("study_task", public_treatment_text)
+            self.assertNotIn('"sample"', public_treatment_text)
+            public_treatment_rows = [json.loads(line) for line in public_treatment_text.splitlines()]
+            self.assertEqual(public_treatment_rows[0]["task_public_id"], "task_001")
+            self.assertEqual(public_treatment_rows[0]["repo_public_id"], "repo_001")
+            self.assertNotIn("task_id", public_treatment_rows[0])
+            self.assertNotIn("repo", public_treatment_rows[0])
             self.assertIn("manifest.sanitized.json", result["artifact_hashes"])
+            self.assertIn("treatment-diffs.sanitized.jsonl", result["artifact_hashes"])
 
     def test_study_mode_requires_private_hmac_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
