@@ -78,6 +78,11 @@ PUBLIC_ROW_FIELDS = [
     "sourcekit_lsp_version",
     "kotlin_language_server_version",
     "json_language_server_version",
+    "rg_version",
+    "fd_version",
+    "ast_grep_version",
+    "git_version",
+    "python_version",
     "os_version",
 ]
 

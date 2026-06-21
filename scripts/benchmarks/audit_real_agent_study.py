@@ -34,8 +34,25 @@ TOOL_VERSION_FIELDS = [
     "sourcekit_lsp_version",
     "kotlin_language_server_version",
     "json_language_server_version",
+    "rg_version",
+    "fd_version",
+    "ast_grep_version",
+    "git_version",
+    "python_version",
     "os_version",
 ]
+
+CONFIRMATORY_REQUIRED_TOOL_VERSIONS = {
+    "codex": "codex_version",
+    "serena": "serena_version",
+    "sourcekit-lsp": "sourcekit_lsp_version",
+    "rg": "rg_version",
+    "fd": "fd_version",
+    "ast-grep": "ast_grep_version",
+    "git": "git_version",
+    "python": "python_version",
+    "os": "os_version",
+}
 
 LANGUAGE_SERVER_VERSION_FIELDS = {
     "sourcekit-lsp": "sourcekit_lsp_version",
@@ -308,6 +325,13 @@ def is_sha256_hex(value: object) -> bool:
 
 def is_hmac_fingerprint(value: object) -> bool:
     return isinstance(value, str) and len(value) == 24 and all(char in hexdigits for char in value)
+
+
+def usable_tool_version(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return bool(text) and not text.startswith("not_available") and not text.startswith("returncode:")
 
 
 def is_git_object_id(value: object) -> bool:
@@ -803,8 +827,18 @@ def audit(
         add_issue(issues, "fail", "serena_process_state", "confirmatory study requires clean Serena process-state enforcement")
     if confirmatory and manifest.get("require_explicit_reasoning_effort") is not True:
         add_issue(issues, "fail", "reasoning_effort_policy", "confirmatory study requires explicit reasoning-effort policy enforcement")
-    if manifest.get("capture_versions") is not True or not manifest.get("tool_versions"):
+    tool_versions = manifest.get("tool_versions")
+    if manifest.get("capture_versions") is not True or not tool_versions:
         add_issue(issues, "fail", "version_capture", "study requires captured tool/controller versions")
+    elif confirmatory and isinstance(tool_versions, dict):
+        for tool_name in CONFIRMATORY_REQUIRED_TOOL_VERSIONS:
+            if not usable_tool_version(tool_versions.get(tool_name)):
+                add_issue(
+                    issues,
+                    "fail",
+                    "version_capture",
+                    f"confirmatory study lacks usable {tool_name} version metadata",
+                )
     if manifest.get("model_id") in {"", "not_pinned", None}:
         add_issue(issues, "fail", "model_id", "study requires an exact pinned model id")
     if manifest.get("reasoning_effort") in {"", "default", None}:
@@ -1015,10 +1049,10 @@ def audit(
             if row.get("lockfile_hash") != snapshot_state.get("lockfile_hash"):
                 add_issue(issues, "fail", "row_snapshot_lockfile_match", f"run {row.get('run_id')} snapshot lockfile hash does not match manifest")
         if live:
-            for field in ("codex_version", "serena_version", "os_version"):
-                value = str(row.get(field, ""))
-                if not value or value.startswith("not_available"):
-                    add_issue(issues, "fail", field, f"live study run {row.get('run_id')} lacks usable {field}")
+            if confirmatory:
+                for _tool_name, field in CONFIRMATORY_REQUIRED_TOOL_VERSIONS.items():
+                    if not usable_tool_version(row.get(field)):
+                        add_issue(issues, "fail", field, f"live study run {row.get('run_id')} lacks usable {field}")
             if row.get("token_source") != "exact":
                 add_issue(issues, "fail", "exact_token_source", f"live study run {row.get('run_id')} is not exact-token sourced")
             exact_values = {field: exact_token_value(row, field) for field in EXACT_TOKEN_FIELDS}

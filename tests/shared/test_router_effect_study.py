@@ -26,6 +26,19 @@ from scripts.lib.treatment_config import diff_effective_agent_configs
 
 
 ROOT = Path(__file__).resolve().parents[2]
+SYNTHETIC_TOOL_VERSIONS = {
+    "os": "test-os",
+    "python": "python-test 3.14",
+    "codex": "codex-test 1.0",
+    "serena": "serena-test 1.0",
+    "sourcekit-lsp": "sourcekit-lsp-test 1.0",
+    "kotlin-language-server": "kotlin-language-server-test 1.0",
+    "vscode-json-languageserver": "json-language-server-test 1.0",
+    "rg": "ripgrep-test 1.0",
+    "fd": "fd-test 1.0",
+    "ast-grep": "ast-grep-test 1.0",
+    "git": "git-test 1.0",
+}
 
 
 def codex_profile() -> AgentProfile:
@@ -153,6 +166,7 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
     manifest["prewarm_semantic_layer"] = True
     manifest["serena_readiness_enabled"] = True
     manifest["controller_dirty"] = False
+    manifest["tool_versions"] = dict(SYNTHETIC_TOOL_VERSIONS)
     package = dict(manifest.get("study_package", {}))
     package["task_split"] = "confirmatory"
     package["task_oracles_source"] = "study_plan"
@@ -213,15 +227,28 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                         "kotlin_lsp": 0,
                         "json_lsp": 0,
                     },
-                    "codex_version": "codex-test 1.0",
-                    "serena_version": "serena-test 1.0",
-                    "os_version": "test-os",
+                    "codex_version": SYNTHETIC_TOOL_VERSIONS["codex"],
+                    "serena_version": SYNTHETIC_TOOL_VERSIONS["serena"],
+                    "sourcekit_lsp_version": SYNTHETIC_TOOL_VERSIONS["sourcekit-lsp"],
+                    "kotlin_language_server_version": SYNTHETIC_TOOL_VERSIONS["kotlin-language-server"],
+                    "json_language_server_version": SYNTHETIC_TOOL_VERSIONS["vscode-json-languageserver"],
+                    "rg_version": SYNTHETIC_TOOL_VERSIONS["rg"],
+                    "fd_version": SYNTHETIC_TOOL_VERSIONS["fd"],
+                    "ast_grep_version": SYNTHETIC_TOOL_VERSIONS["ast-grep"],
+                    "git_version": SYNTHETIC_TOOL_VERSIONS["git"],
+                    "python_version": SYNTHETIC_TOOL_VERSIONS["python"],
+                    "os_version": SYNTHETIC_TOOL_VERSIONS["os"],
                 }
             )
+            run_dir = Path(row["run_dir"])
+            semantic_path = run_dir / "semantic-session.json"
+            semantic_payload = json.loads(semantic_path.read_text(encoding="utf-8"))
+            semantic_payload["language_server_versions"] = {
+                "sourcekit-lsp": SYNTHETIC_TOOL_VERSIONS["sourcekit-lsp"],
+                "kotlin-language-server": SYNTHETIC_TOOL_VERSIONS["kotlin-language-server"],
+                "vscode-json-languageserver": SYNTHETIC_TOOL_VERSIONS["vscode-json-languageserver"],
+            }
             if row["semantic_access_enabled"]:
-                run_dir = Path(row["run_dir"])
-                semantic_path = run_dir / "semantic-session.json"
-                semantic_payload = json.loads(semantic_path.read_text(encoding="utf-8"))
                 readiness = {
                     "status": "pass",
                     "ready": True,
@@ -246,7 +273,7 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                 semantic_payload["child_lsp_survivor_count"] = 0
                 semantic_payload["pre_task_process_state"] = row["serena_process_state_before"]
                 semantic_payload["post_task_process_state"] = row["serena_process_state_after"]
-                semantic_path.write_text(json.dumps(semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            semantic_path.write_text(json.dumps(semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
@@ -605,6 +632,22 @@ class RouterEffectStudyTests(unittest.TestCase):
             tool_version_audit = audit(out)
             self.assertIn("block_tool_version_match", {issue["code"] for issue in tool_version_audit["issues"]})
             runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            missing_sourcekit_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            missing_sourcekit_rows[0]["sourcekit_lsp_version"] = "not_available:FileNotFoundError"
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in missing_sourcekit_rows),
+                encoding="utf-8",
+            )
+            live_manifest = dict(manifest)
+            live_manifest["live"] = True
+            live_manifest["dry_run"] = False
+            (out / "run-manifest.json").write_text(json.dumps(live_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            missing_sourcekit_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("sourcekit_lsp_version", {issue["code"] for issue in missing_sourcekit_audit["issues"]})
+            (out / "run-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
             confirmatory_dry_run = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertEqual(confirmatory_dry_run["status"], "fail")
             confirmatory_dry_run_codes = {issue["code"] for issue in confirmatory_dry_run["issues"]}
@@ -857,6 +900,15 @@ class RouterEffectStudyTests(unittest.TestCase):
 
             manifest_path = out / "run-manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            missing_tool_version_manifest = dict(manifest)
+            missing_tool_versions = dict(manifest["tool_versions"])
+            missing_tool_versions["sourcekit-lsp"] = "not_available:FileNotFoundError"
+            missing_tool_version_manifest["tool_versions"] = missing_tool_versions
+            manifest_path.write_text(json.dumps(missing_tool_version_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            missing_tool_version = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("version_capture", {issue["code"] for issue in missing_tool_version["issues"]})
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             dirty_controller_manifest = dict(manifest)
             dirty_controller_manifest["controller_dirty"] = True
             manifest_path.write_text(json.dumps(dirty_controller_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -1434,6 +1486,12 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("serena_process_state_before", public_rows[0])
             self.assertIn("serena_process_state_after", public_rows[0])
             self.assertIn("codex_version", public_rows[0])
+            self.assertIn("sourcekit_lsp_version", public_rows[0])
+            self.assertIn("rg_version", public_rows[0])
+            self.assertIn("fd_version", public_rows[0])
+            self.assertIn("ast_grep_version", public_rows[0])
+            self.assertIn("git_version", public_rows[0])
+            self.assertIn("python_version", public_rows[0])
             self.assertRegex(public_rows[0]["protocol_commit"], r"^[0-9a-f]{40,64}$")
             self.assertEqual(public_rows[0]["controller_commit"], public_rows[0]["protocol_commit"])
             self.assertRegex(public_rows[0]["controller_tree_hash"], r"^[0-9a-f]{40,64}$")
