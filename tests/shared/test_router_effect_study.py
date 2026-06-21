@@ -317,6 +317,20 @@ class RouterEffectStudyTests(unittest.TestCase):
         self.assertFalse(task_ids_by_split["pilot-tasks.tsv"] & task_ids_by_split["confirmatory-tasks.tsv"])
         self.assertFalse(task_keys_by_split["pilot-tasks.tsv"] & task_keys_by_split["confirmatory-tasks.tsv"])
 
+    def test_ci_real_agent_dry_run_uses_ios_web_router_effect_pilot(self) -> None:
+        workflow = (ROOT / ".github/workflows/validate.yml").read_text(encoding="utf-8")
+        self.assertIn("benchmarks/web/fixtures/sample", workflow)
+        self.assertIn("benchmarks/ios/fixtures/sample", workflow)
+        self.assertIn("router-effect-v1/study.yaml", workflow)
+        self.assertIn("router-effect-v1/pilot-tasks.tsv", workflow)
+        self.assertIn("A-search-only,B-search-summary,C-lsp-naive,D-full-router", workflow)
+        self.assertNotIn("android-realworld.sample.tsv", workflow)
+
+        web_fixture = ROOT / "benchmarks/web/fixtures/sample"
+        self.assertTrue((web_fixture / "package.json").exists())
+        self.assertTrue((web_fixture / "src/navigation/FrontendRouter.ts").exists())
+        self.assertTrue((web_fixture / "src/features/orders/OrderSummaryPanel.tsx").exists())
+
     def test_balanced_latin_square_places_each_arm_once_per_position(self) -> None:
         arms = ["A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"]
         square = balanced_latin_square(arms)
