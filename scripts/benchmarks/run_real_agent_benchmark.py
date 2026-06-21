@@ -74,6 +74,8 @@ def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
         args.task_oracles = study_plan.task_oracles_path
     if not args.dry_run and args.model_id == DEFAULT_STUDY_MODEL_ID:
         raise SystemExit("live study mode requires --model-id with the exact pinned model identifier")
+    if not os.environ.get(args.hmac_key_env, ""):
+        raise SystemExit(f"study mode requires ${args.hmac_key_env} for private HMAC fingerprints")
 
 
 def exact_uncached_input_tokens(metrics: dict[str, object]) -> int | None:

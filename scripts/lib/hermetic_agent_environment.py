@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -42,6 +44,7 @@ class HermeticAgentEnvironment:
     env: dict[str, str]
     effective_config: dict[str, object]
     effective_config_sha256: str
+    auth_files_copied: list[str]
     hard_controls: list[str]
     weak_controls: list[str]
 
@@ -72,6 +75,19 @@ def serena_mcp_config(*, repo_path: str | Path, semantic_home: str | Path) -> di
     }
 
 
+def copy_codex_auth_files(*, codex_home: Path) -> list[str]:
+    source_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
+    copied: list[str] = []
+    for name in ("auth.json", "credentials.json"):
+        source = source_home / name
+        if not source.exists() or not source.is_file():
+            continue
+        target = codex_home / name
+        shutil.copy2(source, target)
+        copied.append(name)
+    return copied
+
+
 def materialize_hermetic_agent_environment(
     *,
     agent_profile: AgentProfile,
@@ -90,6 +106,7 @@ def materialize_hermetic_agent_environment(
     semantic_home = out / "serena-session"
     codex_home.mkdir(parents=True, exist_ok=True)
     semantic_home.mkdir(parents=True, exist_ok=True)
+    auth_files_copied = copy_codex_auth_files(codex_home=codex_home) if agent_profile.agent_id == "codex" else []
     runtime_mcp_servers: dict[str, object] = {}
     normalized_mcp_servers: dict[str, object] = {}
     if factors.semantic_access_enabled:
@@ -136,6 +153,8 @@ def materialize_hermetic_agent_environment(
         "model_id": model_id,
         "reasoning_effort": reasoning_effort,
         "response_contract": response_contract,
+        "auth_preserved": bool(auth_files_copied),
+        "auth_file_kinds": sorted(auth_files_copied),
         "mcp_servers": normalized_mcp_servers,
         "serena": {
             "enabled": factors.semantic_access_enabled,
@@ -172,14 +191,16 @@ def materialize_hermetic_agent_environment(
         },
         effective_config=effective_config,
         effective_config_sha256=config_hash,
+        auth_files_copied=auth_files_copied,
         hard_controls=[
             "codex_fresh_home",
+            *([] if not auth_files_copied else ["codex_auth_preserved"]),
             "codex_ignore_user_config",
             "codex_ignore_rules",
             "codex_plugins_disabled",
             "codex_controlled_mcp_servers",
         ],
-        weak_controls=[],
+        weak_controls=[] if auth_files_copied else ["codex_auth_not_found"],
     )
     to_json_file(out / "effective-agent-config.json", effective_config)
     (out / "effective-agent-config.sha256").write_text(config_hash + "\n", encoding="utf-8")

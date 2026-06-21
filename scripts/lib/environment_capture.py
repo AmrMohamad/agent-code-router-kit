@@ -70,7 +70,7 @@ def lockfile_hash(repo: str | Path, *, names: Iterable[str] = LOCKFILE_NAMES) ->
                 rel = str(path)
             matches.append({"path": rel, "sha256": file_sha256(path)})
     if not matches:
-        return ""
+        return "none"
     payload = json.dumps(sorted(matches, key=lambda item: item["path"]), sort_keys=True)
     return text_sha256(payload)
 

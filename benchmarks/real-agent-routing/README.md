@@ -74,6 +74,8 @@ per-run `effective-agent-config.json`, `effective-agent-config.sha256`,
 Dry-run the study controls before any live execution:
 
 ```bash
+export RARB_PRIVATE_HMAC_KEY="$(openssl rand -hex 32)"
+
 python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --dry-run \
   --agent codex \

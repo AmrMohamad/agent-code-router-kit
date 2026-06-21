@@ -209,6 +209,8 @@ The runner enforces the study controls when `--study-plan` is present:
 Example dry-run control check:
 
 ```bash
+export RARB_PRIVATE_HMAC_KEY="$(openssl rand -hex 32)"
+
 python3 scripts/benchmarks/run_real_agent_benchmark.py \
   --dry-run \
   --agent codex \

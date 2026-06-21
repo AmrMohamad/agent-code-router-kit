@@ -75,6 +75,13 @@ def write_permissive_oracle(path: Path) -> None:
     )
 
 
+def fake_codex_home(path: Path) -> Path:
+    home = path / "fake-codex-home"
+    home.mkdir()
+    (home / "auth.json").write_text('{"mode":"test"}\n', encoding="utf-8")
+    return home
+
+
 class RouterEffectStudyTests(unittest.TestCase):
     def test_balanced_latin_square_places_each_arm_once_per_position(self) -> None:
         arms = ["A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"]
@@ -136,17 +143,18 @@ class RouterEffectStudyTests(unittest.TestCase):
             repo = root / "repo"
             repo.mkdir()
             profile = load_route_profile(ROOT / "benchmarks/real-agent-routing/profiles/D-full-router.yaml")
-            hermetic = materialize_hermetic_agent_environment(
-                agent_profile=codex_profile(),
-                route_profile=profile,
-                run_dir=root / "run",
-                repo_path=repo,
-                model_id="codex-test-model",
-                reasoning_effort="low",
-                sandbox="read-only",
-                timeout_seconds=900,
-                response_contract="contract-hash",
-            )
+            with patch.dict("os.environ", {"CODEX_HOME": str(fake_codex_home(root))}):
+                hermetic = materialize_hermetic_agent_environment(
+                    agent_profile=codex_profile(),
+                    route_profile=profile,
+                    run_dir=root / "run",
+                    repo_path=repo,
+                    model_id="codex-test-model",
+                    reasoning_effort="low",
+                    sandbox="read-only",
+                    timeout_seconds=900,
+                    response_contract="contract-hash",
+                )
             with patch("scripts.lib.route_isolation.shutil.which", return_value="/bin/codex"):
                 isolation = materialize_route_isolation(
                     agent_profile=codex_profile(),
@@ -177,7 +185,11 @@ class RouterEffectStudyTests(unittest.TestCase):
             write_permissive_oracle(oracles)
 
             stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
+            env = {
+                "CODEX_HOME": str(fake_codex_home(root)),
+                "RARB_PRIVATE_HMAC_KEY": "test-hmac-key",
+            }
+            with contextlib.redirect_stdout(stdout), patch.dict("os.environ", env):
                 code = main(
                     [
                         "--dry-run",
@@ -219,6 +231,52 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertEqual(manifest["order_design"], "balanced-latin-square")
             self.assertEqual(audit(out)["status"], "pass")
+
+            manifest["live"] = True
+            (out / "run-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            failed_audit = audit(out)
+            self.assertEqual(failed_audit["status"], "fail")
+            self.assertIn("exact_uncached_input_tokens", {issue["code"] for issue in failed_audit["issues"]})
+
+    def test_study_mode_requires_private_hmac_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            make_git_repo(repo)
+            tasks = root / "tasks.tsv"
+            write_study_task(tasks)
+
+            with patch.dict("os.environ", {"RARB_PRIVATE_HMAC_KEY": ""}):
+                with self.assertRaises(SystemExit) as caught:
+                    main(
+                        [
+                            "--dry-run",
+                            "--agent",
+                            "codex",
+                            "--repo",
+                            str(repo),
+                            "--repo-map",
+                            f"sample={repo}",
+                            "--tasks",
+                            str(tasks),
+                            "--study-plan",
+                            str(ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml"),
+                            "--arms",
+                            "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
+                            "--repeats",
+                            "4",
+                            "--snapshot-repos",
+                            "--model-id",
+                            "codex-test-model",
+                            "--reasoning-effort",
+                            "low",
+                            "--out",
+                            str(root / "out"),
+                        ]
+                    )
+
+            self.assertIn("requires $RARB_PRIVATE_HMAC_KEY", str(caught.exception))
 
 
 if __name__ == "__main__":
