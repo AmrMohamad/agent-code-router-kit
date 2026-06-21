@@ -72,8 +72,9 @@ The confirmatory set contains five families:
 - structural pattern
 - build/runtime proof boundary
 
-At least three independent tasks are defined per family. The repository labels
-in this protocol are generic placeholders, not private project identifiers.
+At least three independent tasks are defined per family across the preregistered
+`ios_reference` and `web_reference` labels. The repository labels in this
+protocol are generic placeholders, not private project identifiers.
 
 ## Outcomes
 

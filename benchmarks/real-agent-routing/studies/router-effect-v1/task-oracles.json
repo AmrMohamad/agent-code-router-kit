@@ -17,8 +17,8 @@
       "requires_policy_pass": true
     },
     {
-      "oracle_id": "confirm-known-portable-1",
-      "task_id": "confirm_known_portable_1",
+      "oracle_id": "confirm-known-ios-2",
+      "task_id": "confirm_known_ios_2",
       "type": "semantic_identity",
       "required_terms": ["declaration"],
       "required_row_values": {"expected_proof_layer": "semantic_identity_or_search_labeled"},
@@ -41,8 +41,8 @@
       "requires_policy_pass": true
     },
     {
-      "oracle_id": "confirm-high-fanout-portable-1",
-      "task_id": "confirm_high_fanout_portable_1",
+      "oracle_id": "confirm-high-fanout-web-2",
+      "task_id": "confirm_high_fanout_web_2",
       "type": "high_fanout_reference",
       "required_terms": ["evidence"],
       "required_row_values": {"expected_proof_layer": "high_fanout_summary"},
@@ -65,8 +65,8 @@
       "requires_policy_pass": true
     },
     {
-      "oracle_id": "confirm-literal-portable-1",
-      "task_id": "confirm_literal_portable_1",
+      "oracle_id": "confirm-literal-ios-2",
+      "task_id": "confirm_literal_ios_2",
       "type": "literal_resource",
       "required_terms": ["file"],
       "required_row_values": {"expected_proof_layer": "literal_discovery"},
@@ -89,8 +89,8 @@
       "requires_policy_pass": true
     },
     {
-      "oracle_id": "confirm-structural-portable-1",
-      "task_id": "confirm_structural_portable_1",
+      "oracle_id": "confirm-structural-web-2",
+      "task_id": "confirm_structural_web_2",
       "type": "structural_pattern",
       "required_terms": ["match"],
       "required_row_values": {"expected_proof_layer": "structural_scope"},
@@ -115,8 +115,8 @@
       "requires_policy_pass": true
     },
     {
-      "oracle_id": "confirm-runtime-portable-1",
-      "task_id": "confirm_runtime_portable_1",
+      "oracle_id": "confirm-runtime-ios-2",
+      "task_id": "confirm_runtime_ios_2",
       "type": "build_runtime_boundary",
       "required_terms": ["proof"],
       "forbidden_terms": ["build passed", "tests passed", "runtime verified"],
@@ -165,8 +165,8 @@
       "requires_policy_pass": true
     },
     {
-      "oracle_id": "pilot-known-portable",
-      "task_id": "pilot_known_portable",
+      "oracle_id": "pilot-known-web-2",
+      "task_id": "pilot_known_web_2",
       "type": "semantic_identity",
       "required_terms": ["declaration"],
       "required_row_values": {"expected_proof_layer": "semantic_identity_or_search_labeled"},

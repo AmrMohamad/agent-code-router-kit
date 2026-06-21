@@ -1,6 +1,7 @@
 study_id: router-effect-v1
 design_type: 2x2_factorial
 arms: A-search-only,B-search-summary,C-lsp-naive,D-full-router
+repository_labels: ios_reference,web_reference
 order_design: balanced-latin-square
 minimum_repeats: 4
 parallelism: 1

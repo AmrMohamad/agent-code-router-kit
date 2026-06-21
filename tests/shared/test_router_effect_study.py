@@ -56,7 +56,7 @@ def make_git_repo(path: Path) -> None:
 def write_study_task(path: Path) -> None:
     path.write_text(
         "task_id\ttask_family\trepo\tprompt\troute_profiles\tedit_allowed\tbuild_allowed\texpected_proof_layer\texpected_success_signal\tforbidden_claims\ttimeout_seconds\n"
-        "study_task\tknown_symbol_definition\tsample\tFind the sample declaration and report route-appropriate evidence.\tA-search-only,B-search-summary,C-lsp-naive,D-full-router\tfalse\tfalse\tsemantic_identity_or_search_labeled\tdeclaration reported\tDo not claim runtime behavior.\t900\n",
+        "study_task\tknown_symbol_definition\tios_reference\tFind the sample declaration and report route-appropriate evidence.\tA-search-only,B-search-summary,C-lsp-naive,D-full-router\tfalse\tfalse\tsemantic_identity_or_search_labeled\tdeclaration reported\tDo not claim runtime behavior.\t900\n",
         encoding="utf-8",
     )
 
@@ -196,6 +196,18 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
 
 
 class RouterEffectStudyTests(unittest.TestCase):
+    def test_router_effect_v1_task_manifests_use_only_ios_and_web_labels(self) -> None:
+        allowed = {"ios_reference", "web_reference"}
+        study_dir = ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1"
+        for name, expected_count in {
+            "pilot-tasks.tsv": 6,
+            "confirmatory-tasks.tsv": 15,
+        }.items():
+            with self.subTest(name=name):
+                tasks = load_tasks(study_dir / name)
+                self.assertEqual(len(tasks), expected_count)
+                self.assertLessEqual({task.repo for task in tasks}, allowed)
+
     def test_balanced_latin_square_places_each_arm_once_per_position(self) -> None:
         arms = ["A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"]
         square = balanced_latin_square(arms)
@@ -362,7 +374,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                         "--repo",
                         str(repo),
                         "--repo-map",
-                        f"sample={repo}",
+                        f"ios_reference={repo}",
                         "--tasks",
                         str(tasks),
                         "--task-oracles",
@@ -642,7 +654,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                         "--repo",
                         str(repo),
                         "--repo-map",
-                        f"sample={repo}",
+                        f"ios_reference={repo}",
                         "--tasks",
                         str(tasks),
                         "--task-oracles",
@@ -900,6 +912,21 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_package_hash_match", bad_plan_codes)
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            bad_tasks = root / "bad-tasks.tsv"
+            bad_tasks.write_text(
+                tasks.read_text(encoding="utf-8").replace("\tios_reference\t", "\tserver_reference\t", 1),
+                encoding="utf-8",
+            )
+            bad_tasks_manifest = dict(manifest)
+            bad_tasks_package = dict(manifest["study_package"])
+            bad_tasks_package["task_manifest_path"] = str(bad_tasks)
+            bad_tasks_package["task_manifest_sha256"] = file_sha256(bad_tasks)
+            bad_tasks_manifest["study_package"] = bad_tasks_package
+            manifest_path.write_text(json.dumps(bad_tasks_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            bad_repo_label_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("confirmatory_repository_labels", {issue["code"] for issue in bad_repo_label_audit["issues"]})
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
             semantic_index = next(index for index, row in enumerate(row_lines) if row["semantic_access_enabled"])
             row_lines[semantic_index]["serena_readiness_status"] = "fail"
@@ -973,11 +1000,11 @@ class RouterEffectStudyTests(unittest.TestCase):
                 {
                     "rerun_failed": True,
                     "rerun_carried_forward_runs": 1,
-                    "rerun_carried_forward_cells": ["codex/A-search-only/study_task/sample/0"],
+                    "rerun_carried_forward_cells": ["codex/A-search-only/study_task/ios_reference/0"],
                     "invalid_carried_forward_runs": 1,
-                    "invalid_carried_forward_cells": ["codex/B-search-summary/study_task/sample/0"],
+                    "invalid_carried_forward_cells": ["codex/B-search-summary/study_task/ios_reference/0"],
                     "missing_artifact_carried_forward_runs": 1,
-                    "missing_artifact_carried_forward_cells": ["codex/C-lsp-naive/study_task/sample/0"],
+                    "missing_artifact_carried_forward_cells": ["codex/C-lsp-naive/study_task/ios_reference/0"],
                 }
             )
             manifest_path.write_text(json.dumps(tainted_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -1018,7 +1045,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                         "--repo",
                         str(repo),
                         "--repo-map",
-                        f"sample={repo}",
+                        f"ios_reference={repo}",
                         "--tasks",
                         str(tasks),
                         "--task-oracles",
@@ -1041,7 +1068,7 @@ class RouterEffectStudyTests(unittest.TestCase):
 
             analysis = analyze(out, metric="model_visible_proxy_tokens")
             self.assertIn("pairwise_effects_by_repo", analysis)
-            self.assertIn("sample", analysis["pairwise_effects_by_repo"]["A-search-only_to_D-full-router"])
+            self.assertIn("ios_reference", analysis["pairwise_effects_by_repo"]["A-search-only_to_D-full-router"])
             self.assertIn("factorial_effects", analysis)
             self.assertIn("correctness_pairwise", analysis)
             self.assertTrue(analysis["correctness_pairwise"]["A-search-only_to_D-full-router"]["noninferiority_passed"])
@@ -1070,7 +1097,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue((public / "treatment-diffs.sanitized.jsonl").exists())
             public_text = (public / "runs.sanitized.jsonl").read_text(encoding="utf-8")
             self.assertNotIn("study_task", public_text)
-            self.assertNotIn("sample", public_text)
+            self.assertNotIn("ios_reference", public_text)
             self.assertNotIn(str(repo), public_text)
             public_rows = [json.loads(line) for line in public_text.splitlines()]
             self.assertEqual(public_rows[0]["task_public_id"], "task_001")
@@ -1113,7 +1140,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertNotIn("task_oracles_sha256", manifest["study_package"])
             self.assertNotIn("task_manifest_path", manifest["study_package"])
             public_analysis_text = (public / "analysis.sanitized.json").read_text(encoding="utf-8")
-            self.assertNotIn('"sample":', public_analysis_text)
+            self.assertNotIn('"ios_reference":', public_analysis_text)
             public_analysis = json.loads(public_analysis_text)
             self.assertEqual(public_analysis["cluster_unit"], "repository_task")
             self.assertIn(
@@ -1124,7 +1151,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(public_power["cluster_unit"], "repository_task")
             public_treatment_text = (public / "treatment-diffs.sanitized.jsonl").read_text(encoding="utf-8")
             self.assertNotIn("study_task", public_treatment_text)
-            self.assertNotIn('"sample"', public_treatment_text)
+            self.assertNotIn('"ios_reference"', public_treatment_text)
             public_treatment_rows = [json.loads(line) for line in public_treatment_text.splitlines()]
             self.assertEqual(public_treatment_rows[0]["task_public_id"], "task_001")
             self.assertEqual(public_treatment_rows[0]["repo_public_id"], "repo_001")
@@ -1169,7 +1196,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                             "--repo",
                             str(repo),
                             "--repo-map",
-                            f"sample={repo}",
+                            f"ios_reference={repo}",
                             "--tasks",
                             str(tasks),
                             "--study-plan",

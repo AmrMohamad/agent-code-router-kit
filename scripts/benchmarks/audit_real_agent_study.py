@@ -397,6 +397,14 @@ def _study_plan_arms_and_repeats(path: Path) -> tuple[list[str], int]:
     return arms, minimum_repeats
 
 
+def _study_plan_repository_labels(path: Path) -> set[str]:
+    plan = load_simple_yaml(path)
+    raw = plan.get("repository_labels", "")
+    if isinstance(raw, list):
+        return {str(item).strip() for item in raw if str(item).strip()}
+    return {item.strip() for item in str(raw).split(",") if item.strip()}
+
+
 def audit_confirmatory_matrix_completion(
     *,
     manifest: dict[str, object],
@@ -438,6 +446,17 @@ def audit_confirmatory_matrix_completion(
     if not expected_tasks:
         add_issue(issues, "fail", "confirmatory_matrix_tasks", "frozen confirmatory task manifest has no tasks")
         return
+    expected_repos = _study_plan_repository_labels(study_plan_path)
+    observed_task_repos = {repo for repo, _task_id in expected_tasks}
+    if expected_repos:
+        unexpected_repos = sorted(observed_task_repos - expected_repos)
+        if unexpected_repos:
+            add_issue(
+                issues,
+                "fail",
+                "confirmatory_repository_labels",
+                "frozen confirmatory task manifest uses undeclared repository labels: " + ",".join(unexpected_repos),
+            )
 
     observed_counts: Counter[tuple[str, str, str, str, int]] = Counter()
     unexpected_cells: list[tuple[str, str, str, str, object]] = []
