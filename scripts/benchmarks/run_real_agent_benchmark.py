@@ -144,12 +144,14 @@ def build_study_package_metadata(args: argparse.Namespace, *, study_plan) -> dic
 
 def semantic_session_artifact(
     *,
+    run_id: str,
     profile_id: str,
     semantic_access_enabled: bool,
     isolated_serena_session: bool,
     hermetic_environment,
     serena_readiness: dict[str, object] | None,
     tool_versions: dict[str, str],
+    project_path_hmac: str,
 ) -> dict[str, object]:
     language_versions = {
         "sourcekit-lsp": tool_versions.get("sourcekit-lsp", ""),
@@ -158,24 +160,45 @@ def semantic_session_artifact(
     }
     if not semantic_access_enabled:
         return {
+            "session_id": "",
             "profile": profile_id,
             "semantic_access_enabled": False,
             "mode": "disabled",
             "isolated": True,
             "mcp_server_configured": False,
+            "transport": "",
             "semantic_session_home": "",
+            "serena_home": "",
+            "xdg_config_home": "",
+            "xdg_cache_home": "",
+            "xdg_data_home": "",
+            "project_path_hmac": "",
             "readiness_status": "",
             "readiness_ready": None,
             "language_server_versions": language_versions,
             "teardown_policy": "no semantic MCP server configured for this arm",
         }
+    semantic_home = Path(hermetic_environment.semantic_session_home) if hermetic_environment else None
+    serena_home = semantic_home / "home" if semantic_home else None
+    xdg_config_home = semantic_home / "xdg-config" if semantic_home else None
+    xdg_cache_home = semantic_home / "xdg-cache" if semantic_home else None
+    xdg_data_home = semantic_home / "xdg-data" if semantic_home else None
     return {
+        "session_id": run_id,
         "profile": profile_id,
         "semantic_access_enabled": True,
         "mode": "codex_mcp_stdio_per_run",
         "isolated": bool(isolated_serena_session and hermetic_environment),
         "mcp_server_configured": True,
+        "transport": "stdio",
         "semantic_session_home": hermetic_environment.semantic_session_home if hermetic_environment else "",
+        "serena_home": str(serena_home) if serena_home else "",
+        "xdg_config_home": str(xdg_config_home) if xdg_config_home else "",
+        "xdg_cache_home": str(xdg_cache_home) if xdg_cache_home else "",
+        "xdg_data_home": str(xdg_data_home) if xdg_data_home else "",
+        "mcp_env_keys": ["RARB_SERENA_SESSION_HOME", "SERENA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"],
+        "project_path_hmac": project_path_hmac,
+        "requires_unique_port": False,
         "readiness_status": serena_readiness.get("status") if serena_readiness else "",
         "readiness_ready": serena_readiness.get("ready") if serena_readiness else None,
         "language_server_versions": language_versions,
@@ -1158,12 +1181,14 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             run_row=row,
         )
         semantic_session = semantic_session_artifact(
+            run_id=run_id,
             profile_id=profile_id,
             semantic_access_enabled=bool(row["semantic_access_enabled"]),
             isolated_serena_session=args.isolated_serena_session,
             hermetic_environment=hermetic_environment,
             serena_readiness=serena_readiness,
             tool_versions=tool_versions,
+            project_path_hmac=private_hmac(task_repo_path, key_env=args.hmac_key_env),
         )
         to_json_file(run_dir / "semantic-session.json", semantic_session)
         oracle_payload = asdict(oracle_result)
@@ -1173,6 +1198,10 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
                 "semantic_session_mode": semantic_session["mode"],
                 "semantic_session_isolated": semantic_session["isolated"],
                 "semantic_session_artifact": "semantic-session.json",
+                "semantic_session_id_hmac": private_hmac(str(semantic_session.get("session_id", "")), key_env=args.hmac_key_env)
+                if semantic_session.get("semantic_access_enabled")
+                else "",
+                "semantic_project_path_hmac": semantic_session.get("project_path_hmac", ""),
                 "codex_version": tool_versions.get("codex", ""),
                 "serena_version": tool_versions.get("serena", ""),
                 "sourcekit_lsp_version": tool_versions.get("sourcekit-lsp", ""),

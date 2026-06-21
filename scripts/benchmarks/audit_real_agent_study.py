@@ -113,6 +113,14 @@ def manifest_repo_state(manifest: dict[str, object], key: str, field: str) -> di
     return value if isinstance(value, dict) else {}
 
 
+def path_is_under(path: str, parent: str) -> bool:
+    try:
+        Path(path).resolve().relative_to(Path(parent).resolve())
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def audit_confirmatory_study_package(
     *,
     manifest: dict[str, object],
@@ -248,6 +256,7 @@ def audit(
 
     positions_by_arm: Counter[tuple[str, int]] = Counter()
     positions_by_task_arm: Counter[tuple[str, str, str, int]] = Counter()
+    semantic_session_ids: Counter[str] = Counter()
     cells_by_block: dict[tuple[str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
     live = manifest.get("live") is True
     for row in rows:
@@ -340,15 +349,39 @@ def audit(
             if semantic_session.get("semantic_access_enabled") != factors.semantic_access_enabled:
                 add_issue(issues, "fail", "semantic_session_factor", f"run {row.get('run_id')} semantic-session factor mismatch")
             if factors.semantic_access_enabled:
+                session_id = str(semantic_session.get("session_id", ""))
+                semantic_session_ids[session_id] += 1
+                if not session_id or session_id != row.get("run_id"):
+                    add_issue(issues, "fail", "semantic_session_id", f"run {row.get('run_id')} semantic session id must match run id")
                 if semantic_session.get("mode") != "codex_mcp_stdio_per_run":
                     add_issue(issues, "fail", "semantic_session_mode", f"run {row.get('run_id')} semantic session is not per-run Codex MCP stdio")
                 if semantic_session.get("isolated") is not True:
                     add_issue(issues, "fail", "semantic_session_isolation", f"run {row.get('run_id')} semantic session is not isolated")
                 if semantic_session.get("mcp_server_configured") is not True:
                     add_issue(issues, "fail", "semantic_mcp_config", f"run {row.get('run_id')} has no semantic MCP config")
+                if semantic_session.get("transport") != "stdio":
+                    add_issue(issues, "fail", "semantic_session_transport", f"run {row.get('run_id')} semantic session must use stdio transport")
+                semantic_home = str(semantic_session.get("semantic_session_home", ""))
+                run_dir = str(row.get("run_dir", ""))
+                if not semantic_home or not Path(semantic_home).exists() or not path_is_under(semantic_home, run_dir):
+                    add_issue(issues, "fail", "semantic_session_home", f"run {row.get('run_id')} semantic session home is not inside the run directory")
+                for field in ("serena_home", "xdg_config_home", "xdg_cache_home", "xdg_data_home"):
+                    value = str(semantic_session.get(field, ""))
+                    if not value or not Path(value).exists() or not path_is_under(value, semantic_home):
+                        add_issue(issues, "fail", field, f"run {row.get('run_id')} semantic {field} is not inside the session home")
+                env_keys = {str(item) for item in semantic_session.get("mcp_env_keys", []) or []}
+                required_env_keys = {"RARB_SERENA_SESSION_HOME", "SERENA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"}
+                if required_env_keys - env_keys:
+                    add_issue(issues, "fail", "semantic_session_env", f"run {row.get('run_id')} semantic session lacks isolated env keys")
+                if not is_hmac_fingerprint(semantic_session.get("project_path_hmac")):
+                    add_issue(issues, "fail", "semantic_project_path_hmac", f"run {row.get('run_id')} semantic session lacks project path HMAC")
+                if not is_hmac_fingerprint(row.get("semantic_session_id_hmac")):
+                    add_issue(issues, "fail", "semantic_session_id_hmac", f"run {row.get('run_id')} lacks semantic session id HMAC")
             else:
                 if semantic_session.get("mode") != "disabled" or semantic_session.get("mcp_server_configured") is not False:
                     add_issue(issues, "fail", "semantic_session_disabled", f"run {row.get('run_id')} search-only semantic session is not disabled")
+                if semantic_session.get("session_id") not in {"", None} or row.get("semantic_session_id_hmac") not in {"", None}:
+                    add_issue(issues, "fail", "semantic_session_disabled_id", f"run {row.get('run_id')} search-only semantic session must not carry a session id")
         if not (Path(str(row.get("run_dir", ""))) / "oracle.json").exists():
             add_issue(issues, "fail", "oracle_artifact", f"run {row.get('run_id')} has no oracle.json")
         if row.get("oracle_status") in {"", "not_configured", None}:
@@ -360,6 +393,9 @@ def audit(
         counts = [positions_by_arm[(arm, position)] for position in range(1, 5)]
         if len(set(counts)) > 1:
             add_issue(issues, "fail", "position_balance", f"{arm} position counts are not balanced: {counts}")
+    duplicate_semantic_sessions = [session_id for session_id, count in semantic_session_ids.items() if session_id and count > 1]
+    if duplicate_semantic_sessions:
+        add_issue(issues, "fail", "semantic_session_unique", "semantic session ids must be unique per semantic run")
     task_ids = sorted({(str(row.get("agent", "")), str(row.get("task_id", ""))) for row in rows})
     for agent, task_id in task_ids:
         for arm in FACTORIAL_ARM_ORDER:

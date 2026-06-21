@@ -204,6 +204,9 @@ The runner enforces the study controls when `--study-plan` is present:
 - isolated semantic-session configuration for C/D;
 - per-run `semantic-session.json` artifacts proving semantic access is either
   disabled or isolated through Codex MCP stdio;
+- unique semantic-session ids for C/D, with isolated Serena home plus
+  `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, and `XDG_DATA_HOME` under the run
+  directory;
 - captured tool versions;
 - row-level Codex, Serena, language-server, and OS version provenance;
 - external task oracle artifacts;

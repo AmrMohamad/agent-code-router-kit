@@ -60,6 +60,8 @@ PUBLIC_ROW_FIELDS = [
     "semantic_session_mode",
     "semantic_session_isolated",
     "semantic_session_artifact",
+    "semantic_session_id_hmac",
+    "semantic_project_path_hmac",
     "codex_version",
     "serena_version",
     "sourcekit_lsp_version",

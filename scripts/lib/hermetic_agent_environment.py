@@ -50,6 +50,7 @@ class HermeticAgentEnvironment:
 
 
 def serena_mcp_config(*, repo_path: str | Path, semantic_home: str | Path) -> dict[str, object]:
+    semantic_root = Path(semantic_home).resolve()
     return {
         "command": "serena",
         "args": [
@@ -67,8 +68,11 @@ def serena_mcp_config(*, repo_path: str | Path, semantic_home: str | Path) -> di
             "false",
         ],
         "env": {
-            "RARB_SERENA_SESSION_HOME": str(Path(semantic_home).resolve()),
-            "XDG_CONFIG_HOME": str((Path(semantic_home).resolve() / "xdg-config")),
+            "RARB_SERENA_SESSION_HOME": str(semantic_root),
+            "SERENA_HOME": str(semantic_root / "home"),
+            "XDG_CONFIG_HOME": str(semantic_root / "xdg-config"),
+            "XDG_CACHE_HOME": str(semantic_root / "xdg-cache"),
+            "XDG_DATA_HOME": str(semantic_root / "xdg-data"),
         },
         "startup_timeout_sec": 30,
         "tool_timeout_sec": 120,
@@ -106,6 +110,8 @@ def materialize_hermetic_agent_environment(
     semantic_home = out / "serena-session"
     codex_home.mkdir(parents=True, exist_ok=True)
     semantic_home.mkdir(parents=True, exist_ok=True)
+    for child in ("home", "xdg-config", "xdg-cache", "xdg-data"):
+        (semantic_home / child).mkdir(parents=True, exist_ok=True)
     auth_files_copied = copy_codex_auth_files(codex_home=codex_home) if agent_profile.agent_id == "codex" else []
     runtime_mcp_servers: dict[str, object] = {}
     normalized_mcp_servers: dict[str, object] = {}
@@ -129,7 +135,10 @@ def materialize_hermetic_agent_environment(
             ],
             "env": {
                 "RARB_SERENA_SESSION_HOME": "<isolated-serena-session>",
+                "SERENA_HOME": "<isolated-serena-home>",
                 "XDG_CONFIG_HOME": "<isolated-serena-xdg-config>",
+                "XDG_CACHE_HOME": "<isolated-serena-xdg-cache>",
+                "XDG_DATA_HOME": "<isolated-serena-xdg-data>",
             },
             "startup_timeout_sec": 30,
             "tool_timeout_sec": 120,

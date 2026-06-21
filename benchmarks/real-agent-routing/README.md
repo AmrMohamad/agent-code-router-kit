@@ -69,7 +69,10 @@ Study mode requires clean detached snapshots, a fresh controlled Codex home per
 run, isolated semantic-session configuration for semantic arms, captured tool
 versions, external task oracles, and balanced Latin-square ordering. It writes
 per-run `effective-agent-config.json`, `effective-agent-config.sha256`,
-`treatment-diff.json`, and `oracle.json` artifacts. The run manifest also
+`treatment-diff.json`, `semantic-session.json`, and `oracle.json` artifacts.
+Semantic C/D runs use per-run Codex MCP stdio sessions with isolated Serena and
+XDG homes under the run directory; A/B rows record semantic access as disabled.
+The run manifest also
 pins the study package with hashes for the study plan, protocol, analysis plan,
 oracle file, and task manifest; private task/oracle inputs are additionally
 fingerprinted with keyed HMACs for safe public evidence.
