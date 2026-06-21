@@ -1267,11 +1267,11 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "completion_reason": bridge_result.completion_reason,
             "failure_reason": metrics.get("failure_reason", ""),
             "wall_seconds": metrics.get("wall_seconds", 0),
-            "semantic_setup_seconds": round(semantic_setup_seconds, 3),
+            "semantic_setup_seconds": round(semantic_setup_seconds, 6),
             "task_execution_seconds": metrics.get("task_execution_seconds", metrics.get("wall_seconds", 0)),
             "end_to_end_seconds": metrics.get(
                 "end_to_end_seconds",
-                round(float(metrics.get("wall_seconds", 0) or 0) + semantic_setup_seconds, 3),
+                round(float(metrics.get("wall_seconds", 0) or 0) + semantic_setup_seconds, 6),
             ),
             "correctness_status": judge["correctness_status"],
             "policy_adherence": judge["policy_adherence"],

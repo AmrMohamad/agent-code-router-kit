@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -108,6 +109,16 @@ def exact_token_value(row: dict[str, object], field: str) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return None
     return value
+
+
+def timing_value(row: dict[str, object], field: str) -> float | None:
+    value = row.get(field)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric < 0:
+        return None
+    return numeric
 
 
 def has_arg_pair(args: list[str], option: str, value: str) -> bool:
@@ -957,10 +968,40 @@ def audit(
                     add_issue(issues, "fail", "exact_token_consistency", f"live study run {row.get('run_id')} exact uncached total does not equal uncached input plus output")
             if exact_token_value(row, "exact_usage_event_count") is None or int(row.get("exact_usage_event_count", 0) or 0) <= 0:
                 add_issue(issues, "fail", "exact_usage_event_count", f"live study run {row.get('run_id')} lacks a positive exact usage event count")
-            for timing_field in ("semantic_setup_seconds", "task_execution_seconds", "end_to_end_seconds"):
-                value = row.get(timing_field)
-                if not isinstance(value, int | float) or value < 0:
-                    add_issue(issues, "fail", timing_field, f"live study run {row.get('run_id')} lacks non-negative {timing_field}")
+            timing_values = {
+                field: timing_value(row, field)
+                for field in ("wall_seconds", "semantic_setup_seconds", "task_execution_seconds", "end_to_end_seconds")
+            }
+            for timing_field, value in timing_values.items():
+                if value is None:
+                    add_issue(issues, "fail", timing_field, f"live study run {row.get('run_id')} lacks non-negative finite {timing_field}")
+            wall_seconds = timing_values["wall_seconds"]
+            semantic_setup_seconds = timing_values["semantic_setup_seconds"]
+            task_execution_seconds = timing_values["task_execution_seconds"]
+            end_to_end_seconds = timing_values["end_to_end_seconds"]
+            if wall_seconds is not None and wall_seconds <= 0:
+                add_issue(issues, "fail", "wall_seconds", f"live study run {row.get('run_id')} lacks positive wall_seconds")
+            if task_execution_seconds is not None and task_execution_seconds <= 0:
+                add_issue(issues, "fail", "task_execution_seconds", f"live study run {row.get('run_id')} lacks positive task_execution_seconds")
+            if (
+                wall_seconds is not None
+                and task_execution_seconds is not None
+                and abs(task_execution_seconds - wall_seconds) > 0.05
+            ):
+                add_issue(issues, "fail", "timing_decomposition", f"live study run {row.get('run_id')} task_execution_seconds must match wall_seconds")
+            if (
+                semantic_setup_seconds is not None
+                and task_execution_seconds is not None
+                and end_to_end_seconds is not None
+            ):
+                expected_end_to_end = semantic_setup_seconds + task_execution_seconds
+                if abs(end_to_end_seconds - expected_end_to_end) > 0.05:
+                    add_issue(issues, "fail", "timing_decomposition", f"live study run {row.get('run_id')} end_to_end_seconds must equal semantic setup plus task execution")
+                if factors.semantic_access_enabled:
+                    if confirmatory and manifest.get("prewarm_semantic_layer") is True and semantic_setup_seconds <= 0:
+                        add_issue(issues, "fail", "semantic_setup_seconds", f"live semantic run {row.get('run_id')} lacks positive prewarm setup timing")
+                elif semantic_setup_seconds != 0:
+                    add_issue(issues, "fail", "semantic_setup_seconds", f"live nonsemantic run {row.get('run_id')} must not report semantic setup time")
         semantic_session = semantic_session_for_row(row)
         if semantic_session is None:
             add_issue(issues, "fail", "semantic_session_artifact", f"run {row.get('run_id')} has no semantic-session.json")

@@ -128,6 +128,7 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                     "exact_uncached_total_tokens": value + 50,
                     "exact_reasoning_output_tokens": 0,
                     "exact_usage_event_count": 1,
+                    "wall_seconds": 1.0,
                     "semantic_setup_seconds": 0.25 if row["semantic_access_enabled"] else 0.0,
                     "task_execution_seconds": 1.0,
                     "end_to_end_seconds": 1.25 if row["semantic_access_enabled"] else 1.0,
@@ -806,6 +807,28 @@ class RouterEffectStudyTests(unittest.TestCase):
             )
             inconsistent_token_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("exact_token_consistency", {issue["code"] for issue in inconsistent_token_audit["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            bad_timing_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            bad_timing_rows[0]["end_to_end_seconds"] = 0.5
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in bad_timing_rows),
+                encoding="utf-8",
+            )
+            bad_timing_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("timing_decomposition", {issue["code"] for issue in bad_timing_audit["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
+            missing_setup_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            semantic_index = next(index for index, row in enumerate(missing_setup_rows) if row["semantic_access_enabled"])
+            missing_setup_rows[semantic_index]["semantic_setup_seconds"] = 0.0
+            missing_setup_rows[semantic_index]["end_to_end_seconds"] = missing_setup_rows[semantic_index]["task_execution_seconds"]
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in missing_setup_rows),
+                encoding="utf-8",
+            )
+            missing_setup_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("semantic_setup_seconds", {issue["code"] for issue in missing_setup_audit["issues"]})
             runs_path.write_text(original_runs_text, encoding="utf-8")
 
             analysis = analyze(out, metric="exact_uncached_input_tokens")
