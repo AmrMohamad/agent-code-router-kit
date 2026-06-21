@@ -16,7 +16,7 @@ from scripts.benchmarks.analyze_real_agent_study import analyze as compute_study
 from scripts.benchmarks.estimate_study_power import estimate as compute_study_power
 from scripts.lib.agent_session import to_json_file
 from scripts.lib.agent_session import load_simple_yaml, load_tasks
-from scripts.lib.environment_capture import file_sha256
+from scripts.lib.environment_capture import file_sha256, text_sha256
 from scripts.lib.experiment_design import BALANCED_LATIN_SQUARE_4
 from scripts.lib.task_oracles import load_task_oracles, validate_task_oracle_plan
 from scripts.lib.treatment_diff_artifacts import build_treatment_diff_rows
@@ -60,6 +60,8 @@ LANGUAGE_SERVER_VERSION_FIELDS = {
     "vscode-json-languageserver": "json_language_server_version",
 }
 SERENA_PROCESS_STATE_KEYS = ("serena_mcp", "sourcekit_lsp", "kotlin_lsp", "json_lsp")
+ROOT = Path(__file__).resolve().parents[2]
+RESPONSE_CONTRACT_PATH = ROOT / "benchmarks" / "real-agent-routing" / "contracts" / "response-contract.md"
 EXACT_TOKEN_FIELDS = (
     "exact_input_tokens",
     "exact_cached_input_tokens",
@@ -332,6 +334,12 @@ def usable_tool_version(value: object) -> bool:
         return False
     text = value.strip()
     return bool(text) and not text.startswith("not_available") and not text.startswith("returncode:")
+
+
+def current_response_contract_hash() -> str:
+    if not RESPONSE_CONTRACT_PATH.is_file():
+        return ""
+    return text_sha256(RESPONSE_CONTRACT_PATH.read_text(encoding="utf-8"))
 
 
 def is_git_object_id(value: object) -> bool:
@@ -868,6 +876,9 @@ def audit(
         audit_confirmatory_controller_provenance(manifest=manifest, rows=rows, issues=issues)
         audit_confirmatory_rerun_policy(manifest=manifest, issues=issues)
         audit_treatment_diff_artifact(base=base, rows=rows, issues=issues)
+    expected_response_contract_hash = current_response_contract_hash()
+    if confirmatory and not is_sha256_hex(expected_response_contract_hash):
+        add_issue(issues, "fail", "response_contract_hash", "confirmatory audit requires the checked-in response contract file")
 
     arms = set(str(row.get("profile", "")) for row in rows)
     missing_arms = [arm for arm in FACTORIAL_ARM_ORDER if arm not in arms]
@@ -1006,6 +1017,16 @@ def audit(
                 add_issue(issues, "fail", "row_route_profile_hash_match", f"run {row.get('run_id')} route profile hash does not match manifest")
         if not is_sha256_hex(row.get("task_prompt_sha256")):
             add_issue(issues, "fail", "task_prompt_sha256", f"run {row.get('run_id')} has no valid task prompt SHA-256")
+        if confirmatory:
+            if not is_sha256_hex(row.get("response_contract_hash")):
+                add_issue(issues, "fail", "response_contract_hash", f"run {row.get('run_id')} has no valid response contract hash")
+            elif expected_response_contract_hash and row.get("response_contract_hash") != expected_response_contract_hash:
+                add_issue(
+                    issues,
+                    "fail",
+                    "response_contract_hash",
+                    f"run {row.get('run_id')} response contract hash does not match the checked-in contract",
+                )
         if not is_hmac_fingerprint(row.get("task_prompt_hmac")):
             add_issue(issues, "fail", "task_prompt_hmac", f"run {row.get('run_id')} has no valid task prompt HMAC")
         if not is_hmac_fingerprint(row.get("source_state_hmac")):
@@ -1288,6 +1309,21 @@ def audit(
                 add_issue(issues, "fail", "effective_config_missing", f"{key}/{profile} missing effective-agent-config.json")
             elif config.get("route_profile_hash") != profile_rows[profile].get("route_profile_hash"):
                 add_issue(issues, "fail", "effective_config_route_profile_hash", f"{key}/{profile} route profile hash differs between row and effective config")
+            elif confirmatory:
+                if config.get("response_contract") != profile_rows[profile].get("response_contract_hash"):
+                    add_issue(
+                        issues,
+                        "fail",
+                        "effective_config_response_contract",
+                        f"{key}/{profile} response contract hash differs between row and effective config",
+                    )
+                elif expected_response_contract_hash and config.get("response_contract") != expected_response_contract_hash:
+                    add_issue(
+                        issues,
+                        "fail",
+                        "effective_config_response_contract",
+                        f"{key}/{profile} response contract hash does not match the checked-in contract",
+                    )
         if any(config is None for config in configs.values()):
             continue
         prompt_hashes = {str(row.get("task_prompt_sha256", "")) for row in profile_rows.values()}

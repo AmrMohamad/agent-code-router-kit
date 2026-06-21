@@ -1267,6 +1267,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             "agent_config_hash": hermetic_environment.effective_config_sha256 if hermetic_environment else "",
             "model_id": args.model_id,
             "reasoning_effort": args.reasoning_effort,
+            "response_contract_hash": response_contract_hash,
             "run_dir": str(run_dir),
             "completion_reason": bridge_result.completion_reason,
             "failure_reason": metrics.get("failure_reason", ""),

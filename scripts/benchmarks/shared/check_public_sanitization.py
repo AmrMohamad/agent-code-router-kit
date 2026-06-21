@@ -310,6 +310,7 @@ ROUTER_EFFECT_STUDY_RUN_ROW_KEYS = {
     "python_version",
     "repeat_index",
     "repo_public_id",
+    "response_contract_hash",
     "route_profile_hash",
     "routing_discipline_enabled",
     "rg_version",

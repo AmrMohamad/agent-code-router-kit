@@ -59,6 +59,7 @@ PUBLIC_ROW_FIELDS = [
     "ast_grep_count",
     "agent_config_hash",
     "route_profile_hash",
+    "response_contract_hash",
     "task_prompt_hmac",
     "source_state_hmac",
     "snapshot_state_hmac",

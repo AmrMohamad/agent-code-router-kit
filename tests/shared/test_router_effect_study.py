@@ -17,7 +17,7 @@ from scripts.benchmarks.run_real_agent_benchmark import main
 from scripts.benchmarks.shared.check_public_sanitization import public_evidence_schema_violations
 from scripts.benchmarks.verify_task_oracles import main as verify_task_oracles_main
 from scripts.lib.agent_session import AgentProfile, load_route_profile, load_tasks
-from scripts.lib.environment_capture import file_sha256
+from scripts.lib.environment_capture import file_sha256, text_sha256
 from scripts.lib.experiment_design import balanced_latin_square, load_study_plan
 from scripts.lib.hermetic_agent_environment import materialize_hermetic_agent_environment
 from scripts.lib.route_isolation import materialize_route_isolation
@@ -26,6 +26,7 @@ from scripts.lib.treatment_config import diff_effective_agent_configs
 
 
 ROOT = Path(__file__).resolve().parents[2]
+RESPONSE_CONTRACT_PATH = ROOT / "benchmarks/real-agent-routing/contracts/response-contract.md"
 SYNTHETIC_TOOL_VERSIONS = {
     "os": "test-os",
     "python": "python-test 3.14",
@@ -498,6 +499,7 @@ class RouterEffectStudyTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stdout.getvalue())
             rows = [json.loads(line) for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines()]
+            expected_response_contract_hash = text_sha256(RESPONSE_CONTRACT_PATH.read_text(encoding="utf-8"))
             self.assertEqual(len(rows), 16)
             self.assertEqual({row["profile"] for row in rows}, {"A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"})
             for profile in {"A-search-only", "B-search-summary", "C-lsp-naive", "D-full-router"}:
@@ -529,6 +531,7 @@ class RouterEffectStudyTests(unittest.TestCase):
                 self.assertEqual(row["route_profile_hash"], manifest["route_profile_hashes"][row["profile"]])
                 self.assertEqual(row["model_id"], manifest["model_id"])
                 self.assertEqual(row["reasoning_effort"], manifest["reasoning_effort"])
+                self.assertEqual(row["response_contract_hash"], expected_response_contract_hash)
                 semantic_session = json.loads((run_dir / "semantic-session.json").read_text(encoding="utf-8"))
                 self.assertTrue(row["semantic_teardown_verified"])
                 self.assertEqual(row["semantic_process_survivor_count"], 0)
@@ -1183,6 +1186,16 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("row_route_profile_hash_match", {issue["code"] for issue in bad_route_hash_audit["issues"]})
             runs_path.write_text(original_runs_text, encoding="utf-8")
 
+            bad_contract_rows = [json.loads(line) for line in original_runs_text.splitlines()]
+            bad_contract_rows[0]["response_contract_hash"] = "0" * 64
+            runs_path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in bad_contract_rows),
+                encoding="utf-8",
+            )
+            bad_contract_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn("response_contract_hash", {issue["code"] for issue in bad_contract_audit["issues"]})
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
             first_row = json.loads(original_runs_text.splitlines()[0])
             effective_config_path = Path(first_row["run_dir"]) / "effective-agent-config.json"
             effective_config = json.loads(effective_config_path.read_text(encoding="utf-8"))
@@ -1191,6 +1204,16 @@ class RouterEffectStudyTests(unittest.TestCase):
             effective_config_path.write_text(json.dumps(effective_config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             bad_effective_hash_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
             self.assertIn("effective_config_route_profile_hash", {issue["code"] for issue in bad_effective_hash_audit["issues"]})
+            effective_config_path.write_text(json.dumps(original_effective_config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            effective_config = dict(original_effective_config)
+            effective_config["response_contract"] = "0" * 64
+            effective_config_path.write_text(json.dumps(effective_config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            bad_effective_contract_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn(
+                "effective_config_response_contract",
+                {issue["code"] for issue in bad_effective_contract_audit["issues"]},
+            )
             effective_config_path.write_text(json.dumps(original_effective_config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             malformed_cost_analysis = dict(priced_analysis)
@@ -1481,6 +1504,10 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("exact_uncached_total_tokens", public_rows[0])
             self.assertIn("exact_usage_event_count", public_rows[0])
             self.assertIn("semantic_session_mode", public_rows[0])
+            self.assertEqual(
+                public_rows[0]["response_contract_hash"],
+                text_sha256(RESPONSE_CONTRACT_PATH.read_text(encoding="utf-8")),
+            )
             self.assertIn("semantic_teardown_verified", public_rows[0])
             self.assertIn("semantic_child_lsp_survivor_count", public_rows[0])
             self.assertIn("serena_process_state_before", public_rows[0])
