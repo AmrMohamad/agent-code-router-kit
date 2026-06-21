@@ -306,6 +306,9 @@ The `--confirmatory` gate requires a live run from the frozen
 custom task manifests, custom oracle files, dry-runs, missing
 `study-analysis.json`, missing `study-power.json`, or run rows whose
 `task_manifest_hash` does not match the frozen package in `run-manifest.json`.
+It also recomputes the frozen study-package file hashes and validates the
+analysis plan's primary outcome, repository/task cluster unit, factorial
+effects, stratification fields, and power inputs before accepting the run.
 The analysis and power artifacts must use the preregistered primary context
 metric, `exact_uncached_input_tokens`.
 The confirmatory audit recomputes both artifacts from the current `runs.jsonl`;

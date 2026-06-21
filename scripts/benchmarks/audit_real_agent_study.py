@@ -14,7 +14,8 @@ if __package__ in {None, ""}:
 from scripts.benchmarks.analyze_real_agent_study import analyze as compute_study_analysis
 from scripts.benchmarks.estimate_study_power import estimate as compute_study_power
 from scripts.lib.agent_session import to_json_file
-from scripts.lib.agent_session import load_tasks
+from scripts.lib.agent_session import load_simple_yaml, load_tasks
+from scripts.lib.environment_capture import file_sha256
 from scripts.lib.task_oracles import load_task_oracles, validate_task_oracle_plan
 from scripts.lib.treatment_diff_artifacts import build_treatment_diff_rows
 from scripts.lib.treatment_config import (
@@ -81,9 +82,15 @@ def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
         "correctness_pairwise",
         "multiple_comparison_correction",
         "correctness_noninferiority_margin",
+        "cell_key_fields",
+        "cluster_unit",
         "cost",
     ]
     if any(key not in analysis for key in required):
+        return False
+    if analysis.get("cell_key_fields") != ["agent", "task_id", "repo", "repeat_index"]:
+        return False
+    if analysis.get("cluster_unit") != "repository_task":
         return False
     pairwise = analysis.get("pairwise_effects")
     if not isinstance(pairwise, dict):
@@ -192,6 +199,8 @@ def _power_has_required_shape(power: dict[str, object]) -> bool:
     }
     return (
         power.get("method") == "normal_approximation_on_paired_log_ratios"
+        and power.get("cell_key_fields") == ["agent", "task_id", "repo", "repeat_index"]
+        and power.get("cluster_unit") == "repository_task"
         and isinstance(power.get("z_alpha_two_sided"), int | float)
         and isinstance(power.get("z_power"), int | float)
         and isinstance(pairwise, dict)
@@ -264,7 +273,15 @@ def audit_confirmatory_study_package(
     for field in required_hashes:
         if not is_sha256_hex(package.get(field)):
             add_issue(issues, "fail", "study_package_hash", f"study_package.{field} is missing or not a SHA-256 hex digest")
-    required_hmacs = ["task_oracles_hmac", "task_manifest_hmac"]
+    for name in ("study_plan", "protocol", "analysis_plan", "task_oracles", "task_manifest"):
+        path = Path(str(package.get(f"{name}_path", "")))
+        expected_hash = str(package.get(f"{name}_sha256", ""))
+        if not path.exists():
+            add_issue(issues, "fail", "study_package_file", f"study_package.{name}_path is not readable")
+            continue
+        if is_sha256_hex(expected_hash) and file_sha256(path) != expected_hash:
+            add_issue(issues, "fail", "study_package_hash_match", f"study_package.{name}_sha256 does not match the frozen file")
+    required_hmacs = ["study_plan_hmac", "protocol_hmac", "analysis_plan_hmac", "task_oracles_hmac", "task_manifest_hmac"]
     for field in required_hmacs:
         if not is_hmac_fingerprint(package.get(field)):
             add_issue(issues, "fail", "study_package_hmac", f"study_package.{field} is missing or not a keyed HMAC fingerprint")
@@ -299,6 +316,92 @@ def audit_confirmatory_oracle_plan(*, manifest: dict[str, object], issues: list[
             "fail",
             "task_oracle_plan",
             "confirmatory task oracle plan failed: " + ",".join(code for code in issue_codes if code),
+        )
+
+
+def _plan_bool(plan: dict[str, object], key: str) -> bool | None:
+    value = plan.get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.lower() in {"true", "false"}:
+        return value.lower() == "true"
+    return None
+
+
+def _plan_float(plan: dict[str, object], key: str) -> float | None:
+    value = plan.get(key)
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def audit_confirmatory_analysis_plan(*, manifest: dict[str, object], issues: list[dict[str, object]]) -> None:
+    package = manifest.get("study_package")
+    if not isinstance(package, dict):
+        return
+    analysis_plan_path = Path(str(package.get("analysis_plan_path", "")))
+    if not analysis_plan_path.exists():
+        add_issue(issues, "fail", "analysis_plan", "confirmatory audit requires a readable frozen analysis-plan file")
+        return
+    plan = load_simple_yaml(analysis_plan_path)
+    required_scalars = {
+        "primary_correctness": "external_oracle_pass",
+        "primary_context_metric": "exact_uncached_input_tokens",
+        "cluster_unit": "repository_task",
+        "continuous_effect": "paired_log_ratio",
+        "correctness_effect": "paired_binary_mcnemar_or_bootstrap",
+        "multiple_comparison_correction": "holm",
+        "public_repository_effects": "opaque_repo_ids_only",
+    }
+    wrong_scalars = [
+        key
+        for key, expected in required_scalars.items()
+        if str(plan.get(key, "")) != expected
+    ]
+    required_booleans = {
+        "intention_to_treat": True,
+        "pass_pass_sensitivity": True,
+    }
+    wrong_booleans = [
+        key
+        for key, expected in required_booleans.items()
+        if _plan_bool(plan, key) is not expected
+    ]
+    required_floats = {
+        "minimum_meaningful_uncached_input_reduction": 0.15,
+        "correctness_noninferiority_margin": 0.05,
+        "alpha": 0.05,
+        "power": 0.80,
+        "confidence_interval": 0.95,
+    }
+    wrong_floats = [
+        key
+        for key, expected in required_floats.items()
+        if _plan_float(plan, key) != expected
+    ]
+    list_like_fields = {
+        "factorial_effects": {"semantic_access", "routing_discipline", "interaction"},
+        "stratified_effects": {"task_family", "repository", "sequence_position"},
+    }
+    wrong_list_like = []
+    for key, expected in list_like_fields.items():
+        raw = plan.get(key, "")
+        observed = {item.strip() for item in str(raw).split(",") if item.strip()}
+        if not expected.issubset(observed):
+            wrong_list_like.append(key)
+    wrong_fields = sorted(wrong_scalars + wrong_booleans + wrong_floats + wrong_list_like)
+    if wrong_fields:
+        add_issue(
+            issues,
+            "fail",
+            "analysis_plan",
+            "confirmatory analysis-plan fields do not match the preregistered router-effect-v1 analysis: "
+            + ",".join(wrong_fields),
         )
 
 
@@ -404,6 +507,7 @@ def audit(
     if confirmatory:
         audit_confirmatory_study_package(manifest=manifest, rows=rows, issues=issues)
         audit_confirmatory_oracle_plan(manifest=manifest, issues=issues)
+        audit_confirmatory_analysis_plan(manifest=manifest, issues=issues)
         audit_confirmatory_rerun_policy(manifest=manifest, issues=issues)
         audit_treatment_diff_artifact(base=base, rows=rows, issues=issues)
 

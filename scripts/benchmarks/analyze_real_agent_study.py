@@ -447,6 +447,8 @@ def analyze(
     return {
         "analysis_id": "router-effect-v1",
         "metric": metric,
+        "cell_key_fields": ["agent", "task_id", "repo", "repeat_index"],
+        "cluster_unit": "repository_task",
         "run_count": len(rows),
         "arm_counts": dict(Counter(str(row.get("profile", "")) for row in rows)),
         "expected_arms": FACTORIAL_ARM_ORDER,

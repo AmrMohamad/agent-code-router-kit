@@ -118,6 +118,8 @@ def estimate(
     return {
         "status": "estimated" if primary.get("status") == "estimated" else "insufficient_pilot_data",
         "metric": metric,
+        "cell_key_fields": ["agent", "task_id", "repo", "repeat_index"],
+        "cluster_unit": "repository_task",
         "primary_comparison": PRIMARY_COMPARISON,
         "pair_count": primary.get("pair_count", 0),
         "pilot_log_ratio_variance": primary.get("pilot_log_ratio_variance"),

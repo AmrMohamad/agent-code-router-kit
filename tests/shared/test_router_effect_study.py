@@ -205,6 +205,8 @@ class RouterEffectStudyTests(unittest.TestCase):
             result = analyze(root, metric="exact_uncached_input_tokens")
             comparison = "A-search-only_to_D-full-router"
 
+            self.assertEqual(result["cell_key_fields"], ["agent", "task_id", "repo", "repeat_index"])
+            self.assertEqual(result["cluster_unit"], "repository_task")
             self.assertEqual(result["pairwise_effects"][comparison]["pair_count"], 2)
             self.assertEqual(result["correctness_pairwise"][comparison]["pair_count"], 2)
             self.assertEqual(
@@ -629,6 +631,8 @@ class RouterEffectStudyTests(unittest.TestCase):
                 power=0.80,
             )
             self.assertEqual(power["primary_comparison"], "A-search-only_to_D-full-router")
+            self.assertEqual(power["cell_key_fields"], ["agent", "task_id", "repo", "repeat_index"])
+            self.assertEqual(power["cluster_unit"], "repository_task")
             self.assertEqual(set(power["pairwise_power"]), {
                 "A-search-only_to_B-search-summary",
                 "A-search-only_to_C-lsp-naive",
@@ -719,6 +723,25 @@ class RouterEffectStudyTests(unittest.TestCase):
             no_prewarm_codes = {issue["code"] for issue in no_prewarm["issues"]}
             self.assertIn("prewarm_semantic_layer", no_prewarm_codes)
             self.assertIn("serena_readiness_enabled", no_prewarm_codes)
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            bad_analysis_plan = root / "bad-analysis-plan.yaml"
+            good_analysis_plan_text = (
+                ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/analysis-plan.yaml"
+            ).read_text(encoding="utf-8")
+            bad_analysis_plan.write_text(
+                good_analysis_plan_text.replace("cluster_unit: repository_task", "cluster_unit: task_id"),
+                encoding="utf-8",
+            )
+            bad_plan_manifest = dict(manifest)
+            bad_plan_package = dict(manifest["study_package"])
+            bad_plan_package["analysis_plan_path"] = str(bad_analysis_plan)
+            bad_plan_manifest["study_package"] = bad_plan_package
+            manifest_path.write_text(json.dumps(bad_plan_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            bad_plan_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            bad_plan_codes = {issue["code"] for issue in bad_plan_audit["issues"]}
+            self.assertIn("analysis_plan", bad_plan_codes)
+            self.assertIn("study_package_hash_match", bad_plan_codes)
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
             runs_path = out / "runs.jsonl"
@@ -863,6 +886,9 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_task_oracle_and_manifest_hashes_omitted"])
+            self.assertIn("study_plan_hmac", manifest["study_package"])
+            self.assertIn("protocol_hmac", manifest["study_package"])
+            self.assertIn("analysis_plan_hmac", manifest["study_package"])
             self.assertIn("task_manifest_hmac", manifest["study_package"])
             self.assertIn("task_oracles_hmac", manifest["study_package"])
             self.assertNotIn("task_manifest_sha256", manifest["study_package"])
@@ -871,10 +897,13 @@ class RouterEffectStudyTests(unittest.TestCase):
             public_analysis_text = (public / "analysis.sanitized.json").read_text(encoding="utf-8")
             self.assertNotIn('"sample":', public_analysis_text)
             public_analysis = json.loads(public_analysis_text)
+            self.assertEqual(public_analysis["cluster_unit"], "repository_task")
             self.assertIn(
                 "repo_001",
                 public_analysis["pairwise_effects_by_repo"]["A-search-only_to_D-full-router"],
             )
+            public_power = json.loads((public / "power.sanitized.json").read_text(encoding="utf-8"))
+            self.assertEqual(public_power["cluster_unit"], "repository_task")
             public_treatment_text = (public / "treatment-diffs.sanitized.jsonl").read_text(encoding="utf-8")
             self.assertNotIn("study_task", public_treatment_text)
             self.assertNotIn('"sample"', public_treatment_text)

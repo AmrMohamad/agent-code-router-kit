@@ -48,9 +48,11 @@ project names, symbols, prompts, and snippets must not be committed.
 The confirmatory package is frozen by hashing the study plan, this protocol,
 the analysis plan, the task oracle file, and the confirmatory task manifest
 before execution. The publishable audit must reject any run that uses a custom
-task manifest or oracle file, or whose run rows do not match the frozen task
-manifest hash. Public bundles may expose keyed HMAC fingerprints for private
-task/oracle inputs, not plain private-input hashes.
+task manifest or oracle file, whose frozen package file hashes no longer match
+the referenced files, whose analysis-plan semantics drift from this protocol,
+or whose run rows do not match the frozen task manifest hash. Public bundles may
+expose keyed HMAC fingerprints for private task/oracle inputs, not plain
+private-input hashes.
 
 Each confirmatory task requires a task-specific external oracle contract.
 Family-level fallback oracles are acceptable only for exploratory development
