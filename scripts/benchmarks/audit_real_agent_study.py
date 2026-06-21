@@ -366,6 +366,10 @@ def audit(
         add_issue(issues, "fail", "isolated_agent_home", "study requires fresh controlled agent home per run")
     if manifest.get("isolated_serena_session") is not True:
         add_issue(issues, "fail", "isolated_serena_session", "study requires isolated semantic sessions")
+    if confirmatory and manifest.get("prewarm_semantic_layer") is not True:
+        add_issue(issues, "fail", "prewarm_semantic_layer", "confirmatory study requires semantic readiness prewarm")
+    if confirmatory and manifest.get("serena_readiness_enabled") is not True:
+        add_issue(issues, "fail", "serena_readiness_enabled", "confirmatory study requires Serena readiness checks")
     if manifest.get("capture_versions") is not True or not manifest.get("tool_versions"):
         add_issue(issues, "fail", "version_capture", "study requires captured tool/controller versions")
     if manifest.get("model_id") in {"", "not_pinned", None}:
@@ -496,6 +500,10 @@ def audit(
                 add_issue(issues, "fail", "exact_token_source", f"live study run {row.get('run_id')} is not exact-token sourced")
             if not isinstance(row.get("exact_uncached_input_tokens"), int):
                 add_issue(issues, "fail", "exact_uncached_input_tokens", f"live study run {row.get('run_id')} lacks exact uncached input tokens")
+            for timing_field in ("semantic_setup_seconds", "task_execution_seconds", "end_to_end_seconds"):
+                value = row.get(timing_field)
+                if not isinstance(value, int | float) or value < 0:
+                    add_issue(issues, "fail", timing_field, f"live study run {row.get('run_id')} lacks non-negative {timing_field}")
         semantic_session = semantic_session_for_row(row)
         if semantic_session is None:
             add_issue(issues, "fail", "semantic_session_artifact", f"run {row.get('run_id')} has no semantic-session.json")
@@ -543,6 +551,14 @@ def audit(
                     add_issue(issues, "fail", "semantic_project_path_hmac", f"run {row.get('run_id')} semantic session lacks project path HMAC")
                 if not is_hmac_fingerprint(row.get("semantic_session_id_hmac")):
                     add_issue(issues, "fail", "semantic_session_id_hmac", f"run {row.get('run_id')} lacks semantic session id HMAC")
+                if confirmatory and live:
+                    if row.get("serena_readiness_status") != "pass" or row.get("serena_readiness_ready") is not True:
+                        add_issue(issues, "fail", "semantic_readiness", f"run {row.get('run_id')} semantic readiness did not pass before task execution")
+                    if semantic_session.get("readiness_status") != "pass" or semantic_session.get("readiness_ready") is not True:
+                        add_issue(issues, "fail", "semantic_session_readiness", f"run {row.get('run_id')} semantic-session artifact does not prove passed readiness")
+                    readiness_path = Path(str(row.get("run_dir", ""))) / "serena-readiness.json"
+                    if not readiness_path.exists():
+                        add_issue(issues, "fail", "semantic_readiness_artifact", f"run {row.get('run_id')} has no serena-readiness.json")
             else:
                 if semantic_session.get("mode") != "disabled" or semantic_session.get("mcp_server_configured") is not False:
                     add_issue(issues, "fail", "semantic_session_disabled", f"run {row.get('run_id')} search-only semantic session is not disabled")

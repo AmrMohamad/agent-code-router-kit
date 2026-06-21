@@ -25,6 +25,7 @@ class StudyPlan:
     require_clean_snapshots: bool
     require_fresh_agent_home: bool
     require_isolated_serena: bool
+    require_prewarm_semantic_layer: bool
     require_capture_versions: bool
     require_external_oracles: bool
     arms: list[str]
@@ -62,6 +63,7 @@ def load_study_plan(path: str | Path) -> StudyPlan:
         require_clean_snapshots=bool(data.get("require_clean_snapshots", True)),
         require_fresh_agent_home=bool(data.get("require_fresh_agent_home", True)),
         require_isolated_serena=bool(data.get("require_isolated_serena", True)),
+        require_prewarm_semantic_layer=bool(data.get("require_prewarm_semantic_layer", True)),
         require_capture_versions=bool(data.get("require_capture_versions", True)),
         require_external_oracles=bool(data.get("require_external_oracles", True)),
         arms=arms,

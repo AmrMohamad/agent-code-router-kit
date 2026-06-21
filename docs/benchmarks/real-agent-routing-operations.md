@@ -209,6 +209,8 @@ The runner enforces the study controls when `--study-plan` is present:
   directory;
 - captured tool versions;
 - row-level Codex, Serena, language-server, and OS version provenance;
+- semantic readiness prewarm for C/D cells before task execution, with
+  `semantic_setup_seconds` reported separately from `task_execution_seconds`;
 - external task oracle artifacts;
 - frozen study-package provenance in `run-manifest.json`, including hashes for
   the study plan, protocol, analysis plan, oracle file, and task manifest;
@@ -309,6 +311,9 @@ Captured Codex, Serena, language-server, and OS versions must also be stable
 within each four-arm block. Row-level language-server fields must match the
 per-run `semantic-session.json` artifact, so stale semantic-session metadata
 cannot silently support a fixed-tooling claim.
+Live confirmatory semantic-access rows must also show passed Serena readiness
+in both `runs.jsonl` and `semantic-session.json`, and include the
+`serena-readiness.json` artifact created before task execution.
 If `study-analysis.json` reports `cost.status=estimated`, the audit also
 requires the pricing model to match the pinned study model and every arm to
 include total cost, median cost, cost per run, and cost per successful task.

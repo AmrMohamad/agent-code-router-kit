@@ -21,6 +21,9 @@ context use and correctness relative to controlled baselines.
 
 Every arm runs from a fresh controlled Codex home with user config, rules, and
 plugins ignored. Only semantic access and routing discipline may differ.
+Semantic-access arms require a readiness prewarm before task execution. The
+readiness result and semantic setup time are reported separately from task
+execution time.
 
 ## Order Design
 

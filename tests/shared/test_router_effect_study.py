@@ -94,6 +94,8 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
     manifest = json.loads((out / "run-manifest.json").read_text(encoding="utf-8"))
     manifest["dry_run"] = False
     manifest["live"] = True
+    manifest["prewarm_semantic_layer"] = True
+    manifest["serena_readiness_enabled"] = True
     package = dict(manifest.get("study_package", {}))
     package["task_split"] = "confirmatory"
     package["task_oracles_source"] = "study_plan"
@@ -117,11 +119,36 @@ def promote_dry_run_to_synthetic_live_study(out: Path) -> None:
                     "exact_uncached_input_tokens": value,
                     "exact_output_tokens": 50,
                     "exact_total_tokens": value + 150,
+                    "semantic_setup_seconds": 0.25 if row["semantic_access_enabled"] else 0.0,
+                    "task_execution_seconds": 1.0,
+                    "end_to_end_seconds": 1.25 if row["semantic_access_enabled"] else 1.0,
+                    "serena_readiness_status": "pass" if row["semantic_access_enabled"] else "",
+                    "serena_readiness_ready": True if row["semantic_access_enabled"] else None,
+                    "serena_readiness_reason": "",
                     "codex_version": "codex-test 1.0",
                     "serena_version": "serena-test 1.0",
                     "os_version": "test-os",
                 }
             )
+            if row["semantic_access_enabled"]:
+                run_dir = Path(row["run_dir"])
+                readiness = {
+                    "status": "pass",
+                    "ready": True,
+                    "reason": "",
+                    "symbol": "StudySymbol",
+                    "source_file": "Sources/StudySymbol.swift",
+                    "warnings": [],
+                }
+                (run_dir / "serena-readiness.json").write_text(
+                    json.dumps(readiness, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                semantic_path = run_dir / "semantic-session.json"
+                semantic_payload = json.loads(semantic_path.read_text(encoding="utf-8"))
+                semantic_payload["readiness_status"] = "pass"
+                semantic_payload["readiness_ready"] = True
+                semantic_path.write_text(json.dumps(semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
@@ -609,6 +636,41 @@ class RouterEffectStudyTests(unittest.TestCase):
 
             manifest_path = out / "run-manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            no_prewarm_manifest = dict(manifest)
+            no_prewarm_manifest["prewarm_semantic_layer"] = False
+            no_prewarm_manifest["serena_readiness_enabled"] = False
+            manifest_path.write_text(json.dumps(no_prewarm_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            no_prewarm = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            no_prewarm_codes = {issue["code"] for issue in no_prewarm["issues"]}
+            self.assertIn("prewarm_semantic_layer", no_prewarm_codes)
+            self.assertIn("serena_readiness_enabled", no_prewarm_codes)
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            runs_path = out / "runs.jsonl"
+            original_runs_text = runs_path.read_text(encoding="utf-8")
+            row_lines = [json.loads(line) for line in original_runs_text.splitlines()]
+            semantic_index = next(index for index, row in enumerate(row_lines) if row["semantic_access_enabled"])
+            row_lines[semantic_index]["serena_readiness_status"] = "fail"
+            row_lines[semantic_index]["serena_readiness_ready"] = False
+            semantic_path = Path(row_lines[semantic_index]["run_dir"]) / "semantic-session.json"
+            semantic_payload = json.loads(semantic_path.read_text(encoding="utf-8"))
+            original_semantic_payload = dict(semantic_payload)
+            semantic_payload["readiness_status"] = "fail"
+            semantic_payload["readiness_ready"] = False
+            semantic_path.write_text(json.dumps(semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            readiness_path = Path(row_lines[semantic_index]["run_dir"]) / "serena-readiness.json"
+            readiness_text = readiness_path.read_text(encoding="utf-8")
+            readiness_path.unlink()
+            runs_path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in row_lines), encoding="utf-8")
+            readiness_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            readiness_codes = {issue["code"] for issue in readiness_audit["issues"]}
+            self.assertIn("semantic_readiness", readiness_codes)
+            self.assertIn("semantic_session_readiness", readiness_codes)
+            self.assertIn("semantic_readiness_artifact", readiness_codes)
+            semantic_path.write_text(json.dumps(original_semantic_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            readiness_path.write_text(readiness_text, encoding="utf-8")
+            runs_path.write_text(original_runs_text, encoding="utf-8")
+
             tainted_manifest = dict(manifest)
             tainted_manifest.update(
                 {

@@ -57,6 +57,7 @@ def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
     args.order_design = study_plan.order_design
     args.isolated_agent_home = True
     args.isolated_serena_session = True
+    args.prewarm_semantic_layer = study_plan.require_prewarm_semantic_layer
     args.capture_versions = True
     args.require_snapshots = study_plan.require_clean_snapshots
     args.parallelism = study_plan.parallelism
@@ -68,6 +69,8 @@ def apply_study_controls(args: argparse.Namespace, *, study_plan) -> None:
         raise SystemExit("study plan requires --parallelism 1")
     if study_plan.require_clean_snapshots and not args.snapshot_repos:
         raise SystemExit("study plan requires --snapshot-repos")
+    if study_plan.require_prewarm_semantic_layer and args.skip_serena_readiness:
+        raise SystemExit("study plan requires semantic readiness prewarm; remove --skip-serena-readiness")
     if args.allow_dirty:
         raise SystemExit("study plan does not allow --allow-dirty")
     if study_plan.require_external_oracles and not args.task_oracles:
@@ -969,7 +972,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             not args.dry_run
             and not args.skip_serena_readiness
             and route_uses_serena(effective_profile)
-            and task_needs_serena_source_readiness(run_task)
+            and (args.prewarm_semantic_layer or task_needs_serena_source_readiness(run_task))
         ):
             semantic_setup_started = time.monotonic()
             readiness = run_serena_source_symbol_readiness(
@@ -982,6 +985,11 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
             semantic_setup_seconds = time.monotonic() - semantic_setup_started
             write_serena_readiness(run_dir / "serena-readiness.json", readiness)
             serena_readiness = asdict(readiness)
+            if args.prewarm_semantic_layer and not readiness.ready:
+                raise SystemExit(
+                    "semantic readiness prewarm failed before live semantic-router run; "
+                    f"inspect {run_dir / 'serena-readiness.json'}"
+                )
             if args.require_clean_serena_process_state:
                 enforce_clean_serena_process_state(readiness=serena_readiness, run_dir=run_dir)
         prompt = render_task_packet(

@@ -7,6 +7,7 @@ parallelism: 1
 require_clean_snapshots: true
 require_fresh_agent_home: true
 require_isolated_serena: true
+require_prewarm_semantic_layer: true
 require_capture_versions: true
 require_external_oracles: true
 protocol_path: protocol.md
