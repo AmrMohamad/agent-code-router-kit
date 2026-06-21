@@ -216,9 +216,12 @@ ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS = {
         "tool_versions",
     },
     "audit.sanitized.json": {
+        "audit_mode",
         "arm_counts",
         "fail_count",
         "issue_counts",
+        "min_task_families",
+        "min_tasks_per_family",
         "run_count",
         "status",
     },

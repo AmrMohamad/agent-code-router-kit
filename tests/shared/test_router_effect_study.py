@@ -1165,7 +1165,15 @@ class RouterEffectStudyTests(unittest.TestCase):
                     ]
                 )
 
-            analysis = analyze(out, metric="model_visible_proxy_tokens")
+            promote_dry_run_to_synthetic_live_study(out)
+            pricing = {
+                "model_id": "codex-test-model",
+                "input_per_1m": 2.0,
+                "cached_input_per_1m": 0.5,
+                "output_per_1m": 8.0,
+                "reasoning_output_per_1m": 8.0,
+            }
+            analysis = analyze(out, metric="exact_uncached_input_tokens", pricing=pricing)
             self.assertIn("pairwise_effects_by_repo", analysis)
             self.assertIn("ios_reference", analysis["pairwise_effects_by_repo"]["A-search-only_to_D-full-router"])
             self.assertIn("factorial_effects", analysis)
@@ -1173,11 +1181,12 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(analysis["correctness_pairwise"]["A-search-only_to_D-full-router"]["noninferiority_passed"])
             self.assertEqual(analysis["multiple_comparison_correction"]["method"], "holm")
             self.assertIn("cluster_bootstrap_95ci_percent", analysis["pairwise_effects"]["A-search-only_to_D-full-router"])
+            self.assertEqual(analysis["cost"]["status"], "estimated")
             (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             rows = [json.loads(line) for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines()]
             power = estimate(
                 rows,
-                metric="model_visible_proxy_tokens",
+                metric="exact_uncached_input_tokens",
                 minimum_effect=0.15,
                 floor_repeats=4,
                 alpha=0.05,
@@ -1185,7 +1194,9 @@ class RouterEffectStudyTests(unittest.TestCase):
             )
             (out / "study-power.json").write_text(json.dumps(power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-            result = build_public_bundle(root=out, out=public)
+            with self.assertRaisesRegex(SystemExit, "confirmatory audit"):
+                build_public_bundle(root=out, out=public)
+            result = build_public_bundle(root=out, out=public, min_task_families=1, min_tasks_per_family=1)
             schema_violations = []
             for path in sorted(public.iterdir()):
                 schema_violations.extend(public_evidence_schema_violations(path, root))
@@ -1194,6 +1205,11 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue((public / "power.sanitized.json").exists())
             self.assertTrue((public / "audit.sanitized.json").exists())
             self.assertTrue((public / "treatment-diffs.sanitized.jsonl").exists())
+            public_audit = json.loads((public / "audit.sanitized.json").read_text(encoding="utf-8"))
+            self.assertEqual(public_audit["audit_mode"], "confirmatory")
+            self.assertEqual(public_audit["status"], "pass")
+            self.assertEqual(public_audit["min_task_families"], 1)
+            self.assertEqual(public_audit["min_tasks_per_family"], 1)
             public_text = (public / "runs.sanitized.jsonl").read_text(encoding="utf-8")
             self.assertNotIn("study_task", public_text)
             self.assertNotIn("ios_reference", public_text)

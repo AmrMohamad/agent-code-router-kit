@@ -100,13 +100,27 @@ def public_row(row: dict[str, object], *, task_ids: dict[str, str], repo_ids: di
     return sanitized
 
 
-def sanitized_audit_summary(root: Path) -> dict[str, object]:
-    result = audit(root)
+def sanitized_audit_summary(
+    root: Path,
+    *,
+    confirmatory: bool,
+    min_task_families: int,
+    min_tasks_per_family: int,
+) -> dict[str, object]:
+    result = audit(
+        root,
+        confirmatory=confirmatory,
+        min_task_families=min_task_families,
+        min_tasks_per_family=min_tasks_per_family,
+    )
     issues = result.get("issues", []) if isinstance(result.get("issues"), list) else []
     return {
+        "audit_mode": "confirmatory" if confirmatory else "exploratory",
         "status": result.get("status"),
         "run_count": result.get("run_count", 0),
         "arm_counts": result.get("arm_counts", {}),
+        "min_task_families": min_task_families,
+        "min_tasks_per_family": min_tasks_per_family,
         "issue_counts": dict(Counter(str(issue.get("code", "")) for issue in issues if isinstance(issue, dict))),
         "fail_count": sum(1 for issue in issues if isinstance(issue, dict) and issue.get("severity") == "fail"),
     }
@@ -165,7 +179,21 @@ def sanitized_treatment_diff_row(row: dict[str, object], *, task_ids: dict[str, 
     return sanitized
 
 
-def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
+def build_public_bundle(
+    *,
+    root: Path,
+    out: Path,
+    min_task_families: int = 5,
+    min_tasks_per_family: int = 3,
+) -> dict[str, object]:
+    audit_summary = sanitized_audit_summary(
+        root,
+        confirmatory=True,
+        min_task_families=min_task_families,
+        min_tasks_per_family=min_tasks_per_family,
+    )
+    if audit_summary.get("status") != "pass":
+        raise SystemExit("public study bundle requires a passing confirmatory audit before export")
     out.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((root / "run-manifest.json").read_text(encoding="utf-8"))
     rows = load_jsonl(root / "runs.jsonl")
@@ -203,7 +231,7 @@ def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
     with (out / "runs.sanitized.jsonl").open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(public_row(row, task_ids=task_ids, repo_ids=repo_ids), sort_keys=True) + "\n")
-    to_json_file(out / "audit.sanitized.json", sanitized_audit_summary(root))
+    to_json_file(out / "audit.sanitized.json", audit_summary)
     analysis_path = root / "study-analysis.json"
     if analysis_path.exists():
         analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
@@ -242,8 +270,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build a privacy-safe public bundle from router-effect-v1 study output.")
     parser.add_argument("--root", required=True)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--min-task-families", type=int, default=5)
+    parser.add_argument("--min-tasks-per-family", type=int, default=3)
     args = parser.parse_args(argv)
-    result = build_public_bundle(root=Path(args.root).expanduser().resolve(), out=Path(args.out).expanduser().resolve())
+    if args.min_task_families < 1:
+        parser.error("--min-task-families must be >= 1")
+    if args.min_tasks_per_family < 1:
+        parser.error("--min-tasks-per-family must be >= 1")
+    result = build_public_bundle(
+        root=Path(args.root).expanduser().resolve(),
+        out=Path(args.out).expanduser().resolve(),
+        min_task_families=args.min_task_families,
+        min_tasks_per_family=args.min_tasks_per_family,
+    )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
