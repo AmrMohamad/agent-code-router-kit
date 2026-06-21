@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ if __package__ in {None, ""}:
 
 from scripts.lib.agent_session import to_json_file
 from scripts.lib.environment_capture import file_sha256
+from scripts.benchmarks.audit_real_agent_study import audit
 
 
 PUBLIC_ROW_FIELDS = [
@@ -26,9 +28,7 @@ PUBLIC_ROW_FIELDS = [
     "profile",
     "semantic_access_enabled",
     "routing_discipline_enabled",
-    "task_id",
     "task_family",
-    "repo",
     "completion_reason",
     "oracle_status",
     "correctness_status",
@@ -63,18 +63,38 @@ def load_jsonl(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def public_row(row: dict[str, object]) -> dict[str, object]:
+def public_id_map(values: list[str], *, prefix: str) -> dict[str, str]:
+    return {value: f"{prefix}_{index + 1:03d}" for index, value in enumerate(sorted(set(values)))}
+
+
+def public_row(row: dict[str, object], *, task_ids: dict[str, str], repo_ids: dict[str, str]) -> dict[str, object]:
     sanitized = {key: row.get(key) for key in PUBLIC_ROW_FIELDS if key in row}
+    sanitized["task_public_id"] = task_ids.get(str(row.get("task_id", "")), "")
+    sanitized["repo_public_id"] = repo_ids.get(str(row.get("repo", "")), "")
     sanitized.pop("prompt", None)
     sanitized.pop("repo_path", None)
     sanitized.pop("run_dir", None)
     return sanitized
 
 
+def sanitized_audit_summary(root: Path) -> dict[str, object]:
+    result = audit(root)
+    issues = result.get("issues", []) if isinstance(result.get("issues"), list) else []
+    return {
+        "status": result.get("status"),
+        "run_count": result.get("run_count", 0),
+        "arm_counts": result.get("arm_counts", {}),
+        "issue_counts": dict(Counter(str(issue.get("code", "")) for issue in issues if isinstance(issue, dict))),
+        "fail_count": sum(1 for issue in issues if isinstance(issue, dict) and issue.get("severity") == "fail"),
+    }
+
+
 def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
     out.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((root / "run-manifest.json").read_text(encoding="utf-8"))
     rows = load_jsonl(root / "runs.jsonl")
+    task_ids = public_id_map([str(row.get("task_id", "")) for row in rows], prefix="task")
+    repo_ids = public_id_map([str(row.get("repo", "")) for row in rows], prefix="repo")
     public_manifest = {
         "study_id": manifest.get("study_id"),
         "order_design": manifest.get("order_design"),
@@ -85,20 +105,29 @@ def build_public_bundle(*, root: Path, out: Path) -> dict[str, object]:
         "model_id": manifest.get("model_id"),
         "reasoning_effort": manifest.get("reasoning_effort"),
         "tool_versions": manifest.get("tool_versions", {}),
+        "task_count": len(task_ids),
+        "repo_count": len(repo_ids),
         "privacy": {
             "private_paths_removed": True,
             "private_prompts_removed": True,
+            "private_task_ids_removed": True,
+            "private_repo_ids_removed": True,
             "private_value_hmac_fields_only": True,
         },
     }
     to_json_file(out / "manifest.sanitized.json", public_manifest)
     with (out / "runs.sanitized.jsonl").open("w", encoding="utf-8") as handle:
         for row in rows:
-            handle.write(json.dumps(public_row(row), sort_keys=True) + "\n")
+            handle.write(json.dumps(public_row(row, task_ids=task_ids, repo_ids=repo_ids), sort_keys=True) + "\n")
+    to_json_file(out / "audit.sanitized.json", sanitized_audit_summary(root))
+    analysis_path = root / "study-analysis.json"
+    if analysis_path.exists():
+        to_json_file(out / "analysis.sanitized.json", json.loads(analysis_path.read_text(encoding="utf-8")))
     readme = (
         "# Router Effect V1 Public Evidence\n\n"
         "This bundle contains sanitized study metadata and run rows. It intentionally "
-        "omits private repository paths, prompts, source snippets, and concrete target symbols.\n"
+        "omits private repository paths, repository names, task ids, prompts, source snippets, "
+        "and concrete target symbols.\n"
     )
     (out / "README.md").write_text(readme, encoding="utf-8")
     artifact_hashes = {

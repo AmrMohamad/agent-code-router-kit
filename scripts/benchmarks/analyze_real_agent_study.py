@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import statistics
 import sys
 from collections import Counter, defaultdict
@@ -27,7 +28,19 @@ def numeric(row: dict[str, object], key: str) -> float | None:
     return None
 
 
-def paired_log_ratios(rows: list[dict[str, object]], *, metric: str, left: str, right: str) -> list[dict[str, object]]:
+def row_passes(row: dict[str, object]) -> bool:
+    status = str(row.get("oracle_status") or row.get("correctness_status") or "")
+    return status == "pass"
+
+
+def paired_log_ratios(
+    rows: list[dict[str, object]],
+    *,
+    metric: str,
+    left: str,
+    right: str,
+    pass_pass_only: bool = False,
+) -> list[dict[str, object]]:
     by_cell: dict[tuple[str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
     for row in rows:
         key = (str(row.get("agent", "")), str(row.get("task_id", "")), int(row.get("repeat_index", 0)))
@@ -35,6 +48,8 @@ def paired_log_ratios(rows: list[dict[str, object]], *, metric: str, left: str, 
     result: list[dict[str, object]] = []
     for key, profiles in by_cell.items():
         if left not in profiles or right not in profiles:
+            continue
+        if pass_pass_only and (not row_passes(profiles[left]) or not row_passes(profiles[right])):
             continue
         left_value = numeric(profiles[left], metric)
         right_value = numeric(profiles[right], metric)
@@ -44,6 +59,7 @@ def paired_log_ratios(rows: list[dict[str, object]], *, metric: str, left: str, 
             {
                 "agent": key[0],
                 "task_id": key[1],
+                "task_family": profiles[left].get("task_family", ""),
                 "repeat_index": key[2],
                 "left_profile": left,
                 "right_profile": right,
@@ -56,6 +72,45 @@ def paired_log_ratios(rows: list[dict[str, object]], *, metric: str, left: str, 
     return result
 
 
+def percentile(values: list[float], q: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * q
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    fraction = position - lower
+    return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
+
+
+def cluster_bootstrap_log_ci(rows: list[dict[str, object]], *, iterations: int = 1000, seed: int = 12345) -> dict[str, float]:
+    if not rows:
+        return {}
+    by_task: dict[str, list[float]] = defaultdict(list)
+    for row in rows:
+        by_task[str(row["task_id"])].append(float(row["log_ratio"]))
+    tasks = sorted(by_task)
+    if not tasks:
+        return {}
+    rng = random.Random(seed)
+    estimates: list[float] = []
+    for _ in range(iterations):
+        sample_logs: list[float] = []
+        for _task in tasks:
+            picked = rng.choice(tasks)
+            sample_logs.extend(by_task[picked])
+        if sample_logs:
+            estimates.append((math.exp(statistics.mean(sample_logs)) - 1.0) * 100.0)
+    return {
+        "lower": round(percentile(estimates, 0.025), 2),
+        "upper": round(percentile(estimates, 0.975), 2),
+    }
+
+
 def summarize_effect(rows: list[dict[str, object]]) -> dict[str, object]:
     if not rows:
         return {"pair_count": 0}
@@ -66,14 +121,113 @@ def summarize_effect(rows: list[dict[str, object]]) -> dict[str, object]:
         "median_percent_change": round(statistics.median(changes), 2),
         "mean_log_effect": round(statistics.mean(logs), 6),
         "mean_log_effect_as_percent": round((math.exp(statistics.mean(logs)) - 1.0) * 100.0, 2),
+        "cluster_bootstrap_95ci_percent": cluster_bootstrap_log_ci(rows),
     }
 
 
-def analyze(root: str | Path, *, metric: str) -> dict[str, object]:
+def block_metric_rows(rows: list[dict[str, object]], *, metric: str, pass_all_only: bool = False) -> list[dict[str, object]]:
+    by_cell: dict[tuple[str, str, int], dict[str, dict[str, object]]] = defaultdict(dict)
+    for row in rows:
+        key = (str(row.get("agent", "")), str(row.get("task_id", "")), int(row.get("repeat_index", 0)))
+        by_cell[key][str(row.get("profile", ""))] = row
+    blocks: list[dict[str, object]] = []
+    for key, profiles in by_cell.items():
+        if any(profile not in profiles for profile in FACTORIAL_ARM_ORDER):
+            continue
+        if pass_all_only and any(not row_passes(profiles[profile]) for profile in FACTORIAL_ARM_ORDER):
+            continue
+        values: dict[str, float] = {}
+        for profile in FACTORIAL_ARM_ORDER:
+            value = numeric(profiles[profile], metric)
+            if value is None:
+                break
+            values[profile] = value
+        if len(values) != len(FACTORIAL_ARM_ORDER):
+            continue
+        blocks.append({"agent": key[0], "task_id": key[1], "repeat_index": key[2], "values": values})
+    return blocks
+
+
+def summarize_factorial_effects(rows: list[dict[str, object]], *, metric: str, pass_all_only: bool = False) -> dict[str, object]:
+    blocks = block_metric_rows(rows, metric=metric, pass_all_only=pass_all_only)
+    effects: dict[str, list[dict[str, object]]] = {
+        "semantic_access_main_effect": [],
+        "routing_discipline_main_effect": [],
+        "interaction": [],
+    }
+    for block in blocks:
+        values = dict(block["values"])
+        logs = {profile: math.log(float(value)) for profile, value in values.items()}
+        effect_values = {
+            "semantic_access_main_effect": ((logs["C-lsp-naive"] + logs["D-full-router"]) / 2.0)
+            - ((logs["A-search-only"] + logs["B-search-summary"]) / 2.0),
+            "routing_discipline_main_effect": ((logs["B-search-summary"] + logs["D-full-router"]) / 2.0)
+            - ((logs["A-search-only"] + logs["C-lsp-naive"]) / 2.0),
+            "interaction": logs["D-full-router"] - logs["C-lsp-naive"] - logs["B-search-summary"] + logs["A-search-only"],
+        }
+        for name, value in effect_values.items():
+            effects[name].append(
+                {
+                    "task_id": block["task_id"],
+                    "log_ratio": value,
+                    "percent_change": (math.exp(value) - 1.0) * 100.0,
+                }
+            )
+    return {name: summarize_effect(values) for name, values in effects.items()}
+
+
+def load_pricing(path: str | Path | None) -> dict[str, float]:
+    if not path:
+        return {}
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {str(key): float(value) for key, value in data.items()}
+
+
+def estimate_row_cost(row: dict[str, object], pricing: dict[str, float]) -> float | None:
+    if not pricing:
+        return None
+    uncached_input = numeric(row, "exact_uncached_input_tokens")
+    cached_input = numeric(row, "exact_cached_input_tokens") or 0.0
+    output = numeric(row, "exact_output_tokens") or 0.0
+    reasoning = numeric(row, "exact_reasoning_output_tokens") or 0.0
+    if uncached_input is None:
+        return None
+    return (
+        uncached_input * pricing.get("input_per_1m", 0.0)
+        + cached_input * pricing.get("cached_input_per_1m", 0.0)
+        + output * pricing.get("output_per_1m", 0.0)
+        + reasoning * pricing.get("reasoning_output_per_1m", 0.0)
+    ) / 1_000_000.0
+
+
+def summarize_costs(rows: list[dict[str, object]], pricing: dict[str, float]) -> dict[str, object]:
+    if not pricing:
+        return {"status": "not_configured"}
+    by_arm: dict[str, list[float]] = defaultdict(list)
+    for row in rows:
+        cost = estimate_row_cost(row, pricing)
+        if cost is not None:
+            by_arm[str(row.get("profile", ""))].append(cost)
+    return {
+        "status": "estimated" if by_arm else "missing_exact_token_inputs",
+        "pricing_per_1m_tokens": pricing,
+        "by_arm": {
+            arm: {
+                "run_count": len(values),
+                "total_estimated_cost": round(sum(values), 6),
+                "median_estimated_cost": round(statistics.median(values), 6),
+            }
+            for arm, values in sorted(by_arm.items())
+        },
+    }
+
+
+def analyze(root: str | Path, *, metric: str, pricing: dict[str, float] | None = None) -> dict[str, object]:
     base = Path(root).expanduser().resolve()
     rows = load_jsonl(base / "runs.jsonl")
     correctness = Counter(str(row.get("oracle_status") or row.get("correctness_status", "")) for row in rows)
     pairwise = {}
+    pass_pass_pairwise = {}
     for left, right in [
         ("A-search-only", "B-search-summary"),
         ("A-search-only", "C-lsp-naive"),
@@ -82,6 +236,8 @@ def analyze(root: str | Path, *, metric: str) -> dict[str, object]:
     ]:
         effects = paired_log_ratios(rows, metric=metric, left=left, right=right)
         pairwise[f"{left}_to_{right}"] = summarize_effect(effects)
+        pass_pass_effects = paired_log_ratios(rows, metric=metric, left=left, right=right, pass_pass_only=True)
+        pass_pass_pairwise[f"{left}_to_{right}"] = summarize_effect(pass_pass_effects)
     return {
         "analysis_id": "router-effect-v1",
         "metric": metric,
@@ -91,9 +247,14 @@ def analyze(root: str | Path, *, metric: str) -> dict[str, object]:
         "correctness_counts": dict(correctness),
         "intention_to_treat_run_count": len(rows),
         "pairwise_effects": pairwise,
+        "pass_pass_sensitivity_pairwise_effects": pass_pass_pairwise,
+        "factorial_effects": summarize_factorial_effects(rows, metric=metric),
+        "pass_all_sensitivity_factorial_effects": summarize_factorial_effects(rows, metric=metric, pass_all_only=True),
+        "cost": summarize_costs(rows, pricing or {}),
         "notes": [
             "Percent change is treatment minus baseline over baseline.",
-            "Pass/pass sensitivity and bootstrap confidence intervals should be generated for final public evidence.",
+            "Cluster bootstrap intervals resample task ids, not tool calls or token events.",
+            "Estimated cost is optional and requires explicit model pricing inputs.",
         ],
     }
 
@@ -102,9 +263,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Analyze router-effect-v1 benchmark output.")
     parser.add_argument("--root", required=True)
     parser.add_argument("--metric", default="exact_uncached_input_tokens")
+    parser.add_argument("--pricing", help="Optional JSON pricing file with per-1M token prices.")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
-    result = analyze(args.root, metric=args.metric)
+    result = analyze(args.root, metric=args.metric, pricing=load_pricing(args.pricing))
     to_json_file(args.out, result)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

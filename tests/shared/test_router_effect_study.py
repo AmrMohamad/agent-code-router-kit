@@ -10,6 +10,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.benchmarks.audit_real_agent_study import audit
+from scripts.benchmarks.analyze_real_agent_study import analyze
+from scripts.benchmarks.build_public_study_evidence import build_public_bundle
 from scripts.benchmarks.run_real_agent_benchmark import main
 from scripts.lib.agent_session import AgentProfile, load_route_profile
 from scripts.lib.experiment_design import balanced_latin_square
@@ -237,6 +239,75 @@ class RouterEffectStudyTests(unittest.TestCase):
             failed_audit = audit(out)
             self.assertEqual(failed_audit["status"], "fail")
             self.assertIn("exact_uncached_input_tokens", {issue["code"] for issue in failed_audit["issues"]})
+
+    def test_study_analysis_and_public_bundle_are_anonymized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            make_git_repo(repo)
+            tasks = root / "tasks.tsv"
+            oracles = root / "oracles.json"
+            out = root / "out"
+            public = root / "public"
+            write_study_task(tasks)
+            write_permissive_oracle(oracles)
+
+            env = {
+                "CODEX_HOME": str(fake_codex_home(root)),
+                "RARB_PRIVATE_HMAC_KEY": "test-hmac-key",
+            }
+            with contextlib.redirect_stdout(io.StringIO()), patch.dict("os.environ", env):
+                main(
+                    [
+                        "--dry-run",
+                        "--agent",
+                        "codex",
+                        "--repo",
+                        str(repo),
+                        "--repo-map",
+                        f"sample={repo}",
+                        "--tasks",
+                        str(tasks),
+                        "--task-oracles",
+                        str(oracles),
+                        "--study-plan",
+                        str(ROOT / "benchmarks/real-agent-routing/studies/router-effect-v1/study.yaml"),
+                        "--arms",
+                        "A-search-only,B-search-summary,C-lsp-naive,D-full-router",
+                        "--repeats",
+                        "4",
+                        "--snapshot-repos",
+                        "--model-id",
+                        "codex-test-model",
+                        "--reasoning-effort",
+                        "low",
+                        "--out",
+                        str(out),
+                    ]
+                )
+
+            analysis = analyze(out, metric="model_visible_proxy_tokens")
+            self.assertIn("factorial_effects", analysis)
+            self.assertIn("cluster_bootstrap_95ci_percent", analysis["pairwise_effects"]["A-search-only_to_D-full-router"])
+            (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            result = build_public_bundle(root=out, out=public)
+            self.assertTrue((public / "analysis.sanitized.json").exists())
+            self.assertTrue((public / "audit.sanitized.json").exists())
+            public_text = (public / "runs.sanitized.jsonl").read_text(encoding="utf-8")
+            self.assertNotIn("study_task", public_text)
+            self.assertNotIn("sample", public_text)
+            self.assertNotIn(str(repo), public_text)
+            public_rows = [json.loads(line) for line in public_text.splitlines()]
+            self.assertEqual(public_rows[0]["task_public_id"], "task_001")
+            self.assertEqual(public_rows[0]["repo_public_id"], "repo_001")
+            self.assertNotIn("task_id", public_rows[0])
+            self.assertNotIn("repo", public_rows[0])
+            manifest = json.loads((public / "manifest.sanitized.json").read_text(encoding="utf-8"))
+            self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
+            self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])
+            self.assertIn("manifest.sanitized.json", result["artifact_hashes"])
 
     def test_study_mode_requires_private_hmac_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

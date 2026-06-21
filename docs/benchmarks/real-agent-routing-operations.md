@@ -244,6 +244,10 @@ python3 scripts/benchmarks/analyze_real_agent_study.py \
   --out results/real-agent-routing/router-effect-v1-dry-run/study-analysis.json
 ```
 
+Pass `--pricing pricing.json` only when the model identifier and per-1M token
+prices are explicit. Cost estimates are reported separately from context
+efficiency and are not inferred from uncached tokens alone.
+
 Build a public bundle only after verifying that private paths, prompts, source
 snippets, symbols, and transcripts are excluded:
 
