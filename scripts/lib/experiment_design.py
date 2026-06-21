@@ -32,6 +32,7 @@ class StudyPlan:
     require_web_tool_versions: bool
     require_explicit_reasoning_effort: bool
     require_external_oracles: bool
+    require_family_repository_crossing: bool
     agents: list[str]
     arms: list[str]
     repository_labels: list[str]
@@ -96,6 +97,7 @@ def load_study_plan(path: str | Path) -> StudyPlan:
         require_web_tool_versions=bool(data.get("require_web_tool_versions", True)),
         require_explicit_reasoning_effort=bool(data.get("require_explicit_reasoning_effort", True)),
         require_external_oracles=bool(data.get("require_external_oracles", True)),
+        require_family_repository_crossing=bool(data.get("require_family_repository_crossing", False)),
         agents=agents,
         arms=arms,
         repository_labels=repository_labels,

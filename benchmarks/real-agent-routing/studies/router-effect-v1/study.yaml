@@ -6,6 +6,7 @@ repository_labels: ios_reference,web_reference
 task_families: known_symbol_definition,high_fanout_symbol,literal_resource,structural_pattern,build_runtime_boundary
 minimum_task_families: 5
 minimum_tasks_per_family: 3
+require_family_repository_crossing: true
 order_design: balanced-latin-square
 minimum_repeats: 4
 parallelism: 1

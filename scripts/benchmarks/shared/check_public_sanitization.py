@@ -212,6 +212,7 @@ ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS = {
         "repository_labels",
         "require_clean_serena_process_state",
         "require_explicit_reasoning_effort",
+        "require_family_repository_crossing",
         "route_profile_hashes",
         "snapshot_scope",
         "snapshot_repos",

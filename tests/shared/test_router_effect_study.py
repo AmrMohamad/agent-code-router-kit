@@ -151,6 +151,7 @@ def write_temp_study_plan(root: Path, *, confirmatory_tasks: Path, pilot_tasks: 
                 "require_web_tool_versions: true",
                 "require_explicit_reasoning_effort: true",
                 "require_external_oracles: true",
+                "require_family_repository_crossing: false",
                 f"protocol_path: {protocol}",
                 f"analysis_plan_path: {analysis_plan}",
                 f"pilot_tasks_path: {pilot_tasks}",
@@ -306,6 +307,7 @@ class RouterEffectStudyTests(unittest.TestCase):
         self.assertEqual(study_plan.repository_labels, ["ios_reference", "web_reference"])
         self.assertEqual(study_plan.minimum_task_families, 5)
         self.assertEqual(study_plan.minimum_tasks_per_family, 3)
+        self.assertTrue(study_plan.require_family_repository_crossing)
         self.assertEqual(
             study_plan.task_families,
             [
@@ -332,7 +334,11 @@ class RouterEffectStudyTests(unittest.TestCase):
                 self.assertLessEqual({task.task_family for task in tasks}, expected_families)
                 task_ids_by_split[name] = {task.task_id for task in tasks}
                 task_keys_by_split[name] = {(task.repo, task.task_id) for task in tasks}
+                self.assertEqual({task.repo for task in tasks}, allowed)
         self.assertEqual({task.task_family for task in load_tasks(study_dir / "confirmatory-tasks.tsv")}, expected_families)
+        confirmatory_tasks = load_tasks(study_dir / "confirmatory-tasks.tsv")
+        for family in expected_families:
+            self.assertEqual({task.repo for task in confirmatory_tasks if task.task_family == family}, allowed)
         self.assertFalse(task_ids_by_split["pilot-tasks.tsv"] & task_ids_by_split["confirmatory-tasks.tsv"])
         self.assertFalse(task_keys_by_split["pilot-tasks.tsv"] & task_keys_by_split["confirmatory-tasks.tsv"])
 
@@ -627,6 +633,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertTrue(manifest["require_clean_serena_process_state"])
             self.assertTrue(manifest["require_explicit_reasoning_effort"])
+            self.assertFalse(manifest["require_family_repository_crossing"])
             self.assertEqual(manifest["order_design"], "balanced-latin-square")
             self.assertEqual(manifest["study_package"]["task_split"], "confirmatory")
             self.assertEqual(manifest["study_package"]["task_oracles_source"], "study_plan")
@@ -1581,6 +1588,82 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("confirmatory_repository_labels", {issue["code"] for issue in bad_repo_label_audit["issues"]})
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            missing_declared_repo_plan = root / "missing-declared-repo-study.yaml"
+            missing_declared_repo_plan.write_text(
+                Path(study_plan).read_text(encoding="utf-8").replace(
+                    "repository_labels: ios_reference",
+                    "repository_labels: ios_reference,web_reference",
+                ),
+                encoding="utf-8",
+            )
+            missing_declared_repo_manifest = dict(manifest)
+            missing_declared_repo_manifest["repository_labels"] = ["ios_reference", "web_reference"]
+            missing_declared_repo_package = dict(manifest["study_package"])
+            missing_declared_repo_package["study_plan_path"] = str(missing_declared_repo_plan)
+            missing_declared_repo_package["study_plan_sha256"] = file_sha256(missing_declared_repo_plan)
+            missing_declared_repo_manifest["study_package"] = missing_declared_repo_package
+            missing_declared_repo_manifest["source_repo_states"] = dict(manifest["source_repo_states"])
+            missing_declared_repo_manifest["source_repo_states"]["web_reference"] = dict(
+                next(iter(manifest["source_repo_states"].values()))
+            )
+            manifest_path.write_text(
+                json.dumps(missing_declared_repo_manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            missing_declared_repo_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn(
+                "confirmatory_repository_labels",
+                {issue["code"] for issue in missing_declared_repo_audit["issues"]},
+            )
+            self.assertTrue(
+                any(
+                    "omits preregistered repository labels" in str(issue.get("message", ""))
+                    for issue in missing_declared_repo_audit["issues"]
+                )
+            )
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            crossing_plan = root / "family-crossing-study.yaml"
+            crossing_plan.write_text(
+                Path(study_plan).read_text(encoding="utf-8")
+                .replace("repository_labels: ios_reference", "repository_labels: ios_reference,web_reference")
+                .replace("task_families: known_symbol_definition", "task_families: known_symbol_definition,structural_pattern")
+                .replace("require_family_repository_crossing: false", "require_family_repository_crossing: true"),
+                encoding="utf-8",
+            )
+            crossing_tasks = root / "family-crossing-tasks.tsv"
+            crossing_tasks.write_text(
+                tasks.read_text(encoding="utf-8")
+                + (
+                    "web_structural_task\tstructural_pattern\tweb_reference\t"
+                    "Determine whether the sample structural pattern is present.\t"
+                    "A-search-only,B-search-summary,C-lsp-naive,D-full-router\t"
+                    "false\tfalse\tstructural_proof\tpolicy_adherence=pass\tnone\t900\n"
+                ),
+                encoding="utf-8",
+            )
+            crossing_manifest = dict(manifest)
+            crossing_manifest["repository_labels"] = ["ios_reference", "web_reference"]
+            crossing_manifest["task_families"] = ["known_symbol_definition", "structural_pattern"]
+            crossing_manifest["require_family_repository_crossing"] = True
+            crossing_manifest["source_repo_states"] = dict(manifest["source_repo_states"])
+            crossing_manifest["source_repo_states"]["web_reference"] = dict(
+                next(iter(manifest["source_repo_states"].values()))
+            )
+            crossing_package = dict(manifest["study_package"])
+            crossing_package["study_plan_path"] = str(crossing_plan)
+            crossing_package["study_plan_sha256"] = file_sha256(crossing_plan)
+            crossing_package["task_manifest_path"] = str(crossing_tasks)
+            crossing_package["task_manifest_sha256"] = file_sha256(crossing_tasks)
+            crossing_manifest["study_package"] = crossing_package
+            manifest_path.write_text(json.dumps(crossing_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            crossing_audit = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn(
+                "confirmatory_family_repository_crossing",
+                {issue["code"] for issue in crossing_audit["issues"]},
+            )
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
             overlapping_pilot_tasks = root / "overlapping-pilot-tasks.tsv"
             overlapping_pilot_tasks.write_text(tasks.read_text(encoding="utf-8"), encoding="utf-8")
             overlapping_manifest = dict(manifest)
@@ -1854,6 +1937,7 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(manifest["task_families"], ["known_symbol_definition"])
             self.assertEqual(manifest["minimum_task_families"], 1)
             self.assertEqual(manifest["minimum_tasks_per_family"], 1)
+            self.assertFalse(manifest["require_family_repository_crossing"])
             self.assertEqual(manifest["snapshot_scope"], "block")
             self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])

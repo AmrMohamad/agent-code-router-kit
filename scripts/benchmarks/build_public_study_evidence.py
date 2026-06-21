@@ -236,6 +236,7 @@ def build_public_bundle(
         "isolated_serena_session": manifest.get("isolated_serena_session"),
         "require_clean_serena_process_state": manifest.get("require_clean_serena_process_state"),
         "require_explicit_reasoning_effort": manifest.get("require_explicit_reasoning_effort"),
+        "require_family_repository_crossing": manifest.get("require_family_repository_crossing"),
         "model_id": manifest.get("model_id"),
         "reasoning_effort": manifest.get("reasoning_effort"),
         "tool_versions": manifest.get("tool_versions", {}),

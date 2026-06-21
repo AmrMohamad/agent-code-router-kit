@@ -1087,6 +1087,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "prewarm_semantic_layer": args.prewarm_semantic_layer,
         "capture_versions": args.capture_versions,
         "require_explicit_reasoning_effort": bool(getattr(args, "require_explicit_reasoning_effort", False)),
+        "require_family_repository_crossing": bool(study_plan.require_family_repository_crossing) if study_plan else False,
         "require_snapshots": args.require_snapshots,
         "snapshot_scope": args.snapshot_scope if args.snapshot_repos else "none",
         "model_id": args.model_id,

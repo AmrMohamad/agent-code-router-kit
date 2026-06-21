@@ -599,6 +599,11 @@ def _study_plan_requires_web_tool_versions(path: Path) -> bool:
     return plan.get("require_web_tool_versions") is True
 
 
+def _study_plan_requires_family_repository_crossing(path: Path) -> bool:
+    plan = load_simple_yaml(path)
+    return plan.get("require_family_repository_crossing") is True
+
+
 def audit_confirmatory_matrix_completion(
     *,
     manifest: dict[str, object],
@@ -679,6 +684,14 @@ def audit_confirmatory_matrix_completion(
     if any("web" in repo.lower() for repo in observed_task_repos) and not _study_plan_requires_web_tool_versions(study_plan_path):
         add_issue(issues, "fail", "confirmatory_web_tool_versions", "web study plan must preregister frontend tool-version capture")
     if expected_repos:
+        missing_repos = sorted(expected_repos - observed_task_repos)
+        if missing_repos:
+            add_issue(
+                issues,
+                "fail",
+                "confirmatory_repository_labels",
+                "frozen confirmatory task manifest omits preregistered repository labels: " + ",".join(missing_repos),
+            )
         unexpected_repos = sorted(observed_task_repos - expected_repos)
         if unexpected_repos:
             add_issue(
@@ -697,6 +710,26 @@ def audit_confirmatory_matrix_completion(
                 "confirmatory_repository_labels",
                 "manifest source repository states are missing declared task labels: " + ",".join(missing_source_states),
             )
+    if _study_plan_requires_family_repository_crossing(study_plan_path):
+        if manifest.get("require_family_repository_crossing") is not True:
+            add_issue(
+                issues,
+                "fail",
+                "confirmatory_family_repository_crossing",
+                "manifest must record preregistered family-by-repository crossing",
+            )
+        tasks_by_family_repo: dict[str, set[str]] = defaultdict(set)
+        for task in loaded_tasks:
+            tasks_by_family_repo[str(task.task_family)].add(str(task.repo))
+        for family in sorted(expected_families):
+            missing_family_repos = sorted(expected_repos - tasks_by_family_repo.get(family, set()))
+            if missing_family_repos:
+                add_issue(
+                    issues,
+                    "fail",
+                    "confirmatory_family_repository_crossing",
+                    f"task family {family} omits preregistered repository labels: {','.join(missing_family_repos)}",
+                )
     observed_task_families = set(expected_task_families_by_key.values())
     if expected_families and observed_task_families != expected_families:
         add_issue(
