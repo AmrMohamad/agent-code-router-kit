@@ -33,6 +33,7 @@ def estimate(
     if len(logs) < 2:
         return {
             "status": "insufficient_pilot_data",
+            "metric": metric,
             "pair_count": len(logs),
             "minimum_effect": minimum_effect,
             "recommended_repeats": floor_repeats,
@@ -46,6 +47,7 @@ def estimate(
     needed_pairs = math.ceil(((1.96 + 0.84) ** 2 * variance) / (target_log**2))
     return {
         "status": "estimated",
+        "metric": metric,
         "pair_count": len(logs),
         "pilot_log_ratio_variance": round(variance, 8),
         "minimum_effect": minimum_effect,

@@ -352,6 +352,22 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("study_power", {issue["code"] for issue in missing_artifacts["issues"]})
 
             rows = [json.loads(line) for line in (out / "runs.jsonl").read_text(encoding="utf-8").splitlines()]
+            wrong_analysis = analyze(out, metric="model_visible_proxy_tokens")
+            (out / "study-analysis.json").write_text(json.dumps(wrong_analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            wrong_power = estimate(
+                rows,
+                metric="model_visible_proxy_tokens",
+                minimum_effect=0.15,
+                floor_repeats=4,
+                alpha=0.05,
+                power=0.80,
+            )
+            (out / "study-power.json").write_text(json.dumps(wrong_power, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            wrong_metric = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            wrong_metric_codes = {issue["code"] for issue in wrong_metric["issues"]}
+            self.assertIn("study_analysis_metric", wrong_metric_codes)
+            self.assertIn("study_power_metric", wrong_metric_codes)
+
             analysis = analyze(out, metric="exact_uncached_input_tokens")
             (out / "study-analysis.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             power = estimate(

@@ -279,6 +279,8 @@ The `--confirmatory` gate requires a live run from the frozen
 custom task manifests, custom oracle files, dry-runs, missing
 `study-analysis.json`, missing `study-power.json`, or run rows whose
 `task_manifest_hash` does not match the frozen package in `run-manifest.json`.
+The analysis and power artifacts must use the preregistered primary context
+metric, `exact_uncached_input_tokens`.
 
 Build a public bundle only after verifying that private paths, prompts, source
 snippets, symbols, and transcripts are excluded:

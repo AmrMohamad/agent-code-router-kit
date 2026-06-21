@@ -65,6 +65,19 @@ def _analysis_has_required_shape(analysis: dict[str, object]) -> bool:
     return True
 
 
+def _analysis_matches_preregistered_primary(analysis: dict[str, object]) -> bool:
+    return analysis.get("metric") == "exact_uncached_input_tokens"
+
+
+def _power_matches_preregistered_primary(power: dict[str, object]) -> bool:
+    return (
+        power.get("metric") == "exact_uncached_input_tokens"
+        and power.get("minimum_effect") == 0.15
+        and power.get("alpha") == 0.05
+        and power.get("power") == 0.80
+    )
+
+
 def is_sha256_hex(value: object) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(char in hexdigits for char in value)
 
@@ -315,6 +328,8 @@ def audit(
             analysis = load_json(analysis_path)
             if not _analysis_has_required_shape(analysis):
                 add_issue(issues, "fail", "study_analysis_shape", "study-analysis.json lacks required paired, sensitivity, factorial, correctness, or CI fields")
+            if not _analysis_matches_preregistered_primary(analysis):
+                add_issue(issues, "fail", "study_analysis_metric", "confirmatory analysis must use preregistered exact_uncached_input_tokens metric")
             correctness = analysis.get("correctness_pairwise", {})
             if isinstance(correctness, dict):
                 for name, value in correctness.items():
@@ -327,6 +342,8 @@ def audit(
             power = load_json(power_path)
             if power.get("status") != "estimated":
                 add_issue(issues, "fail", "study_power_status", "study-power.json must have status=estimated")
+            if not _power_matches_preregistered_primary(power):
+                add_issue(issues, "fail", "study_power_metric", "study-power.json must use the preregistered exact_uncached_input_tokens planning inputs")
             if power.get("power_target_met") is not True:
                 add_issue(issues, "fail", "study_power_target", "observed study cells do not meet the planned power target")
 

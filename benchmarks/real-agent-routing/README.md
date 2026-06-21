@@ -106,7 +106,8 @@ python3 scripts/benchmarks/audit_real_agent_study.py \
 The stricter `--confirmatory` audit is intentionally reserved for live runs
 using the frozen `confirmatory-tasks.tsv` and the study-plan oracle file. It
 rejects dry-runs, custom task manifests, custom oracle files, missing
-analysis/power artifacts, and row hashes that do not match the frozen package.
+analysis/power artifacts, non-primary metric analysis, and row hashes that do
+not match the frozen package.
 
 The study protocol is intentionally public-safe: repository labels are generic,
 and public evidence must omit private names, paths, prompts, symbols, snippets,
