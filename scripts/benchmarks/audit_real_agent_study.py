@@ -570,6 +570,17 @@ def _study_plan_task_families(path: Path) -> set[str]:
     return {item.strip() for item in str(raw).split(",") if item.strip()}
 
 
+def _study_plan_minimum_task_coverage(path: Path) -> tuple[int, int]:
+    plan = load_simple_yaml(path)
+    families = _study_plan_task_families(path)
+    minimum_task_families = _plan_int(plan, "minimum_task_families")
+    minimum_tasks_per_family = _plan_int(plan, "minimum_tasks_per_family")
+    return (
+        minimum_task_families if minimum_task_families and minimum_task_families > 0 else len(families),
+        minimum_tasks_per_family if minimum_tasks_per_family and minimum_tasks_per_family > 0 else 3,
+    )
+
+
 def _study_plan_agents(path: Path) -> list[str]:
     plan = load_simple_yaml(path)
     raw = plan.get("agents", "codex")
@@ -707,6 +718,26 @@ def audit_confirmatory_matrix_completion(
             "fail",
             "confirmatory_task_families",
             "manifest task families do not match the preregistered study plan: " + ",".join(sorted(expected_families)),
+        )
+    try:
+        plan_min_families, plan_min_tasks_per_family = _study_plan_minimum_task_coverage(study_plan_path)
+    except (TypeError, ValueError, OSError) as exc:
+        add_issue(issues, "fail", "confirmatory_task_family_minimums", f"could not load study plan task-family minimums: {exc}")
+        plan_min_families = 0
+        plan_min_tasks_per_family = 0
+    if plan_min_families > 0 and manifest.get("minimum_task_families") != plan_min_families:
+        add_issue(
+            issues,
+            "fail",
+            "confirmatory_task_family_minimums",
+            f"manifest minimum_task_families does not match preregistered study plan: {plan_min_families}",
+        )
+    if plan_min_tasks_per_family > 0 and manifest.get("minimum_tasks_per_family") != plan_min_tasks_per_family:
+        add_issue(
+            issues,
+            "fail",
+            "confirmatory_task_family_minimums",
+            f"manifest minimum_tasks_per_family does not match preregistered study plan: {plan_min_tasks_per_family}",
         )
 
     observed_counts: Counter[tuple[str, str, str, str, int]] = Counter()
@@ -978,6 +1009,24 @@ def audit(
         return {"status": "fail", "issues": issues}
     manifest = load_json(manifest_path)
     rows = load_jsonl(runs_path)
+    effective_min_task_families = min_task_families
+    effective_min_tasks_per_family = min_tasks_per_family
+    if confirmatory:
+        package = manifest.get("study_package")
+        if isinstance(package, dict):
+            study_plan_path = Path(str(package.get("study_plan_path", "")))
+            if study_plan_path.exists():
+                try:
+                    plan_min_families, plan_min_tasks_per_family = _study_plan_minimum_task_coverage(study_plan_path)
+                    effective_min_task_families = max(effective_min_task_families, plan_min_families)
+                    effective_min_tasks_per_family = max(effective_min_tasks_per_family, plan_min_tasks_per_family)
+                except (TypeError, ValueError, OSError) as exc:
+                    add_issue(
+                        issues,
+                        "fail",
+                        "confirmatory_task_family_minimums",
+                        f"could not load study plan task-family minimums: {exc}",
+                    )
 
     if confirmatory and manifest.get("live") is not True:
         add_issue(issues, "fail", "confirmatory_live", "confirmatory study audit requires live runs, not dry-run output")
@@ -1071,20 +1120,20 @@ def audit(
             for family, tasks in tasks_by_family.items()
             if family and all(repo and task_id for repo, task_id in tasks)
         }
-        if len(populated_families) < min_task_families:
+        if len(populated_families) < effective_min_task_families:
             add_issue(
                 issues,
                 "fail",
                 "confirmatory_task_family_count",
-                f"confirmatory study requires at least {min_task_families} task families; observed {len(populated_families)}",
+                f"confirmatory study requires at least {effective_min_task_families} task families; observed {len(populated_families)}",
             )
         for family, tasks in populated_families.items():
-            if len(tasks) < min_tasks_per_family:
+            if len(tasks) < effective_min_tasks_per_family:
                 add_issue(
                     issues,
                     "fail",
                     "confirmatory_tasks_per_family",
-                    f"family {family} has {len(tasks)} tasks; requires at least {min_tasks_per_family}",
+                    f"family {family} has {len(tasks)} tasks; requires at least {effective_min_tasks_per_family}",
                 )
 
     positions_by_arm: Counter[tuple[str, int]] = Counter()
@@ -1645,6 +1694,8 @@ def audit(
         "confirmatory": confirmatory,
         "issues": issues,
         "arm_counts": dict(Counter(str(row.get("profile", "")) for row in rows)),
+        "min_task_families": effective_min_task_families,
+        "min_tasks_per_family": effective_min_tasks_per_family,
     }
 
 

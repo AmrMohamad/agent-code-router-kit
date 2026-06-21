@@ -201,6 +201,8 @@ ROUTER_EFFECT_STUDY_TOP_LEVEL_KEYS = {
         "controller_tree_hash",
         "isolated_agent_home",
         "isolated_serena_session",
+        "minimum_task_families",
+        "minimum_tasks_per_family",
         "model_id",
         "order_design",
         "parallelism",

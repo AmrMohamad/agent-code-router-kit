@@ -36,6 +36,8 @@ class StudyPlan:
     arms: list[str]
     repository_labels: list[str]
     task_families: list[str]
+    minimum_task_families: int
+    minimum_tasks_per_family: int
     protocol_path: str
     analysis_plan_path: str
     pilot_tasks_path: str
@@ -98,6 +100,8 @@ def load_study_plan(path: str | Path) -> StudyPlan:
         arms=arms,
         repository_labels=repository_labels,
         task_families=task_families,
+        minimum_task_families=int(data.get("minimum_task_families", len(task_families))),
+        minimum_tasks_per_family=int(data.get("minimum_tasks_per_family", 3)),
         protocol_path=str((source.parent / str(data.get("protocol_path", "protocol.md"))).resolve()),
         analysis_plan_path=str((source.parent / str(data.get("analysis_plan_path", "analysis-plan.yaml"))).resolve()),
         pilot_tasks_path=str((source.parent / str(data.get("pilot_tasks_path", "pilot-tasks.tsv"))).resolve()),

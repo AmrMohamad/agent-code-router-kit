@@ -136,6 +136,8 @@ def write_temp_study_plan(root: Path, *, confirmatory_tasks: Path, pilot_tasks: 
                 "arms: A-search-only,B-search-summary,C-lsp-naive,D-full-router",
                 "repository_labels: ios_reference",
                 "task_families: known_symbol_definition",
+                "minimum_task_families: 1",
+                "minimum_tasks_per_family: 1",
                 "order_design: balanced-latin-square",
                 "minimum_repeats: 4",
                 "parallelism: 1",
@@ -302,6 +304,8 @@ class RouterEffectStudyTests(unittest.TestCase):
         self.assertTrue(study_plan.require_explicit_reasoning_effort)
         self.assertEqual(study_plan.agents, ["codex"])
         self.assertEqual(study_plan.repository_labels, ["ios_reference", "web_reference"])
+        self.assertEqual(study_plan.minimum_task_families, 5)
+        self.assertEqual(study_plan.minimum_tasks_per_family, 3)
         self.assertEqual(
             study_plan.task_families,
             [
@@ -618,6 +622,8 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(manifest["snapshot_scope"], "block")
             self.assertEqual(manifest["repository_labels"], ["ios_reference"])
             self.assertEqual(manifest["task_families"], ["known_symbol_definition"])
+            self.assertEqual(manifest["minimum_task_families"], 1)
+            self.assertEqual(manifest["minimum_tasks_per_family"], 1)
             self.assertTrue(manifest["isolated_agent_home"])
             self.assertTrue(manifest["require_clean_serena_process_state"])
             self.assertTrue(manifest["require_explicit_reasoning_effort"])
@@ -1495,6 +1501,23 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertIn("confirmatory_task_families", {issue["code"] for issue in wrong_task_families["issues"]})
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+            wrong_family_minimums_manifest = dict(manifest)
+            wrong_family_minimums_manifest["minimum_task_families"] = 2
+            manifest_path.write_text(
+                json.dumps(wrong_family_minimums_manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            wrong_family_minimums = audit(out, confirmatory=True, min_task_families=1, min_tasks_per_family=1)
+            self.assertIn(
+                "confirmatory_task_family_minimums",
+                {issue["code"] for issue in wrong_family_minimums["issues"]},
+            )
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+            relaxed_cli_minimums = audit(out, confirmatory=True, min_task_families=0, min_tasks_per_family=0)
+            self.assertEqual(relaxed_cli_minimums["min_task_families"], 1)
+            self.assertEqual(relaxed_cli_minimums["min_tasks_per_family"], 1)
+
             wrong_row_family_rows = [json.loads(line) for line in original_runs_text.splitlines()]
             wrong_row_family_rows[0]["task_family"] = "structural_pattern"
             runs_path.write_text(
@@ -1829,6 +1852,8 @@ class RouterEffectStudyTests(unittest.TestCase):
             self.assertEqual(manifest["agents"], ["codex"])
             self.assertEqual(manifest["repository_labels"], ["ios_reference"])
             self.assertEqual(manifest["task_families"], ["known_symbol_definition"])
+            self.assertEqual(manifest["minimum_task_families"], 1)
+            self.assertEqual(manifest["minimum_tasks_per_family"], 1)
             self.assertEqual(manifest["snapshot_scope"], "block")
             self.assertTrue(manifest["privacy"]["private_task_ids_removed"])
             self.assertTrue(manifest["privacy"]["private_repo_ids_removed"])

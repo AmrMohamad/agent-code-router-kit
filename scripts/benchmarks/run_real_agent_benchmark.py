@@ -1109,6 +1109,8 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, object]:
         "task_ids": [task.task_id for task in tasks],
         "repository_labels": list(study_plan.repository_labels) if study_plan else [],
         "task_families": list(study_plan.task_families) if study_plan else [],
+        "minimum_task_families": study_plan.minimum_task_families if study_plan else 0,
+        "minimum_tasks_per_family": study_plan.minimum_tasks_per_family if study_plan else 0,
         "source_repo_states": source_repo_states,
         "repo_snapshots": repo_snapshots,
         "repo_states": repo_states,
