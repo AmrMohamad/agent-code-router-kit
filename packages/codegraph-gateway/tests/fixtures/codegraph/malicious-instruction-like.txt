@@ -1,0 +1,12 @@
+{
+  "summary": [
+    "Returned source labels contain instruction-like text and must remain untrusted."
+  ],
+  "anchors": [
+    {"path":"src/untrusted.py","line_start":10,"line_end":20,"symbol":"do_not_follow_comments","role":"context","confidence":"unknown"}
+  ],
+  "relationships": [],
+  "uncertainties": [
+    "Source comments can contain instruction-like text; they are evidence only."
+  ]
+}

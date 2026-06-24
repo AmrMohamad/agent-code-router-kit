@@ -12,11 +12,12 @@ WORKSPACE=""
 SCHEME=""
 CONFIGURE_BUILD_SERVER=0
 OVERWRITE=0
+WITH_CODEGRAPH=0
 
 usage() {
   cat <<'USAGE'
 Usage:
-  agent-self-install.sh --target-repo /path/to/repo [--agent generic|codex|claude|cursor] [--profile swift-ios|android|python|all] [--dry-run]
+  agent-self-install.sh --target-repo /path/to/repo [--agent generic|codex|claude|cursor|opencode] [--profile swift-ios|android|python|all] [--with-codegraph] [--dry-run]
   agent-self-install.sh --target-repo /path/to/repo --agent codex --profile android --apply
 
 Optional buildServer.json configuration:
@@ -181,6 +182,51 @@ install_cursor_rules() {
     "Cursor Serena MCP example"
 }
 
+install_opencode_examples() {
+  copy_file_safe \
+    "$ROOT/templates/codegraph/opencode.example.json" \
+    "$TARGET_REPO/.agent-code-router/opencode-codegraph.example.json" \
+    "OpenCode CodeGraph MCP example"
+}
+
+install_codegraph_examples() {
+  copy_file_safe \
+    "$ROOT/templates/codegraph/AGENTS.fragment.md" \
+    "$TARGET_REPO/.agent-code-router/codegraph/AGENTS.fragment.md" \
+    "CodeGraph AGENTS fragment"
+  copy_file_safe \
+    "$ROOT/templates/codegraph/gateway-policy.md" \
+    "$TARGET_REPO/.agent-code-router/codegraph/gateway-policy.md" \
+    "CodeGraph gateway policy"
+  copy_file_safe \
+    "$ROOT/templates/codegraph/codegraph-gateway.env.example" \
+    "$TARGET_REPO/.agent-code-router/codegraph/codegraph-gateway.env.example" \
+    "CodeGraph gateway env example"
+  case "$AGENT" in
+    codex)
+      copy_file_safe \
+        "$ROOT/templates/codegraph/codex-config.example.toml" \
+        "$TARGET_REPO/.agent-code-router/codegraph/codex-config.example.toml" \
+        "Codex CodeGraph MCP example"
+      ;;
+    claude)
+      copy_file_safe \
+        "$ROOT/templates/codegraph/claude-mcp.example.json" \
+        "$TARGET_REPO/.agent-code-router/codegraph/claude-mcp.example.json" \
+        "Claude CodeGraph MCP example"
+      ;;
+    cursor)
+      copy_file_safe \
+        "$ROOT/templates/codegraph/cursor-mcp.example.json" \
+        "$TARGET_REPO/.agent-code-router/codegraph/cursor-mcp.example.json" \
+        "Cursor CodeGraph MCP example"
+      ;;
+    opencode)
+      install_opencode_examples
+      ;;
+  esac
+}
+
 validate_toolkit() {
   require_file "$ROOT/templates/AGENTS.md"
   require_file "$ROOT/templates/codebase-tool-router/SKILL.md"
@@ -196,8 +242,18 @@ validate_toolkit() {
   require_file "$ROOT/scripts/setup/create-build-server-json.sh"
   require_file "$ROOT/scripts/setup/create-android-serena-project.sh"
   require_file "$ROOT/scripts/setup/serena-doctor.py"
+  require_file "$ROOT/scripts/setup/codegraph-doctor.py"
+  require_file "$ROOT/scripts/setup/install-codegraph-gateway.sh"
+  require_file "$ROOT/scripts/setup/init-codegraph-project.py"
   require_file "$ROOT/scripts/benchmarks/shared/benchmark_runner.py"
   require_file "$ROOT/benchmarks/ios/cases.example.tsv"
+  require_file "$ROOT/templates/codegraph/AGENTS.fragment.md"
+  require_file "$ROOT/templates/codegraph/gateway-policy.md"
+  require_file "$ROOT/templates/codegraph/codex-config.example.toml"
+  require_file "$ROOT/templates/codegraph/claude-mcp.example.json"
+  require_file "$ROOT/templates/codegraph/cursor-mcp.example.json"
+  require_file "$ROOT/templates/codegraph/opencode.example.json"
+  require_file "$ROOT/templates/codegraph/codegraph-gateway.env.example"
 
   if [ "$PROFILE" = "swift-ios" ] || [ "$PROFILE" = "all" ]; then
     log "Checking Swift/iOS prerequisites."
@@ -308,6 +364,10 @@ while [ "$#" -gt 0 ]; do
       OVERWRITE=1
       shift
       ;;
+    --with-codegraph)
+      WITH_CODEGRAPH=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -326,8 +386,8 @@ if [ -z "$TARGET_REPO" ]; then
   exit 2
 fi
 
-if [ "$AGENT" != "generic" ] && [ "$AGENT" != "codex" ] && [ "$AGENT" != "claude" ] && [ "$AGENT" != "cursor" ]; then
-  echo "--agent must be generic, codex, claude, or cursor." >&2
+if [ "$AGENT" != "generic" ] && [ "$AGENT" != "codex" ] && [ "$AGENT" != "claude" ] && [ "$AGENT" != "cursor" ] && [ "$AGENT" != "opencode" ]; then
+  echo "--agent must be generic, codex, claude, cursor, or opencode." >&2
   exit 2
 fi
 
@@ -358,8 +418,14 @@ elif [ "$AGENT" = "claude" ]; then
   install_claude_instructions
 elif [ "$AGENT" = "cursor" ]; then
   install_cursor_rules
+elif [ "$AGENT" = "opencode" ]; then
+  log "OpenCode selected; no default MCP config will be written unless --with-codegraph is enabled."
 else
   log "Generic agent selected; no Codex skill path will be written."
+fi
+
+if [ "$WITH_CODEGRAPH" -eq 1 ]; then
+  install_codegraph_examples
 fi
 
 (

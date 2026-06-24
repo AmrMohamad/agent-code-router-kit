@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agent-code-router-codegraph": {
+      "command": "acr-codegraph-gateway",
+      "args": ["--repo", "."]
+    }
+  }
+}

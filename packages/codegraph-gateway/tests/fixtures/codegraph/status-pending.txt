@@ -1,0 +1,1 @@
+{"status":"partially_stale","index_present":true,"pending_files":["src/checkout/CheckoutService.swift"],"worktree_mismatch":false,"detail":"pending file synchronization"}

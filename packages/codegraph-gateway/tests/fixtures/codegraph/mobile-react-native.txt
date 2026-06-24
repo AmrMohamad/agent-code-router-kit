@@ -1,0 +1,13 @@
+{
+  "summary": [
+    "React Native JS module maps into iOS native module registration through a heuristic bridge edge."
+  ],
+  "anchors": [
+    {"id":"cg-js-module","path":"app/native/payment.ts","line_start":1,"line_end":30,"symbol":"NativeModules.Payment","role":"js_entry","confidence":"heuristic"},
+    {"id":"cg-native-module","path":"ios/RNPaymentModule.swift","line_start":5,"line_end":48,"symbol":"RNPaymentModule","role":"native_module","confidence":"heuristic"}
+  ],
+  "relationships": [
+    {"from":"cg-js-module","relation":"bridges_to","to":"cg-native-module","confidence":"heuristic","provenance":"react_native_bridge"}
+  ],
+  "uncertainties": ["TurboModule or legacy module resolution is not proven."]
+}

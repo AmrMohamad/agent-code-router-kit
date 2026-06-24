@@ -1,0 +1,14 @@
+agent_id: opencode
+display_name: OpenCode
+command: opencode
+args:
+  - run
+  - --format
+  - json
+prompt_mode: argument
+telemetry_sources:
+  - opencode_stats_if_available
+  - transcript_proxy
+supports_live: true
+default_timeout_seconds: 900
+terminal_mode: pty

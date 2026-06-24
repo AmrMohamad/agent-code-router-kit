@@ -1,0 +1,15 @@
+{
+  "summary": [
+    "Controller forwards work to service, which forwards work to repository."
+  ],
+  "anchors": [
+    {"id":"cg-controller","path":"src/app/controller.py","line_start":10,"line_end":40,"symbol":"Controller.submit","role":"entry_point","confidence":"extracted"},
+    {"id":"cg-service","path":"src/app/service.py","line_start":50,"line_end":75,"symbol":"Service.checkout","role":"step","confidence":"extracted"},
+    {"id":"cg-repository","path":"src/app/repository.py","line_start":80,"line_end":120,"symbol":"Repository.save","role":"sink","confidence":"extracted"}
+  ],
+  "relationships": [
+    {"from":"cg-controller","relation":"calls","to":"cg-service","confidence":"extracted","provenance":"source"},
+    {"from":"cg-service","relation":"calls","to":"cg-repository","confidence":"extracted","provenance":"source"}
+  ],
+  "uncertainties": []
+}

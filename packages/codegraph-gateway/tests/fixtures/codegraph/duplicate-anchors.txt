@@ -1,0 +1,11 @@
+{
+  "summary": [
+    "Duplicate anchor fixture."
+  ],
+  "anchors": [
+    {"path":"src/same.py","line_start":1,"line_end":10,"symbol":"same","role":"entry_point","confidence":"extracted"},
+    {"path":"src/same.py","line_start":1,"line_end":10,"symbol":"same","role":"entry_point","confidence":"extracted"}
+  ],
+  "relationships": [],
+  "uncertainties": []
+}

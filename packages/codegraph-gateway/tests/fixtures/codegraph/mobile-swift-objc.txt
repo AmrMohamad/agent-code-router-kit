@@ -1,0 +1,13 @@
+{
+  "summary": [
+    "Swift payment bridge reaches Objective-C compatibility layer before native module registration."
+  ],
+  "anchors": [
+    {"id":"cg-swift-bridge","path":"ios/PaymentBridge.swift","line_start":14,"line_end":61,"symbol":"PaymentBridge","role":"bridge","confidence":"extracted"},
+    {"id":"cg-objc-bridge","path":"ios/LegacyPaymentBridge.m","line_start":9,"line_end":44,"symbol":"LegacyPaymentBridge","role":"bridge","confidence":"heuristic"}
+  ],
+  "relationships": [
+    {"from":"cg-swift-bridge","relation":"bridges_to","to":"cg-objc-bridge","confidence":"heuristic","provenance":"mobile_bridge"}
+  ],
+  "uncertainties": ["Bridge naming synthesis is heuristic."]
+}

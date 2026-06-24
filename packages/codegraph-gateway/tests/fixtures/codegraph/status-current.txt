@@ -1,0 +1,1 @@
+{"status":"current","index_present":true,"pending_files":[],"worktree_mismatch":false,"detail":"index up to date"}

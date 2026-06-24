@@ -1,0 +1,10 @@
+{
+  "provider": "codegraph",
+  "tool_names": [
+    "architecture_context",
+    "trace_code_flow",
+    "impact_scope",
+    "expand_evidence"
+  ],
+  "proof_level": "discovery"
+}

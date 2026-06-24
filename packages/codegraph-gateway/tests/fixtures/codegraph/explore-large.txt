@@ -1,0 +1,39 @@
+{
+  "summary": [
+    "Large architecture summary line 1 with enough repeated text to force truncation when combined with the bounded gateway response budget. Large architecture summary line 1 with enough repeated text to force truncation when combined with the bounded gateway response budget.",
+    "Large architecture summary line 2 with enough repeated text to force truncation when combined with the bounded gateway response budget. Large architecture summary line 2 with enough repeated text to force truncation when combined with the bounded gateway response budget.",
+    "Large architecture summary line 3 with enough repeated text to force truncation when combined with the bounded gateway response budget. Large architecture summary line 3 with enough repeated text to force truncation when combined with the bounded gateway response budget.",
+    "Large architecture summary line 4 with enough repeated text to force truncation when combined with the bounded gateway response budget. Large architecture summary line 4 with enough repeated text to force truncation when combined with the bounded gateway response budget.",
+    "Large architecture summary line 5 with enough repeated text to force truncation when combined with the bounded gateway response budget. Large architecture summary line 5 with enough repeated text to force truncation when combined with the bounded gateway response budget."
+  ],
+  "anchors": [
+    {"path":"src/a.py","line_start":1,"line_end":20,"symbol":"A","role":"entry_point","confidence":"extracted"},
+    {"path":"src/b.py","line_start":1,"line_end":20,"symbol":"B","role":"step","confidence":"extracted"},
+    {"path":"src/c.py","line_start":1,"line_end":20,"symbol":"C","role":"step","confidence":"extracted"},
+    {"path":"src/d.py","line_start":1,"line_end":20,"symbol":"D","role":"step","confidence":"extracted"},
+    {"path":"src/e.py","line_start":1,"line_end":20,"symbol":"E","role":"step","confidence":"extracted"},
+    {"path":"src/f.py","line_start":1,"line_end":20,"symbol":"F","role":"step","confidence":"extracted"},
+    {"path":"src/g.py","line_start":1,"line_end":20,"symbol":"G","role":"step","confidence":"extracted"},
+    {"path":"src/h.py","line_start":1,"line_end":20,"symbol":"H","role":"step","confidence":"extracted"},
+    {"path":"src/i.py","line_start":1,"line_end":20,"symbol":"I","role":"step","confidence":"extracted"}
+  ],
+  "relationships": [
+    {"from":"111111111111","relation":"calls","to":"222222222222","confidence":"extracted","provenance":"source"},
+    {"from":"222222222222","relation":"calls","to":"333333333333","confidence":"extracted","provenance":"source"},
+    {"from":"333333333333","relation":"calls","to":"444444444444","confidence":"extracted","provenance":"source"},
+    {"from":"444444444444","relation":"calls","to":"555555555555","confidence":"extracted","provenance":"source"},
+    {"from":"555555555555","relation":"calls","to":"666666666666","confidence":"extracted","provenance":"source"},
+    {"from":"666666666666","relation":"calls","to":"777777777777","confidence":"extracted","provenance":"source"},
+    {"from":"777777777777","relation":"calls","to":"888888888888","confidence":"extracted","provenance":"source"},
+    {"from":"888888888888","relation":"calls","to":"999999999999","confidence":"extracted","provenance":"source"},
+    {"from":"999999999999","relation":"calls","to":"aaaaaaaaaaaa","confidence":"extracted","provenance":"source"},
+    {"from":"aaaaaaaaaaaa","relation":"calls","to":"bbbbbbbbbbbb","confidence":"extracted","provenance":"source"},
+    {"from":"bbbbbbbbbbbb","relation":"calls","to":"cccccccccccc","confidence":"extracted","provenance":"source"},
+    {"from":"cccccccccccc","relation":"calls","to":"dddddddddddd","confidence":"extracted","provenance":"source"},
+    {"from":"dddddddddddd","relation":"calls","to":"eeeeeeeeeeee","confidence":"extracted","provenance":"source"}
+  ],
+  "uncertainties": [
+    "Large output fixture used for truncation testing. Large output fixture used for truncation testing. Large output fixture used for truncation testing.",
+    "Extra uncertainty text that should be trimmed under budget. Extra uncertainty text that should be trimmed under budget. Extra uncertainty text that should be trimmed under budget."
+  ]
+}

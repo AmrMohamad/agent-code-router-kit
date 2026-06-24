@@ -1,0 +1,40 @@
+{
+  "contract_version": 1,
+  "provider_name": "codegraph",
+  "capture_mode": "fake-provider-and-live-shape-guarded",
+  "tested_codegraph_versions": [],
+  "contract_capture_status": "pending_live_codegraph_capture",
+  "required_tools": [
+    "codegraph_status",
+    "codegraph_explore",
+    "codegraph_search",
+    "codegraph_node",
+    "codegraph_callers",
+    "codegraph_callees",
+    "codegraph_impact"
+  ],
+  "required_input_schema_types": {
+    "codegraph_status": "object",
+    "codegraph_explore": "object",
+    "codegraph_search": "object",
+    "codegraph_node": "object",
+    "codegraph_callers": "object",
+    "codegraph_callees": "object",
+    "codegraph_impact": "object"
+  },
+  "required_input_properties": {
+    "codegraph_status": [],
+    "codegraph_explore": [],
+    "codegraph_search": [
+      "query"
+    ],
+    "codegraph_node": [
+      "path"
+    ],
+    "codegraph_callers": [],
+    "codegraph_callees": [],
+    "codegraph_impact": [
+      "target"
+    ]
+  }
+}

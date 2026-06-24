@@ -1,0 +1,19 @@
+{
+  "summary": [
+    "CheckoutController.submit delegates to CheckoutService.checkout.",
+    "CheckoutService builds a PaymentCommand and passes it to PaymentGateway.execute.",
+    "Provider selection remains a runtime uncertainty."
+  ],
+  "anchors": [
+    {"id":"cg-controller","path":"src/checkout/CheckoutController.swift","line_start":41,"line_end":68,"symbol":"CheckoutController.submit","role":"entry_point","confidence":"extracted"},
+    {"id":"cg-service","path":"src/checkout/CheckoutService.swift","line_start":88,"line_end":124,"symbol":"CheckoutService.checkout","role":"service","confidence":"extracted"},
+    {"id":"cg-gateway","path":"src/payments/PaymentGateway.swift","line_start":12,"line_end":47,"symbol":"PaymentGateway.execute","role":"boundary","confidence":"extracted"}
+  ],
+  "relationships": [
+    {"from":"cg-controller","relation":"calls","to":"cg-service","confidence":"extracted","provenance":"source"},
+    {"from":"cg-service","relation":"calls","to":"cg-gateway","confidence":"extracted","provenance":"source"}
+  ],
+  "uncertainties": [
+    "Dependency-injection resolution was not proven."
+  ]
+}

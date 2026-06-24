@@ -1,0 +1,13 @@
+{
+  "summary": [
+    "PaymentProvider signature changes affect direct callers and test doubles."
+  ],
+  "anchors": [
+    {"id":"cg-provider","path":"src/payments/provider.py","line_start":1,"line_end":40,"symbol":"PaymentProvider","role":"target","confidence":"extracted"},
+    {"id":"cg-fake-provider","path":"tests/payments/test_provider.py","line_start":1,"line_end":30,"symbol":"FakePaymentProvider","role":"test","confidence":"extracted"}
+  ],
+  "relationships": [
+    {"from":"cg-provider","relation":"implemented_by","to":"cg-fake-provider","confidence":"ambiguous","provenance":"source"}
+  ],
+  "uncertainties": ["Static source impact does not prove runtime breakage."]
+}

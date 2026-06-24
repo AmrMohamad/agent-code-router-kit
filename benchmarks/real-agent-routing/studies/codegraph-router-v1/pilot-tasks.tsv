@@ -1,0 +1,2 @@
+task_id	task_family	repo	prompt	route_profiles	edit_allowed	build_allowed	expected_proof_layer	expected_success_signal	forbidden_claims	timeout_seconds
+cg_arch_pilot	architecture	ios_reference	Map the checkout subsystem architecture.	CG-A-control,CG-B-policy-only,CG-C-capability-only,CG-D-bounded-router	false	false	discovery	architecture map returned	Do not claim runtime proof.	900

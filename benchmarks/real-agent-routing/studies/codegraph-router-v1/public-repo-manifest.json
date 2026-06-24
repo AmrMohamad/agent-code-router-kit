@@ -1,0 +1,8 @@
+{
+  "repositories": [
+    {
+      "label": "ios_reference",
+      "kind": "sample"
+    }
+  ]
+}

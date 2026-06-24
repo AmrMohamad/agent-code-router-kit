@@ -1,0 +1,11 @@
+{
+  "tools": [
+    {"name": "codegraph_status", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "codegraph_explore", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "codegraph_search", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "codegraph_node", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "codegraph_callers", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "codegraph_callees", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "codegraph_impact", "inputSchema": {"type": "object", "properties": {}}}
+  ]
+}

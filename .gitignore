@@ -9,6 +9,7 @@ __pycache__/
 venv/
 dist/
 build/
+*.egg-info/
 
 # Local task specs and private local benchmark outputs.
 GOAL.md

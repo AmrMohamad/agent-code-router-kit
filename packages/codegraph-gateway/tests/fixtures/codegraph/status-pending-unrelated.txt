@@ -1,0 +1,1 @@
+{"status":"partially_stale","index_present":true,"pending_files":["src/unrelated/Unrelated.swift"],"worktree_mismatch":false,"detail":"pending unrelated file synchronization"}

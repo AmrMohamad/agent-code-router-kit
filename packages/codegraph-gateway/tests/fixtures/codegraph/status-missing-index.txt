@@ -1,0 +1,1 @@
+{"status":"stale","index_present":false,"pending_files":[],"worktree_mismatch":false,"detail":"missing .codegraph index"}

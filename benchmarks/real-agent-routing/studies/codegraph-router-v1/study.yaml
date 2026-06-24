@@ -1,0 +1,9 @@
+study_id: codegraph-router-v1
+design_type: 2x2_factorial_plus_optional_raw
+agents: codex,claude-code,cursor-agent,opencode
+arms: CG-A-control,CG-B-policy-only,CG-C-capability-only,CG-D-bounded-router
+optional_arms: CG-X-raw-codegraph
+protocol_path: protocol.md
+analysis_plan_path: analysis-plan.md
+pilot_tasks_path: pilot-tasks.tsv
+confirmatory_tasks_path: confirmatory-tasks.tsv

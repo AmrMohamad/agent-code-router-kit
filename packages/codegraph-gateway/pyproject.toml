@@ -1,0 +1,24 @@
+[project]
+name = "agent-code-router-codegraph-gateway"
+version = "0.1.0"
+description = "Bounded read-only CodeGraph MCP gateway for agent-code-router-kit"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp==1.28.0",
+]
+
+[project.scripts]
+acr-codegraph-gateway = "agent_code_router_codegraph_gateway.server:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+agent_code_router_codegraph_gateway = ["compat/*.json"]

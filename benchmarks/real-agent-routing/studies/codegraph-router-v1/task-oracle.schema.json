@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["oracles"],
+  "properties": {
+    "oracles": {
+      "type": "array"
+    }
+  }
+}
